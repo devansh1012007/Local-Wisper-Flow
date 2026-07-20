@@ -1,0 +1,55 @@
+syntax = "proto3";
+package vision_sst;
+
+service Engine {
+  rpc StartSession(StartRequest) returns (Session);
+  rpc StopSession(StopRequest) returns (Empty);
+  rpc GetStatus(Empty) returns (Status);
+  rpc StreamEvents(Empty) returns (stream Event);
+  rpc GetHistory(HistoryRequest) returns (HistoryResponse);
+}
+
+message StartRequest {
+  string mode = 1;
+  string language = 2;
+}
+
+message StopRequest {
+  string session_id = 1;
+}
+
+message Session {
+  string id = 1;
+  string status = 2;
+  int64 started_at = 3;
+}
+
+message Status {
+  string state = 1;
+  bool model_loaded = 2;
+  float audio_level = 3;
+}
+
+message Event {
+  string type = 1;
+  string payload_json = 2;
+  int64 timestamp = 3;
+  string session_id = 4;
+}
+
+message HistoryRequest {
+  string query = 1;
+  int32 limit = 2;
+}
+
+message HistoryResponse {
+  repeated SessionItem items = 1;
+}
+
+message SessionItem {
+  string id = 1;
+  string preview = 2;
+  int64 duration_ms = 3;
+}
+
+message Empty {}

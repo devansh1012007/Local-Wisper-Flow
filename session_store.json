@@ -1,0 +1,102 @@
+{
+  "sessions": [
+    {
+      "id": "808fd6cd-445b-4376-9b24-5cb06fce9345",
+      "mode": "toggle",
+      "language": "en",
+      "status": "active",
+      "preview": ""
+    },
+    {
+      "id": "6273932c-9fa7-4586-97cb-5eb52d79f6ea",
+      "mode": "toggle",
+      "language": "en",
+      "status": "stopped",
+      "preview": ""
+    },
+    {
+      "id": "fc902215-9747-4533-bbe1-778d4326660b",
+      "mode": "toggle",
+      "language": "en",
+      "status": "stopped",
+      "preview": ""
+    },
+    {
+      "id": "6ffc7d70-3554-40de-91ff-7f64336691ec",
+      "mode": "toggle",
+      "language": "en",
+      "status": "active",
+      "preview": ""
+    },
+    {
+      "id": "bbb9bc35-a9ce-45d8-9573-ea782fc947f0",
+      "mode": "toggle",
+      "language": "en",
+      "status": "stopped",
+      "preview": ""
+    },
+    {
+      "id": "b78fba5a-30be-468c-8cea-949a89b93e48",
+      "mode": "toggle",
+      "language": "en",
+      "status": "stopped",
+      "preview": ""
+    },
+    {
+      "id": "8333d07f-fc50-4240-b446-208ce65d5dd4",
+      "mode": "toggle",
+      "language": "en",
+      "status": "active",
+      "preview": ""
+    },
+    {
+      "id": "fdcec09b-4d4d-4b4f-8857-3b0b7efd5298",
+      "mode": "toggle",
+      "language": "en",
+      "status": "stopped",
+      "preview": ""
+    },
+    {
+      "id": "11c75c79-dd0a-4a01-b788-0c7a780e5cd5",
+      "mode": "toggle",
+      "language": "en",
+      "status": "stopped",
+      "preview": ""
+    },
+    {
+      "id": "185ccd9e-e5c4-4ed3-9391-f656a3e1a771",
+      "mode": "toggle",
+      "language": "en",
+      "status": "stopped",
+      "preview": ""
+    },
+    {
+      "id": "96e8d19b-6cab-47f2-acde-7324d0aa29aa",
+      "mode": "toggle",
+      "language": "en",
+      "status": "active",
+      "preview": ""
+    },
+    {
+      "id": "612ff172-c611-4ca2-a072-8286dd13bccf",
+      "mode": "toggle",
+      "language": "en",
+      "status": "stopped",
+      "preview": ""
+    },
+    {
+      "id": "3a0fdf27-3503-4693-9501-22addef8466d",
+      "mode": "toggle",
+      "language": "en",
+      "status": "stopped",
+      "preview": ""
+    },
+    {
+      "id": "3e8900f8-eb16-4c26-ae54-9a03060b8e4e",
+      "mode": "toggle",
+      "language": "en",
+      "status": "stopped",
+      "preview": ""
+    }
+  ]
+}

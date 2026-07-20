@@ -1,0 +1,29 @@
+services:
+  vision-sst:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "50051:50051"
+    environment:
+      VISION_SST_PORT: 50051
+      VISION_SST_SESSION_STORE_PATH: /data/session_store.json
+      VISION_SST_HISTORY_STORE_PATH: /data/history_store.json
+    volumes:
+      - vision_sst_data:/data
+
+  vision-sst-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m vision_sst.ui_server
+    ports:
+      - "8000:8000"
+    environment:
+      VISION_SST_SESSION_STORE_PATH: /data/session_store.json
+      VISION_SST_HISTORY_STORE_PATH: /data/history_store.json
+    volumes:
+      - vision_sst_data:/data
+
+volumes:
+  vision_sst_data:
