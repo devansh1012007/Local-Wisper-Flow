@@ -1,2 +1,0 @@
-- we need to make it intigrage llm and shit 
-- wee need to make it intigrate the ctrl + windows activation 
