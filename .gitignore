@@ -1,0 +1,13 @@
+build/
+build-*/
+*.bin
+.vs/
+.vscode/
+.github/
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+.git/
+*.env
