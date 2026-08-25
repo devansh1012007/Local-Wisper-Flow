@@ -3,6 +3,10 @@ build-*/
 *.bin
 .vs/
 .vscode/
+third_party/
+models/*.onnx
+models/*.wav
+*.gguf
 .github/
 *.log
 *.tmp
@@ -11,3 +15,5 @@ build-*/
 *.swo
 .git/
 *.env
+.github/
+/.github

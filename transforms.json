@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Fix Grammar",
+        "prompt": "Fix the grammar and spelling of the following text. Output only the corrected text.\n\nText: {text}\n\nCorrected text:"
+    },
+    {
+        "name": "Make Formal",
+        "prompt": "Rewrite the following text in a formal, professional tone. Output only the rewritten text.\n\nText: {text}\n\nRewritten text:"
+    },
+    {
+        "name": "Summarize",
+        "prompt": "Summarize the following text in a single sentence. Output only the summary.\n\nText: {text}\n\nSummary:"
+    }
+]

@@ -22,6 +22,8 @@ public:
     void Stop() override;
     std::vector<float> GetRecordedAudio() override;
 
+    float AudioLevel() const noexcept;
+
 private:
     static void DataCallback(ma_device* device, void* output, const void* input,
                              ma_uint32 frame_count);
@@ -33,6 +35,7 @@ private:
     ma_device device_{};
     bool device_initialized_ = false;
     std::atomic<bool> capturing_{false};
+    std::atomic<float> level_{0.0f};
     std::mutex mutex_;
     std::vector<float> recording_;
 };

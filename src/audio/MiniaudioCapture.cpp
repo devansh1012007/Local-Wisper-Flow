@@ -1,5 +1,7 @@
 #include "audio/MiniaudioCapture.h"
 
+#include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
@@ -9,6 +11,8 @@ std::string DescribeResult(ma_result result) {
     const char* description = ma_result_description(result);
     return description != nullptr ? description : "unknown error";
 }
+
+constexpr float kLevelDecay = 0.8f;
 
 }
 
@@ -44,6 +48,7 @@ void MiniaudioCapture::Start() {
         recording_.clear();
     }
     capturing_.store(true);
+    level_.store(0.0f, std::memory_order_relaxed);
     const ma_result result = ma_device_start(&device_);
     if (result != MA_SUCCESS) {
         capturing_.store(false);
@@ -56,10 +61,15 @@ void MiniaudioCapture::Stop() {
         throw std::runtime_error("MiniaudioCapture: device not initialized");
     }
     capturing_.store(false);
+    level_.store(0.0f, std::memory_order_relaxed);
     const ma_result result = ma_device_stop(&device_);
     if (result != MA_SUCCESS) {
         throw std::runtime_error("MiniaudioCapture: device stop failed: " + DescribeResult(result));
     }
+}
+
+float MiniaudioCapture::AudioLevel() const noexcept {
+    return level_.load(std::memory_order_relaxed);
 }
 
 std::vector<float> MiniaudioCapture::GetRecordedAudio() {
@@ -68,10 +78,21 @@ std::vector<float> MiniaudioCapture::GetRecordedAudio() {
 }
 
 void MiniaudioCapture::AppendFrames(const float* frames, ma_uint32 frame_count) {
+    const std::size_t sample_count = static_cast<std::size_t>(frame_count) * channels_;
+    if (sample_count == 0) {
+        return;
+    }
+
+    float peak = 0.0f;
+    for (std::size_t i = 0; i < sample_count; ++i) {
+        peak = std::max(peak, std::fabs(frames[i]));
+    }
+    const float previous = level_.load(std::memory_order_relaxed);
+    level_.store(std::max(peak, previous * kLevelDecay), std::memory_order_relaxed);
+
     if (!capturing_.load(std::memory_order_relaxed)) {
         return;
     }
-    const std::size_t sample_count = static_cast<std::size_t>(frame_count) * channels_;
     std::lock_guard<std::mutex> lock(mutex_);
     recording_.insert(recording_.end(), frames, frames + sample_count);
 }

@@ -1,0 +1,8 @@
+{
+    "hotkey_code": 165,
+    "whisper_model_path": "ggml-base.en.bin",
+    "vad_threshold": 0.6,
+    "llm_model_path": "models/Phi-4-mini-reasoning-GGUF/Phi-4-mini-reasoning-Q8_0.gguf",
+    "use_remote": false,
+    "remote_endpoint": "localhost:50051"
+}

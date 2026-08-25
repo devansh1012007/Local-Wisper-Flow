@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package inference;
+
+service InferenceService {
+  rpc Transcribe(TranscribeRequest) returns (TranscribeResponse);
+  rpc ProcessText(ProcessRequest) returns (ProcessResponse);
+}
+
+message TranscribeRequest {
+  bytes audio_data = 1;
+  string language = 2;
+}
+
+message TranscribeResponse {
+  string text = 1;
+  float confidence = 2;
+}
+
+message ProcessRequest {
+  string text = 1;
+  string system_prompt = 2;
+}
+
+message ProcessResponse {
+  string result = 1;
+}

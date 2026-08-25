@@ -1,0 +1,16 @@
+services:
+  inference:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: lwf-inference-server:latest
+    container_name: lwf-inference
+    ports:
+      - "50051:50051"
+    restart: unless-stopped
+    # CPU-only workload; raise if you swap in a GPU-enabled whisper backend.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g

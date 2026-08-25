@@ -1,0 +1,15 @@
+diff --git a/ggml/src/CMakeLists.txt b/ggml/src/CMakeLists.txt
+index 82e9480..67a9519 100644
+--- a/ggml/src/CMakeLists.txt
++++ b/ggml/src/CMakeLists.txt
+@@ -242,7 +242,9 @@ endif()
+ add_library(ggml
+             ggml-backend-dl.cpp
+             ggml-backend-reg.cpp)
+-add_library(ggml::ggml ALIAS ggml)
++if(NOT TARGET ggml::ggml)
++    add_library(ggml::ggml ALIAS ggml)
++endif()
+ 
+ set_target_properties(ggml PROPERTIES
+     VERSION ${GGML_VERSION}
