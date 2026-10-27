@@ -13,6 +13,7 @@ Run locally:
 """
 
 import logging
+import os
 import struct
 
 import grpc
@@ -23,7 +24,9 @@ import inference_pb2_grpc
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOG = logging.getLogger("inference-server")
 
-LISTEN_PORT = 50051
+LISTEN_PORT = int(os.environ.get("LWF_PORT", "50051"))
+LISTEN_HOST = os.environ.get("LWF_BIND", "127.0.0.1")
+MAX_MESSAGE_BYTES = 256 * 1024 * 1024
 
 # Attempt to import faster-whisper once; the server stays fully functional
 # without it by serving the mock transcriber below.
@@ -56,35 +59,45 @@ class InferenceService(inference_pb2_grpc.InferenceServiceServicer):
             request.language or "auto",
         )
 
-        if WHISPER_AVAILABLE and samples:
-            segments, _info = _WHISPER_MODEL.transcribe(samples, language=request.language)
-            text = " ".join(segment.text.strip() for segment in segments).strip()
-        else:
-            # Lightweight stand-in: proves the wire format without model weights.
-            text = f"Remote Transcription: [{len(request.audio_data)} bytes]"
+        if not samples:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "empty audio payload")
 
+        if not WHISPER_AVAILABLE:
+            context.abort(
+                grpc.StatusCode.UNAVAILABLE,
+                "faster-whisper is not installed on the server",
+            )
+
+        segments, _info = _WHISPER_MODEL.transcribe(samples, language=request.language)
+        text = " ".join(segment.text.strip() for segment in segments).strip()
         return inference_pb2.TranscribeResponse(text=text, confidence=0.9)
 
     def ProcessText(self, request, context):
         LOG.info("ProcessText: %d chars, prompt=%d chars",
                  len(request.text), len(request.system_prompt))
 
-        # Mock transform; swap in a local LLM call here when desired.
-        result = f"Remote Processed: {request.text}"
-
-        return inference_pb2.ProcessResponse(result=result)
+        context.abort(
+            grpc.StatusCode.UNAVAILABLE,
+            "no LLM backend configured on the server",
+        )
 
 
 def build_and_serve():
     from concurrent import futures
 
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=8))
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=8),
+        options=[
+            ("grpc.max_receive_message_length", MAX_MESSAGE_BYTES),
+            ("grpc.max_send_message_length", MAX_MESSAGE_BYTES),
+        ],
+    )
     inference_pb2_grpc.add_InferenceServiceServicer_to_server(InferenceService(), server)
-    bound = server.add_insecure_port(f"[::]:{LISTEN_PORT}")
+    bound = server.add_insecure_port(f"{LISTEN_HOST}:{LISTEN_PORT}")
     if bound == 0:
-        raise RuntimeError(f"failed to bind port {LISTEN_PORT}")
+        raise RuntimeError(f"failed to bind {LISTEN_HOST}:{LISTEN_PORT}")
     server.start()
-    LOG.info("InferenceService listening on port %d", LISTEN_PORT)
+    LOG.info("InferenceService listening on %s:%d", LISTEN_HOST, LISTEN_PORT)
     server.wait_for_termination()
 
 

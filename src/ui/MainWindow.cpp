@@ -4,19 +4,23 @@
 
 #include <GLFW/glfw3.h>
 #include <cfloat>
+#include <chrono>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
 #include <iostream>
+#include <thread>
 
 static void GlfwErrorCallback(int code, const char* description) {
     std::cerr << "[glfw] error " << code << ": "
               << (description != nullptr ? description : "unknown") << '\n';
 }
 
-MainWindow::MainWindow(const DictationFSM& fsm, const MiniaudioCapture& audio)
-    : fsm_(fsm), audio_(audio) {}
+MainWindow::MainWindow(const DictationFSM& fsm, const MiniaudioCapture& audio,
+                       const EngineStatusSink& status, const std::atomic<bool>& engine_alive,
+                       std::atomic<bool>& quit)
+    : fsm_(fsm), audio_(audio), status_(status), engine_alive_(engine_alive), quit_(quit) {}
 
 MainWindow::~MainWindow() {
     Shutdown();
@@ -52,7 +56,10 @@ bool MainWindow::Init() {
 }
 
 void MainWindow::Run() {
-    while (window_ != nullptr && glfwWindowShouldClose(window_) == 0) {
+    std::uint64_t last_error_generation = 0;
+    auto error_shown_at = std::chrono::steady_clock::time_point{};
+    while (window_ != nullptr && glfwWindowShouldClose(window_) == 0 &&
+           engine_alive_.load(std::memory_order_relaxed)) {
         glfwPollEvents();
 
         const State state = fsm_.CurrentState();
@@ -62,13 +69,29 @@ void MainWindow::Run() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        ImGui::SetNextWindowSize(ImVec2(420.0f, 140.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(460.0f, 190.0f), ImGuiCond_FirstUseEver);
         ImGui::Begin("Local Wisper Flow");
         ImGui::SetWindowFontScale(1.8f);
         ImGui::TextUnformatted(ToString(state));
         ImGui::SetWindowFontScale(1.0f);
         ImGui::TextUnformatted("Audio level");
         ImGui::ProgressBar(level, ImVec2(-FLT_MIN, 0.0f), "%.0f%%");
+        const std::string status_text = status_.StatusText();
+        if (!status_text.empty()) {
+            ImGui::TextUnformatted(status_text.c_str());
+        }
+        const std::uint64_t error_generation = status_.ErrorGeneration();
+        if (error_generation != last_error_generation) {
+            last_error_generation = error_generation;
+            error_shown_at = std::chrono::steady_clock::now();
+        }
+        const std::string error_text = status_.ErrorText();
+        if (!error_text.empty() &&
+            std::chrono::steady_clock::now() - error_shown_at < std::chrono::seconds(5)) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.35f, 0.35f, 1.0f));
+            ImGui::TextUnformatted(error_text.c_str());
+            ImGui::PopStyleColor();
+        }
         ImGui::Text("%.1f FPS", static_cast<double>(ImGui::GetIO().Framerate));
         ImGui::End();
 
@@ -82,6 +105,13 @@ void MainWindow::Run() {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glfwSwapBuffers(window_);
+
+        if (state == State::IDLE) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(90));
+        }
+    }
+    if (engine_alive_.load(std::memory_order_relaxed) == false) {
+        quit_.store(true);
     }
     Shutdown();
 }

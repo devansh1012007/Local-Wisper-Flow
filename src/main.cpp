@@ -1,26 +1,29 @@
-#include "audio/MiniaudioCapture.h"
 #include "core/ConfigManager.h"
+#include "core/DictationCleanup.h"
+#include "core/DictationEngine.h"
 #include "core/DictationFSM.h"
-#include "core/ILlmProvider.h"
+#include "core/EngineEvent.h"
 #include "core/IInferenceProvider.h"
 #include "core/ProviderRouter.h"
-#include "core/TransformManager.h"
 #include "llm/LocalLlamaProvider.h"
-#include "stt/GrpcInferenceProvider.h"
+#include "os/AppPaths.h"
 #include "stt/LocalWhisperProvider.h"
+#ifdef LWF_HAVE_GRPC
+#include "stt/GrpcInferenceProvider.h"
+#endif
+#ifdef LWF_HAVE_ONNXRUNTIME
+#include "vad/SileroVadProvider.h"
+#endif
 
 #ifdef _WIN32
+#include "audio/MiniaudioCapture.h"
+#include "os/WindowsClipboardInjector.h"
 #include "os/WindowsHotkeyListener.h"
-#include "os/WindowsTextInjector.h"
 #include "ui/MainWindow.h"
 #endif
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
-#include <cstddef>
-#include <cstdint>
-#include <deque>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -34,83 +37,10 @@
 namespace {
 
 constexpr std::uint32_t kSampleRate = 16000;
-constexpr std::size_t kMinSamples = kSampleRate / 10;
-
-class HotkeyEventQueue {
-public:
-    void Push(bool is_pressed) {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            events_.push_back(is_pressed);
-        }
-        condition_.notify_one();
-    }
-
-    void Close() {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            closed_ = true;
-        }
-        condition_.notify_all();
-    }
-
-    std::optional<bool> PopFor(std::chrono::milliseconds timeout) {
-        std::unique_lock<std::mutex> lock(mutex_);
-        if (!condition_.wait_for(lock, timeout, [this] { return !events_.empty() || closed_; })) {
-            return std::nullopt;
-        }
-        if (events_.empty()) {
-            return std::nullopt;
-        }
-        const bool is_pressed = events_.front();
-        events_.pop_front();
-        return is_pressed;
-    }
-
-private:
-    std::mutex mutex_;
-    std::condition_variable condition_;
-    std::deque<bool> events_;
-    bool closed_ = false;
-};
-
-class LastTranscriptBox {
-public:
-    void Set(std::string value) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        value_ = std::move(value);
-    }
-
-    std::string Get() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return value_;
-    }
-
-private:
-    std::mutex mutex_;
-    std::string value_;
-};
 
 class PassthroughLlm final : public ILlmProvider {
 public:
     std::string Process(const std::string& text, const std::string&) override { return text; }
-};
-
-class LocalProviderStack final : public IInferenceProvider {
-public:
-    LocalProviderStack(IInferenceProvider& stt, ILlmProvider& llm) : stt_(stt), llm_(llm) {}
-
-    std::string Transcribe(const std::vector<float>& audio_pcm) override {
-        return stt_.Transcribe(audio_pcm);
-    }
-
-    std::string ProcessText(const std::string& text, const std::string& system_prompt) override {
-        return llm_.Process(text, system_prompt);
-    }
-
-private:
-    IInferenceProvider& stt_;
-    ILlmProvider& llm_;
 };
 
 class RouterLlm final : public ILlmProvider {
@@ -125,211 +55,181 @@ private:
     IInferenceProvider& provider_;
 };
 
-std::string TrimCopy(const std::string& text) {
-    const std::size_t begin = text.find_first_not_of(" \t\r\n");
-    if (begin == std::string::npos) {
-        return {};
-    }
-    const std::size_t end = text.find_last_not_of(" \t\r\n");
-    return text.substr(begin, end - begin + 1);
-}
-
 #ifdef _WIN32
 
-void RunEngine(MiniaudioCapture& audio, IInferenceProvider& stt, ITextInjector& injector,
-               DictationFSM& fsm, HotkeyEventQueue& queue, LastTranscriptBox& last_transcript,
-               const std::atomic<bool>& quit) {
-    while (!quit.load()) {
-        std::optional<bool> event = queue.PopFor(std::chrono::milliseconds(200));
-        if (!event) {
-            continue;
-        }
-        if (*event) {
-            if (fsm.GetCurrentState() != State::IDLE) {
-                continue;
-            }
-            if (!fsm.TriggerEvent(Trigger::HOTKEY_PRESS)) {
-                continue;
-            }
-            if (!fsm.TriggerEvent(Trigger::VAD_SPEECH)) {
-                fsm.TriggerEvent(Trigger::HOTKEY_RELEASE);
-                continue;
-            }
-            audio.Start();
-            std::cout << "[mic] Recording... release the hotkey to transcribe" << std::endl;
-        } else {
-            if (fsm.GetCurrentState() != State::CAPTURING) {
-                continue;
-            }
-            audio.Stop();
-            const std::vector<float> pcm = audio.GetRecordedAudio();
-            fsm.TriggerEvent(Trigger::HOTKEY_RELEASE);
+std::string DescribeEngineError(EngineErrorCode code) {
+    switch (code) {
+        case EngineErrorCode::MicUnavailable:
+            return "Microphone unavailable";
+        case EngineErrorCode::MicLost:
+            return "Microphone lost";
+        case EngineErrorCode::SttFailed:
+            return "Transcription failed";
+        case EngineErrorCode::InjectFailed:
+            return "Text injection failed";
+        case EngineErrorCode::None:
+            break;
+    }
+    return "Unknown error";
+}
 
-            bool failed = false;
-            std::string text;
-            if (pcm.size() < kMinSamples) {
-                std::cout << "[mic] Tap shorter than 100 ms ignored" << std::endl;
-                failed = true;
-            } else {
-                std::cout << "[stt] Transcribing..." << std::endl;
-                try {
-                    text = TrimCopy(stt.Transcribe(pcm));
-                } catch (const std::exception& e) {
-                    std::cerr << "[stt] Error: " << e.what() << '\n';
-                    failed = true;
-                }
-            }
+int RunWindowsApp() {
+    try {
+        std::cout << "Local Wisper Flow starting..." << std::endl;
 
-            if (failed) {
-                fsm.TriggerEvent(Trigger::SST_FAILED);
-                continue;
-            }
-            if (text.empty()) {
-                std::cout << "[stt] Nothing heard" << std::endl;
-                fsm.TriggerEvent(Trigger::SST_FAILED);
-                continue;
-            }
+        const std::string config_path = AppPaths::ResolveConfigPath();
+        ConfigManager config(config_path);
+        const std::string whisper_model = AppPaths::ResolveAsset(config.WhisperModelPath());
+        const std::string llm_model = AppPaths::ResolveAsset(config.LlmModelPath());
+        const std::string vad_model = AppPaths::ResolveAsset(config.VadModelPath());
+        const std::uint32_t hotkey_code = static_cast<std::uint32_t>(config.HotkeyCode());
+        std::cout << "[cfg] config=" << config_path << " hotkey=0x" << std::hex << hotkey_code
+                  << std::dec << " model=" << whisper_model
+                  << " vad_threshold=" << config.VadThreshold()
+                  << " llm_model=" << llm_model
+                  << " use_remote=" << (config.UseRemote() ? "true" : "false")
+                  << " remote_endpoint=" << config.RemoteEndpoint() << std::endl;
 
-            fsm.TriggerEvent(Trigger::SST_COMPLETE);
-            const std::string processed = TrimCopy(stt.ProcessText(text, ""));
-            fsm.TriggerEvent(Trigger::SST_COMPLETE);
+        MiniaudioCapture audio(kSampleRate, 1);
+        WhisperSettings whisper_settings;
+        whisper_settings.language = config.WhisperLanguage();
+        whisper_settings.threads = config.WhisperThreads();
+        whisper_settings.beam_size = config.WhisperBeamSize();
+        whisper_settings.disable_temperature_fallback = config.WhisperDisableTempFallback();
+        auto local_stt = std::make_unique<LocalWhisperProvider>(whisper_model, whisper_settings);
+        PersonalDictionary dictionary;
+        dictionary.Load(AppPaths::ResolveAsset(config.DictionaryPath()));
+        local_stt->SetInitialPrompt(dictionary.PromptFragment());
+        WindowsClipboardInjector injector(config.InjectRestoreDelayMs());
+        EngineStatusSink status_sink;
 
+        PassthroughLlm passthrough_llm;
+        std::optional<LocalLlamaProvider> llama_provider;
+        ILlmProvider* llm = &passthrough_llm;
+        if (!llm_model.empty()) {
+            LocalLlamaProvider::Options llama_options;
+            llama_options.context_size = static_cast<std::size_t>(config.LlmContextSize());
+            llama_options.max_predict_tokens =
+                static_cast<std::size_t>(config.LlmMaxPredictTokens());
+            llama_options.gpu_layers = config.LlmGpuLayers();
             try {
-                injector.InjectText(processed);
+                llama_provider.emplace(llm_model, llama_options);
+                llm = &*llama_provider;
+                std::cout << "[llm] model loaded: " << llm_model << std::endl;
+                if (llama_provider->WarmUp()) {
+                    std::cout << "[llm] warm-up complete" << std::endl;
+                } else {
+                    std::cerr << "[llm] warm-up failed, first dictation may be slow" << '\n';
+                }
             } catch (const std::exception& e) {
-                std::cerr << "[inject] Error: " << e.what() << '\n';
-                fsm.TriggerEvent(Trigger::SST_FAILED);
-                continue;
+                std::cerr << "[llm] disabled (" << e.what() << ")" << std::endl;
             }
-            last_transcript.Set(processed);
-            fsm.TriggerEvent(Trigger::SST_COMPLETE);
+        } else {
+            std::cout << "[llm] disabled (no llm_model_path in config.json)" << std::endl;
         }
-    }
-}
+        local_stt->WarmUp();
 
+        std::unique_ptr<IInferenceProvider> remote_provider;
+        bool use_remote = config.UseRemote();
+        if (use_remote) {
+#ifdef LWF_HAVE_GRPC
+            remote_provider = std::make_unique<GrpcInferenceProvider>(config.RemoteEndpoint());
 #else
-
-int RunFsmSmokeTest() {
-    DictationFSM fsm;
-    fsm.SetTransitionListener([](State previous, Trigger trigger, State current) {
-        std::cout << "[fsm] " << ToString(previous) << " -> " << ToString(current) << " ["
-                  << ToString(trigger) << "]" << std::endl;
-    });
-
-    fsm.TriggerEvent(Trigger::HOTKEY_PRESS);
-    fsm.TriggerEvent(Trigger::VAD_SPEECH);
-    fsm.TriggerEvent(Trigger::HOTKEY_RELEASE);
-    fsm.TriggerEvent(Trigger::SST_COMPLETE);
-    fsm.TriggerEvent(Trigger::SST_COMPLETE);
-    fsm.TriggerEvent(Trigger::SST_COMPLETE);
-
-    if (fsm.TriggerEvent(Trigger::VAD_SPEECH)) {
-        std::cerr << "[fsm] Unexpected accepted transition" << '\n';
-        return 1;
-    }
-    std::cout << "[fsm] Invalid transition correctly rejected" << std::endl;
-
-    return fsm.GetCurrentState() == State::IDLE ? 0 : 1;
-}
-
-int RunRouterSmokeTest() {
-    class Scripted final : public IInferenceProvider {
-    public:
-        Scripted(std::string tag, bool fail) : tag_(std::move(tag)), fail_(fail) {}
-
-        std::string Transcribe(const std::vector<float>&) override {
-            if (fail_) {
-                throw std::runtime_error("scripted failure");
-            }
-            return "T:" + tag_;
+            std::cerr << "[router] use_remote=true ignored: built without gRPC support" << '\n';
+            use_remote = false;
+#endif
         }
+        ProviderRouter router(std::move(local_stt), std::move(remote_provider), use_remote);
+        RouterLlm router_llm(router);
 
-        std::string ProcessText(const std::string& text, const std::string&) override {
-            if (fail_) {
-                throw std::runtime_error("scripted failure");
+        CleanupSettings cleanup_settings;
+        cleanup_settings.enabled = config.CleanupEnabled();
+        cleanup_settings.min_words = static_cast<std::size_t>(config.CleanupMinWords());
+        cleanup_settings.timeout = std::chrono::milliseconds(config.CleanupTimeoutMs());
+        DictationCleanup cleanup(router_llm, cleanup_settings,
+                                 [&status_sink](const std::string& note) {
+                                     status_sink.OnStatus(note);
+                                 });
+
+        std::unique_ptr<IVadProvider> vad;
+#ifdef LWF_HAVE_ONNXRUNTIME
+        const std::string vad_model_path = config.VadModelPath();
+        if (!vad_model_path.empty()) {
+            try {
+                vad = std::make_unique<SileroVadProvider>(vad_model_path, config.VadThreshold());
+                std::cout << "[vad] silero loaded (threshold "
+                          << config.VadThreshold() << ")" << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "[vad] disabled (" << e.what() << ")" << std::endl;
             }
-            return "P:" + text + ":" + tag_;
         }
+#endif
 
-    private:
-        std::string tag_;
-        bool fail_;
-    };
+        EngineEventQueue queue;
+        DictationFSM fsm;
+        fsm.SetTransitionListener([](State previous, Trigger trigger, State current) {
+            std::cout << "[fsm] " << ToString(previous) << " -> " << ToString(current) << " ["
+                      << ToString(trigger) << "]" << std::endl;
+        });
 
-    {
-        ProviderRouter router(std::make_unique<Scripted>("local", false),
-                              std::make_unique<Scripted>("remote", true), true);
-        const std::vector<float> pcm(16, 0.0f);
-        const std::string transcript = router.Transcribe(pcm);
-        const std::string processed = router.ProcessText("hi", "");
-        if (transcript != "T:local" || processed != "P:hi:local") {
-            std::cerr << "[router-smoke] fallback routing mismatch: '" << transcript << "' / '"
-                      << processed << "'" << '\n';
+        EngineSettings engine_settings;
+        engine_settings.sample_rate = kSampleRate;
+        engine_settings.min_hold = std::chrono::milliseconds(config.MinHoldMs());
+        engine_settings.hands_free_silence_ms = config.HandsFreeSilenceMs();
+        engine_settings.max_recording = std::chrono::milliseconds(config.MaxRecordingMs());
+        engine_settings.dictionary = &dictionary;
+        DictationEngine engine(audio, router, cleanup, injector, fsm, vad.get(), engine_settings,
+                               &status_sink);
+        audio.SetChunkSink(engine.Sink());
+
+        WindowsHotkeyListener hotkey(hotkey_code, config.AvoidAltGr());
+        std::atomic<bool> quit{false};
+        std::atomic<bool> engine_alive{true};
+
+        std::thread engine_thread([&] {
+            try {
+                engine.Run(queue, quit);
+            } catch (const std::exception& e) {
+                std::cerr << "[engine] fatal: " << e.what() << '\n';
+                status_sink.OnError(EngineErrorCode::None,
+                                    std::string("engine stopped: ") + e.what());
+            }
+            engine_alive.store(false);
+            hotkey.SetSwallowEnabled(false);
+        });
+
+        hotkey.StartListening([&queue](bool is_pressed) {
+            queue.Push(EngineEvent{is_pressed ? EngineEventType::PttPress
+                                              : EngineEventType::PttRelease,
+                                    std::chrono::steady_clock::now()});
+        });
+
+        MainWindow ui(fsm, audio, status_sink, engine_alive, quit);
+        if (!ui.Init()) {
+            std::cerr << "[ui] initialization failed" << '\n';
+            quit.store(true);
+            queue.Close();
+            engine_thread.join();
             return 1;
         }
-    }
-    {
-        ProviderRouter router(std::make_unique<Scripted>("local", false),
-                              std::make_unique<Scripted>("remote", false), false);
-        if (router.ProcessText("hi", "") != "P:hi:local") {
-            std::cerr << "[router-smoke] use_remote=false must use local" << '\n';
-            return 1;
+        if (!hotkey.HookInstalled()) {
+            status_sink.OnError(EngineErrorCode::None,
+                                "hotkey hook failed to install; dictation is disabled");
         }
-    }
 
-    std::cout << "[router-smoke] PASS" << std::endl;
-    return 0;
-}
+        std::cout << "Hold the hotkey and speak; release to inject the transcript." << std::endl;
+        ui.Run();
 
-int RunLlmSmokeTest() {
-    class LocalPassthrough final : public ILlmProvider {
-    public:
-        std::string Process(const std::string& text, const std::string&) override {
-            return TrimCopy(text);
-        }
-    };
+        quit.store(true);
+        queue.Close();
+        engine_thread.join();
 
-    LocalPassthrough provider;
-    TransformManager manager(provider, "transforms.json");
-
-    std::atomic<bool> done{false};
-    bool result_ok = false;
-    manager.ExecuteTransform("Fix Grammar", "  helo wrld  ", [&](std::string result) {
-        std::cout << "[llm-smoke] callback fired on background thread, result: '" << result
-                  << "'" << '\n';
-        result_ok = (result == "helo wrld");
-        done.store(true);
-    });
-
-    for (int i = 0; i < 200 && !done.load(); ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    if (!done.load()) {
-        std::cerr << "[llm-smoke] callback never fired" << '\n';
+        std::cout << "Shutdown complete." << std::endl;
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Fatal: " << e.what() << std::endl;
         return 1;
     }
-    if (!result_ok) {
-        std::cerr << "[llm-smoke] unexpected transform result" << '\n';
-        return 1;
-    }
-
-    std::atomic<bool> unknown_done{false};
-    manager.ExecuteTransform("Does Not Exist", "abc", [&](std::string result) {
-        unknown_done.store(true);
-        if (!result.empty()) {
-            result_ok = false;
-        }
-    });
-    for (int i = 0; i < 100 && !unknown_done.load(); ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    if (!unknown_done.load() || !result_ok) {
-        std::cerr << "[llm-smoke] unknown-transform handling failed" << '\n';
-        return 1;
-    }
-
-    std::cout << "[llm-smoke] PASS" << std::endl;
-    return 0;
 }
 
 #endif
@@ -338,89 +238,7 @@ int RunLlmSmokeTest() {
 
 int main() {
 #ifdef _WIN32
-    try {
-        std::cout << "Local Wisper Flow starting..." << std::endl;
-
-        ConfigManager config;
-        const std::uint32_t hotkey_code = static_cast<std::uint32_t>(config.HotkeyCode());
-        std::cout << "[cfg] hotkey=0x" << std::hex << hotkey_code << std::dec
-                  << " model=" << config.WhisperModelPath()
-                  << " vad_threshold=" << config.VadThreshold()
-                  << " llm_model=" << config.LlmModelPath()
-                  << " use_remote=" << (config.UseRemote() ? "true" : "false")
-                  << " remote_endpoint=" << config.RemoteEndpoint() << std::endl;
-
-        MiniaudioCapture audio(kSampleRate, 1);
-        auto local_stt = std::make_unique<LocalWhisperProvider>(config.WhisperModelPath());
-        WindowsTextInjector injector;
-        LastTranscriptBox last_transcript;
-
-        PassthroughLlm passthrough_llm;
-        std::optional<LocalLlamaProvider> llama_provider;
-        ILlmProvider* llm = &passthrough_llm;
-        const std::string llm_model_path = config.LlmModelPath();
-        if (!llm_model_path.empty()) {
-            try {
-                llama_provider.emplace(llm_model_path);
-                llm = &*llama_provider;
-                std::cout << "[llm] model loaded: " << llm_model_path << std::endl;
-            } catch (const std::exception& e) {
-                std::cerr << "[llm] disabled (" << e.what() << ")" << std::endl;
-            }
-        } else {
-            std::cout << "[llm] disabled (no llm_model_path in config.json)" << std::endl;
-        }
-
-        LocalProviderStack local_stack(*local_stt, *llm);
-        auto remote_provider = std::make_unique<GrpcInferenceProvider>(config.RemoteEndpoint());
-        ProviderRouter router(std::move(local_stt), std::move(remote_provider),
-                              config.UseRemote());
-        RouterLlm router_llm(router);
-
-        TransformManager transforms(router_llm, "transforms.json");
-
-        HotkeyEventQueue queue;
-        DictationFSM fsm;
-        fsm.SetTransitionListener([](State previous, Trigger trigger, State current) {
-            std::cout << "[fsm] " << ToString(previous) << " -> " << ToString(current) << " ["
-                      << ToString(trigger) << "]" << std::endl;
-        });
-        WindowsHotkeyListener hotkey(hotkey_code);
-        std::atomic<bool> quit{false};
-
-        std::thread engine([&] {
-            try {
-                RunEngine(audio, router, injector, fsm, queue, last_transcript, quit);
-            } catch (const std::exception& e) {
-                std::cerr << "[engine] Error: " << e.what() << '\n';
-                quit.store(true);
-            }
-        });
-
-        hotkey.StartListening([&queue](bool is_pressed) { queue.Push(is_pressed); });
-
-        MainWindow ui(fsm, audio);
-        if (!ui.Init()) {
-            std::cerr << "[ui] initialization failed" << '\n';
-            quit.store(true);
-            queue.Close();
-            engine.join();
-            return 1;
-        }
-
-        std::cout << "Hold the hotkey and speak; release to inject the transcript." << std::endl;
-        ui.Run();
-
-        quit.store(true);
-        queue.Close();
-        engine.join();
-
-        std::cout << "Shutdown complete." << std::endl;
-        return 0;
-    } catch (const std::exception& e) {
-        std::cerr << "Fatal: " << e.what() << std::endl;
-        return 1;
-    }
+    return RunWindowsApp();
 #else
     try {
         ConfigManager config;
@@ -430,15 +248,12 @@ int main() {
                   << " llm_model=" << config.LlmModelPath()
                   << " use_remote=" << (config.UseRemote() ? "true" : "false")
                   << " remote_endpoint=" << config.RemoteEndpoint() << std::endl;
-        std::cout << "Local Wisper Flow: hotkey/text-injection layer requires a Windows build."
-                  << std::endl;
-        const int fsm_rc = RunFsmSmokeTest();
-        const int llm_rc = RunLlmSmokeTest();
-        const int router_rc = RunRouterSmokeTest();
-        return (fsm_rc != 0 || llm_rc != 0 || router_rc != 0) ? 1 : 0;
     } catch (const std::exception& e) {
         std::cerr << "Fatal: " << e.what() << std::endl;
         return 1;
     }
+    std::cout << "Local Wisper Flow: hotkey/text-injection layer requires a Windows build."
+              << std::endl;
+    return 0;
 #endif
 }

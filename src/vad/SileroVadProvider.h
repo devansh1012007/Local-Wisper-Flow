@@ -11,6 +11,7 @@
 class SileroVadProvider : public IVadProvider {
 public:
     static constexpr std::size_t kRequiredChunkSamples = 512;
+    static constexpr std::size_t kContextSamples = 64;
 
     SileroVadProvider(const std::string& model_path, float speech_threshold);
     ~SileroVadProvider() override;
@@ -19,6 +20,7 @@ public:
     SileroVadProvider& operator=(const SileroVadProvider&) = delete;
 
     bool IsSpeech(const std::vector<float>& audio_chunk) override;
+    void Reset() override;
 
 private:
     struct Impl;

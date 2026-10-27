@@ -7,13 +7,11 @@ third_party/
 models/*.onnx
 models/*.wav
 *.gguf
-.github/
 *.log
 *.tmp
 *.bak
 *.swp
 *.swo
-.git/
 *.env
-.github/
-/.github
+_deps-cache/*.tar.gz
+tests/data/

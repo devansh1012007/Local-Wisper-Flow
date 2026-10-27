@@ -114,6 +114,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(json)
 
+option(LWF_BUILD_GRPC "Build the optional gRPC remote inference provider (adds a very long dependency build)" OFF)
+
+if(LWF_BUILD_GRPC)
 set(GRPC_URL "https://github.com/grpc/grpc/archive/refs/tags/v1.71.0.tar.gz"
     CACHE STRING "gRPC source package; must include vendored third_party sources (see AGENTS.md recipe); pass file:// for offline builds")
 
@@ -160,6 +163,7 @@ add_library(lwf_proto STATIC
 )
 target_include_directories(lwf_proto PUBLIC "${GEN_DIR}")
 target_link_libraries(lwf_proto PUBLIC grpc++ protobuf::libprotobuf)
+endif()
 
 add_executable(local-wisper-flow
     src/main.cpp
@@ -167,10 +171,13 @@ add_executable(local-wisper-flow
     src/core/DictationFSM.cpp
     src/core/ProviderRouter.cpp
     src/core/TransformManager.cpp
+    src/core/Utf8.cpp
+    src/core/PersonalDictionary.cpp
+    src/core/WhisperText.cpp
     src/audio/miniaudio_impl.cpp
     src/audio/MiniaudioCapture.cpp
+    src/os/AppPaths.cpp
     src/stt/LocalWhisperProvider.cpp
-    src/stt/GrpcInferenceProvider.cpp
     src/llm/LocalLlamaProvider.cpp
 )
 
@@ -178,14 +185,21 @@ target_include_directories(local-wisper-flow PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 
 add_dependencies(local-wisper-flow llama_ext)
 
-target_link_libraries(local-wisper-flow PRIVATE miniaudio whisper nlohmann_json::nlohmann_json llama lwf_proto)
+target_link_libraries(local-wisper-flow PRIVATE miniaudio whisper nlohmann_json::nlohmann_json llama)
+
+if(LWF_BUILD_GRPC)
+    target_sources(local-wisper-flow PRIVATE src/stt/GrpcInferenceProvider.cpp)
+    target_link_libraries(local-wisper-flow PRIVATE lwf_proto)
+    target_compile_definitions(local-wisper-flow PRIVATE LWF_HAVE_GRPC)
+endif()
 
 if(WIN32)
     target_sources(local-wisper-flow PRIVATE
+        src/os/WindowsClipboardInjector.cpp
         src/os/WindowsHotkeyListener.cpp
         src/os/WindowsTextInjector.cpp
     )
-    target_link_libraries(local-wisper-flow PRIVATE user32)
+    target_link_libraries(local-wisper-flow PRIVATE user32 shell32)
 
     find_package(OpenGL REQUIRED)
 
@@ -230,6 +244,46 @@ if(WIN32)
     target_link_libraries(local-wisper-flow PRIVATE imgui OpenGL::GL)
 endif()
 
+FetchContent_Declare(
+    doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest.git
+    GIT_TAG        v2.4.12
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(doctest)
+
+add_executable(lwf-tests
+    tests/test_main.cpp
+    tests/fakes.h
+    tests/fsm_test.cpp
+    tests/router_test.cpp
+    tests/transform_test.cpp
+    tests/cleanup_test.cpp
+    tests/engine_test.cpp
+    tests/vadgate_test.cpp
+    tests/config_test.cpp
+    tests/utf8_test.cpp
+    tests/apppaths_test.cpp
+    tests/preroll_test.cpp
+    tests/dictionary_test.cpp
+    tests/whisperfilter_test.cpp
+    src/core/ConfigManager.cpp
+    src/core/DictationFSM.cpp
+    src/core/DictationEngine.cpp
+    src/core/DictationCleanup.cpp
+    src/core/ProviderRouter.cpp
+    src/core/TransformManager.cpp
+    src/core/Utf8.cpp
+    src/core/PersonalDictionary.cpp
+    src/core/WhisperText.cpp
+    src/os/AppPaths.cpp
+)
+target_include_directories(lwf-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(lwf-tests PRIVATE doctest::doctest nlohmann_json::nlohmann_json)
+
+enable_testing()
+add_test(NAME lwf-tests COMMAND lwf-tests)
+
 set(ONNXRUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime" CACHE PATH
     "Path to an extracted ONNX Runtime C++ distribution (must contain include/ and lib/)")
 
@@ -246,6 +300,10 @@ if(EXISTS "${ONNXRUNTIME_DIR}/include/onnxruntime_cxx_api.h")
             IMPORTED_LOCATION "${ONNXRUNTIME_DIR}/lib/libonnxruntime.so"
         )
     endif()
+
+    target_sources(local-wisper-flow PRIVATE src/vad/SileroVadProvider.cpp)
+    target_link_libraries(local-wisper-flow PRIVATE onnxruntime)
+    target_compile_definitions(local-wisper-flow PRIVATE LWF_HAVE_ONNXRUNTIME)
 
     add_executable(vad-selftest
         tests/vad_selftest.cpp

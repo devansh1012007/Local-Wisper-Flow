@@ -5,18 +5,68 @@ on:
   pull_request:
 
 jobs:
-  test:
+  linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Install cmake
+        run: python3 -m pip install --user cmake
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
         with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
-      - name: Run tests
-        run: pytest -v --cov=vision_sst --cov-report=xml
-      - name: Run lint
-        run: ruff check src/vision_sst
-      - name: Run type checks
-        run: mypy src/vision_sst
+          path: |
+            build/_deps
+            build/llama-ext
+            build/llama-install
+            build/downloads
+          key: linux-deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Hygiene checks
+        run: sh scripts/check_hygiene.sh
+
+      - name: Configure (phase 1)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLWF_BUILD_GRPC=OFF
+
+      - name: Build (phase 1, builds llama)
+        run: cmake --build build -j4
+
+      - name: Configure (phase 2)
+        run: cmake -S . -B build
+
+      - name: Build (phase 2)
+        run: cmake --build build -j4
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/_deps
+            build/llama-ext
+            build/llama-install
+            build/downloads
+          key: windows-deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Configure (phase 1)
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DLWF_BUILD_GRPC=OFF
+
+      - name: Build (phase 1, builds llama)
+        run: cmake --build build --config Release -j 4
+
+      - name: Configure (phase 2)
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build (phase 2)
+        run: cmake --build build --config Release -j 4
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure

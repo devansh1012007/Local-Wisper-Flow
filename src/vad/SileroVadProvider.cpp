@@ -2,6 +2,7 @@
 
 #include <onnxruntime_cxx_api.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -51,6 +52,7 @@ struct SileroVadProvider::Impl {
     Ort::Env env;
     Ort::Session session{nullptr};
     std::vector<float> state = std::vector<float>(kStateElements, 0.0f);
+    std::vector<float> context = std::vector<float>(kContextSamples, 0.0f);
 
     explicit Impl(const std::string& model_path)
         : env(ORT_LOGGING_LEVEL_WARNING, "LocalWisperFlow") {
@@ -87,19 +89,29 @@ SileroVadProvider::SileroVadProvider(const std::string& model_path, float speech
 
 SileroVadProvider::~SileroVadProvider() = default;
 
+void SileroVadProvider::Reset() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::fill(impl_->state.begin(), impl_->state.end(), 0.0f);
+    std::fill(impl_->context.begin(), impl_->context.end(), 0.0f);
+}
+
 bool SileroVadProvider::IsSpeech(const std::vector<float>& audio_chunk) {
     if (audio_chunk.size() != kRequiredChunkSamples) {
-        throw std::invalid_argument("SileroVadProvider: chunk must contain exactly 512 samples");
+        throw std::invalid_argument(
+            "SileroVadProvider: chunk must contain exactly 512 samples");
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
 
     Ort::MemoryInfo memory = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
 
-    const std::int64_t input_shape[] = {1, static_cast<std::int64_t>(audio_chunk.size())};
+    std::vector<float> model_input(impl_->context);
+    model_input.insert(model_input.end(), audio_chunk.begin(), audio_chunk.end());
+
+    const std::int64_t input_shape[] = {1, static_cast<std::int64_t>(model_input.size())};
     Ort::Value input_tensor =
-        Ort::Value::CreateTensor<float>(memory, const_cast<float*>(audio_chunk.data()),
-                                        audio_chunk.size(), input_shape, 2);
+        Ort::Value::CreateTensor<float>(memory, model_input.data(), model_input.size(),
+                                        input_shape, 2);
 
     const std::int64_t state_shape[] = {2, 1, 128};
     Ort::Value state_tensor = Ort::Value::CreateTensor<float>(
@@ -125,6 +137,8 @@ bool SileroVadProvider::IsSpeech(const std::vector<float>& audio_chunk) {
 
     std::memcpy(impl_->state.data(), outputs[1].GetTensorData<float>(),
                 kStateElements * sizeof(float));
+    std::copy(audio_chunk.end() - static_cast<std::ptrdiff_t>(kContextSamples),
+              audio_chunk.end(), impl_->context.begin());
 
     return outputs[0].GetTensorData<float>()[0] > threshold_;
 }
