@@ -177,6 +177,9 @@ add_executable(local-wisper-flow
     src/audio/miniaudio_impl.cpp
     src/audio/MiniaudioCapture.cpp
     src/os/AppPaths.cpp
+    src/stt/cloud/WavEncoder.cpp
+    src/stt/cloud/MultipartBuilder.cpp
+    src/stt/cloud/ClipSplitter.cpp
     src/stt/LocalWhisperProvider.cpp
     src/llm/LocalLlamaProvider.cpp
     src/core/DictationEngine.cpp
@@ -269,6 +272,9 @@ add_executable(lwf-tests
     tests/preroll_test.cpp
     tests/dictionary_test.cpp
     tests/whisperfilter_test.cpp
+    tests/wav_encoder_test.cpp
+    tests/multipart_builder_test.cpp
+    tests/clip_splitter_test.cpp
     src/core/ConfigManager.cpp
     src/core/DictationFSM.cpp
     src/core/DictationEngine.cpp
@@ -279,6 +285,9 @@ add_executable(lwf-tests
     src/core/PersonalDictionary.cpp
     src/core/WhisperText.cpp
     src/os/AppPaths.cpp
+    src/stt/cloud/WavEncoder.cpp
+    src/stt/cloud/MultipartBuilder.cpp
+    src/stt/cloud/ClipSplitter.cpp
 )
 target_include_directories(lwf-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(lwf-tests PRIVATE doctest::doctest nlohmann_json::nlohmann_json)

@@ -1,0 +1,817 @@
+From ba8fef845352177d6c9c0c9b3b1bfc66365893ae Mon Sep 17 00:00:00 2001
+From: zai-agent <agent@z.ai>
+Date: Fri, 30 Oct 2026 20:32:28 +0000
+Subject: [PATCH 6/7] Add SttRouter with consent gating and cloud-to-local
+ fallback
+
+---
+ CMakeLists.txt                  |   6 +
+ src/core/ISttProvider.h         |  26 ++++
+ src/core/SttRouter.cpp          |  73 ++++++++++++
+ src/core/SttRouter.h            |  37 ++++++
+ src/stt/cloud/GnaniProvider.cpp | 132 +++++++++++++++++++++
+ src/stt/cloud/GnaniProvider.h   |  33 ++++++
+ tests/gnani_provider_test.cpp   | 197 +++++++++++++++++++++++++++++++
+ tests/stt_router_test.cpp       | 203 ++++++++++++++++++++++++++++++++
+ 8 files changed, 707 insertions(+)
+ create mode 100644 src/core/SttRouter.cpp
+ create mode 100644 src/core/SttRouter.h
+ create mode 100644 src/stt/cloud/GnaniProvider.cpp
+ create mode 100644 src/stt/cloud/GnaniProvider.h
+ create mode 100644 tests/gnani_provider_test.cpp
+ create mode 100644 tests/stt_router_test.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 50910d4..80abb72 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -170,6 +170,7 @@ add_executable(local-wisper-flow
+     src/core/ConfigManager.cpp
+     src/core/DictationFSM.cpp
+     src/core/ProviderRouter.cpp
++    src/core/SttRouter.cpp
+     src/core/TransformManager.cpp
+     src/core/Utf8.cpp
+     src/core/PersonalDictionary.cpp
+@@ -182,6 +183,7 @@ add_executable(local-wisper-flow
+     src/stt/cloud/ClipSplitter.cpp
+     src/stt/cloud/GnaniRequest.cpp
+     src/stt/cloud/GnaniResponse.cpp
++    src/stt/cloud/GnaniProvider.cpp
+     src/stt/LocalWhisperProvider.cpp
+     src/llm/LocalLlamaProvider.cpp
+ )
+@@ -277,11 +279,14 @@ add_executable(lwf-tests
+     tests/clip_splitter_test.cpp
+     tests/gnani_request_test.cpp
+     tests/gnani_response_test.cpp
++    tests/gnani_provider_test.cpp
++    tests/stt_router_test.cpp
+     src/core/ConfigManager.cpp
+     src/core/DictationFSM.cpp
+     src/core/DictationEngine.cpp
+     src/core/DictationCleanup.cpp
+     src/core/ProviderRouter.cpp
++    src/core/SttRouter.cpp
+     src/core/TransformManager.cpp
+     src/core/Utf8.cpp
+     src/core/PersonalDictionary.cpp
+@@ -292,6 +297,7 @@ add_executable(lwf-tests
+     src/stt/cloud/ClipSplitter.cpp
+     src/stt/cloud/GnaniRequest.cpp
+     src/stt/cloud/GnaniResponse.cpp
++    src/stt/cloud/GnaniProvider.cpp
+ )
+ target_include_directories(lwf-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+ target_link_libraries(lwf-tests PRIVATE doctest::doctest nlohmann_json::nlohmann_json)
+diff --git a/src/core/ISttProvider.h b/src/core/ISttProvider.h
+index 56cbaf1..b6518a5 100644
+--- a/src/core/ISttProvider.h
++++ b/src/core/ISttProvider.h
+@@ -19,6 +19,32 @@ enum class SttErrorCategory {
+     Unknown,
+ };
+ 
++inline const char* ToString(SttErrorCategory category) {
++    switch (category) {
++        case SttErrorCategory::None:
++            return "none";
++        case SttErrorCategory::Auth:
++            return "auth";
++        case SttErrorCategory::RateLimited:
++            return "rate_limited";
++        case SttErrorCategory::Timeout:
++            return "timeout";
++        case SttErrorCategory::Network:
++            return "network";
++        case SttErrorCategory::InvalidRequest:
++            return "invalid_request";
++        case SttErrorCategory::PayloadTooLarge:
++            return "payload_too_large";
++        case SttErrorCategory::Server:
++            return "server";
++        case SttErrorCategory::Cancelled:
++            return "cancelled";
++        case SttErrorCategory::Unknown:
++            break;
++    }
++    return "unknown";
++}
++
+ struct SttAttemptStats {
+     std::string provider;
+     std::string request_id;
+diff --git a/src/core/SttRouter.cpp b/src/core/SttRouter.cpp
+new file mode 100644
+index 0000000..c87f580
+--- /dev/null
++++ b/src/core/SttRouter.cpp
+@@ -0,0 +1,73 @@
++#include "core/SttRouter.h"
++
++#include <iostream>
++#include <stdexcept>
++#include <utility>
++
++namespace {
++
++void LogAttempts(const SttTranscription& result) {
++    for (const SttAttemptStats& attempt : result.attempts) {
++        std::cerr << "[stt] provider=" << attempt.provider << " request_id="
++                  << (attempt.request_id.empty() ? std::string("-") : attempt.request_id)
++                  << " status=" << attempt.http_status << " error=" << ToString(attempt.error)
++                  << " bytes=" << attempt.bytes_sent << "/" << attempt.bytes_received
++                  << " latency_ms=" << attempt.latency.count() << '\n';
++    }
++}
++
++}  // namespace
++
++SttRouter::SttRouter(std::unique_ptr<IInferenceProvider> local,
++                     std::unique_ptr<ISttProvider> cloud, SttRoutingConfig config)
++    : local_(std::move(local)), cloud_(std::move(cloud)), config_(std::move(config)) {
++    if (local_ == nullptr) {
++        throw std::invalid_argument("SttRouter: local provider is required");
++    }
++}
++
++void SttRouter::SetCancelCheck(SttCancelCheck cancel_check) {
++    cancel_check_ = std::move(cancel_check);
++}
++
++const SttTranscription& SttRouter::LastCloudResult() const {
++    return last_cloud_;
++}
++
++bool SttRouter::CloudSelected() const {
++    if (config_.provider != "gnani" || cloud_ == nullptr) {
++        return false;
++    }
++    if (!config_.consent_accepted) {
++        return false;
++    }
++    if (!config_.api_key_source) {
++        return false;
++    }
++    return !config_.api_key_source().empty();
++}
++
++std::string SttRouter::Transcribe(const std::vector<float>& audio_pcm) {
++    last_cloud_ = SttTranscription{};
++    if (!CloudSelected()) {
++        if (config_.provider == "gnani") {
++            std::cerr << "[stt] provider=local cloud_declined" << '\n';
++        }
++        return local_->Transcribe(audio_pcm);
++    }
++    last_cloud_ = cloud_->Transcribe(audio_pcm, cancel_check_);
++    LogAttempts(last_cloud_);
++    if (last_cloud_.cancelled) {
++        return {};
++    }
++    if (last_cloud_.success) {
++        return last_cloud_.text;
++    }
++    std::cerr << "[stt] provider=local fallback=cloud error=" << ToString(last_cloud_.error)
++              << '\n';
++    return local_->Transcribe(audio_pcm);
++}
++
++std::string SttRouter::ProcessText(const std::string& text, const std::string& instruction) {
++    return local_->ProcessText(text, instruction);
++}
+diff --git a/src/core/SttRouter.h b/src/core/SttRouter.h
+new file mode 100644
+index 0000000..c8b69b2
+--- /dev/null
++++ b/src/core/SttRouter.h
+@@ -0,0 +1,37 @@
++#pragma once
++
++#include "core/IInferenceProvider.h"
++#include "core/ISttProvider.h"
++
++#include <functional>
++#include <memory>
++#include <string>
++#include <vector>
++
++struct SttRoutingConfig {
++    std::string provider = "local";
++    bool consent_accepted = false;
++    std::function<std::string()> api_key_source;
++};
++
++class SttRouter final : public IInferenceProvider {
++public:
++    SttRouter(std::unique_ptr<IInferenceProvider> local, std::unique_ptr<ISttProvider> cloud,
++              SttRoutingConfig config);
++
++    std::string Transcribe(const std::vector<float>& audio_pcm) override;
++    std::string ProcessText(const std::string& text, const std::string& instruction) override;
++
++    void SetCancelCheck(SttCancelCheck cancel_check);
++
++    const SttTranscription& LastCloudResult() const;
++
++private:
++    bool CloudSelected() const;
++
++    std::unique_ptr<IInferenceProvider> local_;
++    std::unique_ptr<ISttProvider> cloud_;
++    SttRoutingConfig config_;
++    SttCancelCheck cancel_check_;
++    SttTranscription last_cloud_;
++};
+diff --git a/src/stt/cloud/GnaniProvider.cpp b/src/stt/cloud/GnaniProvider.cpp
+new file mode 100644
+index 0000000..8019aee
+--- /dev/null
++++ b/src/stt/cloud/GnaniProvider.cpp
+@@ -0,0 +1,132 @@
++#include "stt/cloud/GnaniProvider.h"
++
++#include "stt/cloud/ClipSplitter.h"
++#include "stt/cloud/GnaniResponse.h"
++
++#include <chrono>
++#include <iostream>
++#include <stdexcept>
++#include <utility>
++
++namespace {
++
++void AppendText(std::string& target, const std::string& addition) {
++    if (addition.empty()) {
++        return;
++    }
++    if (!target.empty()) {
++        target += " ";
++    }
++    target += addition;
++}
++
++std::string RequestIdOf(const HttpResponse& response) {
++    for (std::size_t i = 0; i < GnaniContract::kRequestIdHeaderCount; ++i) {
++        const std::string value = response.Header(GnaniContract::kRequestIdHeaders[i]);
++        if (!value.empty()) {
++            return value;
++        }
++    }
++    return {};
++}
++
++void LogAttempt(const SttAttemptStats& attempt) {
++    std::cerr << "[stt] provider=" << attempt.provider << " request_id="
++              << (attempt.request_id.empty() ? std::string("-") : attempt.request_id)
++              << " status=" << attempt.http_status << " error=" << ToString(attempt.error)
++              << " bytes=" << attempt.bytes_sent << "/" << attempt.bytes_received
++              << " latency_ms=" << attempt.latency.count() << '\n';
++}
++
++}  // namespace
++
++GnaniProvider::GnaniProvider(IHttpTransport& transport, GnaniProviderSettings settings)
++    : transport_(transport), settings_(std::move(settings)) {}
++
++SttTranscription GnaniProvider::Transcribe(const std::vector<float>& audio_pcm,
++                                           const SttCancelCheck& cancel_check) {
++    SttTranscription result;
++    if (audio_pcm.empty()) {
++        result.success = true;
++        return result;
++    }
++    const std::vector<AudioClip> clips =
++        SplitIntoClips(audio_pcm, settings_.sample_rate, GnaniContract::kMaxClipMs);
++    GnaniRequestOptions options;
++    options.api_key_id = settings_.api_key_id;
++    options.model = settings_.model;
++    options.language = settings_.language;
++    options.keyterms = settings_.keyterms;
++    std::string text;
++    std::size_t requests = 0;
++    for (const AudioClip& clip : clips) {
++        if (requests >= settings_.max_clips) {
++            break;
++        }
++        if (cancel_check && cancel_check()) {
++            result.cancelled = true;
++            result.error = SttErrorCategory::Cancelled;
++            result.text.clear();
++            return result;
++        }
++        const std::vector<float> clip_pcm(audio_pcm.begin() + static_cast<std::ptrdiff_t>(clip.begin),
++                                          audio_pcm.begin() +
++                                              static_cast<std::ptrdiff_t>(clip.begin + clip.frames));
++        HttpRequest request = BuildGnaniRequest(clip_pcm, settings_.sample_rate, options);
++        request.timeout_ms = settings_.timeout_ms;
++        SttAttemptStats attempt;
++        attempt.provider = "gnani";
++        attempt.bytes_sent = request.body.size();
++        const auto started = std::chrono::steady_clock::now();
++        HttpResponse response;
++        try {
++            response = transport_.Post(request);
++        } catch (const HttpTransportError& error) {
++            attempt.error = error.Kind() == HttpTransportErrorKind::Timeout
++                                ? SttErrorCategory::Timeout
++                                : SttErrorCategory::Network;
++            attempt.latency = std::chrono::duration_cast<std::chrono::milliseconds>(
++                std::chrono::steady_clock::now() - started);
++            result.attempts.push_back(attempt);
++            LogAttempt(attempt);
++            result.error = attempt.error;
++            result.text.clear();
++            return result;
++        } catch (const std::exception&) {
++            attempt.error = SttErrorCategory::Network;
++            attempt.latency = std::chrono::duration_cast<std::chrono::milliseconds>(
++                std::chrono::steady_clock::now() - started);
++            result.attempts.push_back(attempt);
++            LogAttempt(attempt);
++            result.error = attempt.error;
++            result.text.clear();
++            return result;
++        }
++        attempt.http_status = response.status;
++        attempt.bytes_received = response.body.size();
++        attempt.latency = std::chrono::duration_cast<std::chrono::milliseconds>(
++            std::chrono::steady_clock::now() - started);
++        attempt.request_id = RequestIdOf(response);
++        GnaniSuccess success;
++        GnaniFailure failure;
++        if (ParseGnaniResponse(response.status, response.body, attempt.request_id, success,
++                               failure)) {
++            attempt.error = SttErrorCategory::None;
++            result.attempts.push_back(attempt);
++            LogAttempt(attempt);
++            AppendText(text, success.transcript);
++            ++requests;
++            continue;
++        }
++        attempt.error = failure.category;
++        result.attempts.push_back(attempt);
++        LogAttempt(attempt);
++        result.error = failure.category;
++        result.text.clear();
++        return result;
++    }
++    result.text = text;
++    result.success = true;
++    result.error = SttErrorCategory::None;
++    return result;
++}
+diff --git a/src/stt/cloud/GnaniProvider.h b/src/stt/cloud/GnaniProvider.h
+new file mode 100644
+index 0000000..65f0e65
+--- /dev/null
++++ b/src/stt/cloud/GnaniProvider.h
+@@ -0,0 +1,33 @@
++#pragma once
++
++#include "core/ISttProvider.h"
++#include "stt/cloud/GnaniContract.h"
++#include "stt/cloud/GnaniRequest.h"
++#include "stt/cloud/IHttpTransport.h"
++
++#include <cstddef>
++#include <cstdint>
++#include <string>
++#include <vector>
++
++struct GnaniProviderSettings {
++    std::string api_key_id;
++    std::string model = GnaniContract::kDefaultModel;
++    std::string language = GnaniContract::kDefaultLanguage;
++    std::vector<std::string> keyterms;
++    std::uint32_t sample_rate = 16000;
++    int timeout_ms = 15000;
++    std::size_t max_clips = 40;
++};
++
++class GnaniProvider final : public ISttProvider {
++public:
++    GnaniProvider(IHttpTransport& transport, GnaniProviderSettings settings);
++
++    SttTranscription Transcribe(const std::vector<float>& audio_pcm,
++                                const SttCancelCheck& cancel_check) override;
++
++private:
++    IHttpTransport& transport_;
++    GnaniProviderSettings settings_;
++};
+diff --git a/tests/gnani_provider_test.cpp b/tests/gnani_provider_test.cpp
+new file mode 100644
+index 0000000..102c757
+--- /dev/null
++++ b/tests/gnani_provider_test.cpp
+@@ -0,0 +1,197 @@
++#include <doctest/doctest.h>
++
++#include "stt/cloud/GnaniProvider.h"
++#include "stt/cloud/GnaniContract.h"
++
++#include <cstdint>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++namespace {
++
++struct ScriptedResponse {
++    int status = 200;
++    std::string body = R"({"transcript":"clip"})";
++    std::string request_id_header = "req-id";
++    bool throw_timeout = false;
++    bool throw_network = false;
++};
++
++class FakeTransport final : public IHttpTransport {
++public:
++    explicit FakeTransport(std::vector<ScriptedResponse> script) : script_(std::move(script)) {}
++
++    HttpResponse Post(const HttpRequest& request) override {
++        requests_.push_back(request);
++        if (index_ >= script_.size()) {
++            throw std::runtime_error("FakeTransport: script exhausted");
++        }
++        const ScriptedResponse& step = script_[index_++];
++        if (step.throw_timeout) {
++            throw HttpTransportError(HttpTransportErrorKind::Timeout, "timed out");
++        }
++        if (step.throw_network) {
++            throw HttpTransportError(HttpTransportErrorKind::Network, "connection reset");
++        }
++        HttpResponse response;
++        response.status = step.status;
++        response.body.assign(step.body.begin(), step.body.end());
++        if (!step.request_id_header.empty()) {
++            response.headers.emplace_back("X-Request-Id", step.request_id_header);
++        }
++        return response;
++    }
++
++    const std::vector<HttpRequest>& Requests() const {
++        return requests_;
++    }
++
++private:
++    std::vector<ScriptedResponse> script_;
++    std::vector<HttpRequest> requests_;
++    std::size_t index_ = 0;
++};
++
++GnaniProviderSettings Settings() {
++    GnaniProviderSettings settings;
++    settings.api_key_id = "key-id-1";
++    settings.max_clips = 40;
++    return settings;
++}
++
++std::vector<float> ConstantAudio(std::size_t samples) {
++    return std::vector<float>(samples, 0.3f);
++}
++
++}  // namespace
++
++TEST_CASE("provider transcribes one clip through the transport") {
++    FakeTransport transport({ScriptedResponse()});
++    GnaniProvider provider(transport, Settings());
++    const SttTranscription result = provider.Transcribe(ConstantAudio(16000), {});
++    CHECK(result.success);
++    CHECK(result.text == "clip");
++    REQUIRE(result.attempts.size() == 1);
++    CHECK(result.attempts[0].provider == "gnani");
++    CHECK(result.attempts[0].http_status == 200);
++    CHECK(result.attempts[0].request_id == "req-id");
++    CHECK(result.attempts[0].bytes_sent > 0);
++    CHECK(result.attempts[0].bytes_received > 0);
++    CHECK(result.attempts[0].latency.count() >= 0);
++}
++
++TEST_CASE("provider sends the documented request shape") {
++    FakeTransport transport({ScriptedResponse()});
++    GnaniProvider provider(transport, Settings());
++    provider.Transcribe(ConstantAudio(1600), {});
++    REQUIRE(transport.Requests().size() == 1);
++    const HttpRequest& request = transport.Requests()[0];
++    CHECK(request.host == GnaniContract::kHost);
++    CHECK(request.path == GnaniContract::kPath);
++    REQUIRE(request.headers.size() == 1);
++    CHECK(request.headers[0].first == GnaniContract::kApiKeyHeader);
++    CHECK(request.headers[0].second == "key-id-1");
++    CHECK(request.content_type.find("multipart/form-data") == 0);
++    CHECK(request.timeout_ms == Settings().timeout_ms);
++    const std::string body(request.body.begin(), request.body.end());
++    CHECK(body.find("name=\"model\"\r\n\r\nprisma-v3.0") != std::string::npos);
++    CHECK(body.find("name=\"language\"\r\n\r\nindic-auto") != std::string::npos);
++    const std::string audio_header =
++        "Content-Disposition: form-data; name=\"audio\"; filename=\"audio.wav\"\r\n"
++        "Content-Type: audio/wav\r\n\r\n";
++    const std::size_t audio_at = body.find(audio_header);
++    REQUIRE(audio_at != std::string::npos);
++    CHECK(body.compare(audio_at + audio_header.size(), 4, "RIFF") == 0);
++}
++
++TEST_CASE("provider splits long audio into clip requests and joins transcripts") {
++    FakeTransport transport({ScriptedResponse{200, R"({"transcript":"one"})", "r1"},
++                             ScriptedResponse{200, R"({"transcript":"two"})", "r2"},
++                             ScriptedResponse{200, R"({"transcript":"three"})", "r3"}});
++    GnaniProvider provider(transport, Settings());
++    const SttTranscription result = provider.Transcribe(ConstantAudio(1040000), {});
++    CHECK(result.success);
++    CHECK(result.text == "one two three");
++    CHECK(transport.Requests().size() == 3);
++    REQUIRE(result.attempts.size() == 3);
++    CHECK(result.attempts[0].request_id == "r1");
++    CHECK(result.attempts[2].request_id == "r3");
++}
++
++TEST_CASE("provider maps transport timeouts and network failures") {
++    ScriptedResponse timeout_step;
++    timeout_step.throw_timeout = true;
++    FakeTransport timeout_transport({timeout_step});
++    GnaniProvider timeout_provider(timeout_transport, Settings());
++    SttTranscription result = timeout_provider.Transcribe(ConstantAudio(16000), {});
++    CHECK(!result.success);
++    CHECK(result.error == SttErrorCategory::Timeout);
++    CHECK(result.text.empty());
++
++    ScriptedResponse network_step;
++    network_step.throw_network = true;
++    FakeTransport network_transport({network_step});
++    GnaniProvider network_provider(network_transport, Settings());
++    result = network_provider.Transcribe(ConstantAudio(16000), {});
++    CHECK(!result.success);
++    CHECK(result.error == SttErrorCategory::Network);
++
++    FakeTransport generic_transport({});
++    GnaniProvider generic_provider(generic_transport, Settings());
++    result = generic_provider.Transcribe(ConstantAudio(16000), {});
++    CHECK(!result.success);
++    CHECK(result.error == SttErrorCategory::Network);
++}
++
++TEST_CASE("provider aborts remaining clips after an error status") {
++    FakeTransport transport({ScriptedResponse{401, R"({"error":"key rejected"})", "r1"}});
++    GnaniProvider provider(transport, Settings());
++    const SttTranscription result = provider.Transcribe(ConstantAudio(1040000), {});
++    CHECK(!result.success);
++    CHECK(result.error == SttErrorCategory::Auth);
++    CHECK(result.text.empty());
++    CHECK(transport.Requests().size() == 1);
++}
++
++TEST_CASE("provider treats an empty transcript as success") {
++    FakeTransport transport({ScriptedResponse{200, R"({"transcript":""})"}});
++    GnaniProvider provider(transport, Settings());
++    const SttTranscription result = provider.Transcribe(ConstantAudio(16000), {});
++    CHECK(result.success);
++    CHECK(result.text.empty());
++    CHECK(result.error == SttErrorCategory::None);
++}
++
++TEST_CASE("provider honors cancellation between clips") {
++    FakeTransport transport({ScriptedResponse{200, R"({"transcript":"one"})"}});
++    GnaniProvider provider(transport, Settings());
++    std::size_t checks = 0;
++    const SttCancelCheck cancel = [&checks] { return ++checks >= 2; };
++    const SttTranscription result = provider.Transcribe(ConstantAudio(1040000), cancel);
++    CHECK(result.cancelled);
++    CHECK(result.error == SttErrorCategory::Cancelled);
++    CHECK(result.text.empty());
++    CHECK(transport.Requests().size() == 1);
++}
++
++TEST_CASE("provider stops after the configured clip budget") {
++    FakeTransport transport({ScriptedResponse{200, R"({"transcript":"one"})"},
++                             ScriptedResponse{200, R"({"transcript":"two"})"}});
++    GnaniProviderSettings settings = Settings();
++    settings.max_clips = 2;
++    GnaniProvider provider(transport, settings);
++    const SttTranscription result = provider.Transcribe(ConstantAudio(1040000), {});
++    CHECK(result.success);
++    CHECK(result.text == "one two");
++    CHECK(transport.Requests().size() == 2);
++}
++
++TEST_CASE("provider skips the transport for empty audio") {
++    FakeTransport transport({});
++    GnaniProvider provider(transport, Settings());
++    const SttTranscription result = provider.Transcribe({}, {});
++    CHECK(result.success);
++    CHECK(result.text.empty());
++    CHECK(transport.Requests().empty());
++}
+diff --git a/tests/stt_router_test.cpp b/tests/stt_router_test.cpp
+new file mode 100644
+index 0000000..18062b1
+--- /dev/null
++++ b/tests/stt_router_test.cpp
+@@ -0,0 +1,203 @@
++#include <doctest/doctest.h>
++
++#include "core/SttRouter.h"
++
++#include <memory>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++namespace {
++
++class ScriptedLocal final : public IInferenceProvider {
++public:
++    ScriptedLocal(std::string tag, bool fail) : tag_(std::move(tag)), fail_(fail) {}
++
++    std::string Transcribe(const std::vector<float>&) override {
++        ++transcribe_calls;
++        if (fail_) {
++            throw std::runtime_error("local failure");
++        }
++        return "local:" + tag_;
++    }
++
++    std::string ProcessText(const std::string& text, const std::string&) override {
++        ++process_calls;
++        return "processed:" + text;
++    }
++
++    int transcribe_calls = 0;
++    int process_calls = 0;
++
++private:
++    std::string tag_;
++    bool fail_;
++};
++
++class ScriptedCloud final : public ISttProvider {
++public:
++    SttTranscription Transcribe(const std::vector<float>& audio_pcm,
++                                const SttCancelCheck& cancel_check) override {
++        ++calls;
++        last_audio_size = audio_pcm.size();
++        received_cancel_check = static_cast<bool>(cancel_check);
++        if (cancel_check) {
++            (void)cancel_check();
++        }
++        SttTranscription result;
++        result.text = outcome_text;
++        result.success = outcome_success;
++        result.cancelled = outcome_cancelled;
++        result.error = outcome_error;
++        SttAttemptStats attempt;
++        attempt.provider = "gnani";
++        attempt.http_status = outcome_status;
++        attempt.bytes_sent = 1024;
++        attempt.bytes_received = 256;
++        attempt.latency = std::chrono::milliseconds(42);
++        result.attempts.push_back(attempt);
++        return result;
++    }
++
++    std::string outcome_text = "cloud:text";
++    bool outcome_success = true;
++    bool outcome_cancelled = false;
++    SttErrorCategory outcome_error = SttErrorCategory::None;
++    int outcome_status = 200;
++    int calls = 0;
++    std::size_t last_audio_size = 0;
++    bool received_cancel_check = false;
++};
++
++SttRoutingConfig CloudConfig() {
++    SttRoutingConfig config;
++    config.provider = "gnani";
++    config.consent_accepted = true;
++    config.api_key_source = [] { return std::string("key-present"); };
++    return config;
++}
++
++}  // namespace
++
++TEST_CASE("router stays local by default") {
++    ScriptedCloud* cloud = new ScriptedCloud();
++    SttRouter router(std::make_unique<ScriptedLocal>("l", false),
++                     std::unique_ptr<ISttProvider>(cloud), SttRoutingConfig{});
++    const std::vector<float> pcm(16, 0.0f);
++    CHECK(router.Transcribe(pcm) == "local:l");
++    CHECK(cloud->calls == 0);
++}
++
++TEST_CASE("router uses cloud when opted in with consent and a key") {
++    ScriptedCloud* cloud = new ScriptedCloud();
++    SttRouter router(std::make_unique<ScriptedLocal>("l", false),
++                     std::unique_ptr<ISttProvider>(cloud), CloudConfig());
++    const std::vector<float> pcm(32, 0.0f);
++    CHECK(router.Transcribe(pcm) == "cloud:text");
++    CHECK(cloud->calls == 1);
++    CHECK(cloud->last_audio_size == 32);
++}
++
++TEST_CASE("router refuses cloud without consent") {
++    SttRoutingConfig config = CloudConfig();
++    config.consent_accepted = false;
++    ScriptedCloud* cloud = new ScriptedCloud();
++    SttRouter router(std::make_unique<ScriptedLocal>("l", false),
++                     std::unique_ptr<ISttProvider>(cloud), config);
++    CHECK(router.Transcribe({16, 0.0f}) == "local:l");
++    CHECK(cloud->calls == 0);
++}
++
++TEST_CASE("router refuses cloud without an api key") {
++    SttRoutingConfig config = CloudConfig();
++    config.api_key_source = [] { return std::string(); };
++    ScriptedCloud* cloud = new ScriptedCloud();
++    SttRouter router(std::make_unique<ScriptedLocal>("l", false),
++                     std::unique_ptr<ISttProvider>(cloud), config);
++    CHECK(router.Transcribe({16, 0.0f}) == "local:l");
++    CHECK(cloud->calls == 0);
++}
++
++TEST_CASE("router accepts a null cloud provider") {
++    SttRoutingConfig config = CloudConfig();
++    SttRouter router(std::make_unique<ScriptedLocal>("l", false), nullptr, config);
++    CHECK(router.Transcribe({16, 0.0f}) == "local:l");
++}
++
++TEST_CASE("router falls back to local on cloud failure") {
++    ScriptedCloud* cloud = new ScriptedCloud();
++    cloud->outcome_success = false;
++    cloud->outcome_error = SttErrorCategory::Auth;
++    cloud->outcome_text.clear();
++    SttRouter router(std::make_unique<ScriptedLocal>("l", false),
++                     std::unique_ptr<ISttProvider>(cloud), CloudConfig());
++    CHECK(router.Transcribe({16, 0.0f}) == "local:l");
++    CHECK(cloud->calls == 1);
++    CHECK(router.LastCloudResult().error == SttErrorCategory::Auth);
++}
++
++TEST_CASE("router never calls local when cloud succeeds") {
++    ScriptedCloud* cloud = new ScriptedCloud();
++    SttRouter router(std::make_unique<ScriptedLocal>("l", true),
++                     std::unique_ptr<ISttProvider>(cloud), CloudConfig());
++    CHECK(router.Transcribe({16, 0.0f}) == "cloud:text");
++}
++
++TEST_CASE("router does not fall back when cloud returns empty text") {
++    ScriptedCloud* cloud = new ScriptedCloud();
++    cloud->outcome_text.clear();
++    SttRouter router(std::make_unique<ScriptedLocal>("l", true),
++                     std::unique_ptr<ISttProvider>(cloud), CloudConfig());
++    CHECK(router.Transcribe({16, 0.0f}).empty());
++    CHECK(cloud->calls == 1);
++}
++
++TEST_CASE("router does not fall back when cloud was cancelled") {
++    ScriptedCloud* cloud = new ScriptedCloud();
++    cloud->outcome_cancelled = true;
++    cloud->outcome_text.clear();
++    cloud->outcome_error = SttErrorCategory::Cancelled;
++    SttRouter router(std::make_unique<ScriptedLocal>("l", true),
++                     std::unique_ptr<ISttProvider>(cloud), CloudConfig());
++    CHECK(router.Transcribe({16, 0.0f}).empty());
++    CHECK(cloud->calls == 1);
++}
++
++TEST_CASE("router forwards the cancel check to the cloud provider") {
++    ScriptedCloud* cloud = new ScriptedCloud();
++    SttRouter router(std::make_unique<ScriptedLocal>("l", false),
++                     std::unique_ptr<ISttProvider>(cloud), CloudConfig());
++    bool flag = false;
++    router.SetCancelCheck([&flag] { return flag; });
++    router.Transcribe({16, 0.0f});
++    CHECK(cloud->received_cancel_check);
++    flag = true;
++    router.Transcribe({16, 0.0f});
++}
++
++TEST_CASE("router routes text processing to the local provider") {
++    ScriptedCloud* cloud = new ScriptedCloud();
++    SttRouter router(std::make_unique<ScriptedLocal>("l", false),
++                     std::unique_ptr<ISttProvider>(cloud), CloudConfig());
++    CHECK(router.ProcessText("hi", "prompt") == "processed:hi");
++    CHECK(cloud->calls == 0);
++}
++
++TEST_CASE("router records cloud attempt statistics") {
++    ScriptedCloud* cloud = new ScriptedCloud();
++    SttRouter router(std::make_unique<ScriptedLocal>("l", false),
++                     std::unique_ptr<ISttProvider>(cloud), CloudConfig());
++    router.Transcribe({16, 0.0f});
++    const SttTranscription& last = router.LastCloudResult();
++    REQUIRE(last.attempts.size() == 1);
++    CHECK(last.attempts[0].provider == "gnani");
++    CHECK(last.attempts[0].http_status == 200);
++    CHECK(last.attempts[0].bytes_sent == 1024);
++    CHECK(last.attempts[0].bytes_received == 256);
++    CHECK(last.attempts[0].latency.count() == 42);
++}
++
++TEST_CASE("router requires a local provider") {
++    CHECK_THROWS_AS(SttRouter router(nullptr, nullptr, SttRoutingConfig{}),
++                    std::invalid_argument);
++}
+-- 
+2.47.3
+

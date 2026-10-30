@@ -1,0 +1,706 @@
+From 93b1e457088700c37bc06561918c6cfc8b0886d8 Mon Sep 17 00:00:00 2001
+From: zai-agent <agent@z.ai>
+Date: Fri, 30 Oct 2026 20:27:34 +0000
+Subject: [PATCH 5/7] Add Gnani request building, response parsing, and error
+ classification
+
+---
+ CMakeLists.txt                  |   6 ++
+ src/core/ISttProvider.h         |  48 ++++++++++++
+ src/stt/cloud/GnaniContract.h   |  25 ++++++
+ src/stt/cloud/GnaniRequest.cpp  |  62 +++++++++++++++
+ src/stt/cloud/GnaniRequest.h    |  17 ++++
+ src/stt/cloud/GnaniResponse.cpp | 135 ++++++++++++++++++++++++++++++++
+ src/stt/cloud/GnaniResponse.h   |  23 ++++++
+ src/stt/cloud/IHttpTransport.h  |  67 ++++++++++++++++
+ tests/gnani_request_test.cpp    | 103 ++++++++++++++++++++++++
+ tests/gnani_response_test.cpp   | 110 ++++++++++++++++++++++++++
+ 10 files changed, 596 insertions(+)
+ create mode 100644 src/core/ISttProvider.h
+ create mode 100644 src/stt/cloud/GnaniContract.h
+ create mode 100644 src/stt/cloud/GnaniRequest.cpp
+ create mode 100644 src/stt/cloud/GnaniRequest.h
+ create mode 100644 src/stt/cloud/GnaniResponse.cpp
+ create mode 100644 src/stt/cloud/GnaniResponse.h
+ create mode 100644 src/stt/cloud/IHttpTransport.h
+ create mode 100644 tests/gnani_request_test.cpp
+ create mode 100644 tests/gnani_response_test.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index e391b08..50910d4 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -180,6 +180,8 @@ add_executable(local-wisper-flow
+     src/stt/cloud/WavEncoder.cpp
+     src/stt/cloud/MultipartBuilder.cpp
+     src/stt/cloud/ClipSplitter.cpp
++    src/stt/cloud/GnaniRequest.cpp
++    src/stt/cloud/GnaniResponse.cpp
+     src/stt/LocalWhisperProvider.cpp
+     src/llm/LocalLlamaProvider.cpp
+ )
+@@ -273,6 +275,8 @@ add_executable(lwf-tests
+     tests/wav_encoder_test.cpp
+     tests/multipart_builder_test.cpp
+     tests/clip_splitter_test.cpp
++    tests/gnani_request_test.cpp
++    tests/gnani_response_test.cpp
+     src/core/ConfigManager.cpp
+     src/core/DictationFSM.cpp
+     src/core/DictationEngine.cpp
+@@ -286,6 +290,8 @@ add_executable(lwf-tests
+     src/stt/cloud/WavEncoder.cpp
+     src/stt/cloud/MultipartBuilder.cpp
+     src/stt/cloud/ClipSplitter.cpp
++    src/stt/cloud/GnaniRequest.cpp
++    src/stt/cloud/GnaniResponse.cpp
+ )
+ target_include_directories(lwf-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+ target_link_libraries(lwf-tests PRIVATE doctest::doctest nlohmann_json::nlohmann_json)
+diff --git a/src/core/ISttProvider.h b/src/core/ISttProvider.h
+new file mode 100644
+index 0000000..56cbaf1
+--- /dev/null
++++ b/src/core/ISttProvider.h
+@@ -0,0 +1,48 @@
++#pragma once
++
++#include <chrono>
++#include <cstddef>
++#include <functional>
++#include <string>
++#include <vector>
++
++enum class SttErrorCategory {
++    None,
++    Auth,
++    RateLimited,
++    Timeout,
++    Network,
++    InvalidRequest,
++    PayloadTooLarge,
++    Server,
++    Cancelled,
++    Unknown,
++};
++
++struct SttAttemptStats {
++    std::string provider;
++    std::string request_id;
++    int http_status = 0;
++    SttErrorCategory error = SttErrorCategory::None;
++    std::size_t bytes_sent = 0;
++    std::size_t bytes_received = 0;
++    std::chrono::milliseconds latency{0};
++};
++
++struct SttTranscription {
++    std::string text;
++    bool success = false;
++    bool cancelled = false;
++    SttErrorCategory error = SttErrorCategory::None;
++    std::vector<SttAttemptStats> attempts;
++};
++
++using SttCancelCheck = std::function<bool()>;
++
++class ISttProvider {
++public:
++    virtual ~ISttProvider() = default;
++
++    virtual SttTranscription Transcribe(const std::vector<float>& audio_pcm,
++                                        const SttCancelCheck& cancel_check) = 0;
++};
+diff --git a/src/stt/cloud/GnaniContract.h b/src/stt/cloud/GnaniContract.h
+new file mode 100644
+index 0000000..21578e5
+--- /dev/null
++++ b/src/stt/cloud/GnaniContract.h
+@@ -0,0 +1,25 @@
++#pragma once
++
++#include <cstddef>
++
++namespace GnaniContract {
++
++constexpr const char* kHost = "api.vachana.ai";
++constexpr const char* kPath = "/stt/v3";
++constexpr const char* kApiKeyHeader = "X-API-Key-ID";
++constexpr const char* kApiKeyEnv = "GNANI_API_KEY";
++constexpr const char* kDefaultModel = "prisma-v3.0";
++constexpr const char* kDefaultLanguage = "indic-auto";
++constexpr const char* kBoundary = "lwf-gnani-9f2c7a4b1d";
++constexpr const char* kModelField = "model";
++constexpr const char* kLanguageField = "language";
++constexpr const char* kKeytermsField = "keyterms";
++constexpr std::size_t kKeytermsCap = 200;
++constexpr const char* kAudioField = "audio";
++constexpr const char* kAudioFilename = "audio.wav";
++constexpr const char* kAudioContentType = "audio/wav";
++constexpr std::size_t kMaxClipMs = 29500;
++constexpr const char* kRequestIdHeaders[] = {"X-Request-Id", "Request-Id"};
++constexpr std::size_t kRequestIdHeaderCount = 2;
++
++}
+diff --git a/src/stt/cloud/GnaniRequest.cpp b/src/stt/cloud/GnaniRequest.cpp
+new file mode 100644
+index 0000000..76f8055
+--- /dev/null
++++ b/src/stt/cloud/GnaniRequest.cpp
+@@ -0,0 +1,62 @@
++#include "stt/cloud/GnaniRequest.h"
++
++#include "stt/cloud/GnaniContract.h"
++#include "stt/cloud/MultipartBuilder.h"
++#include "stt/cloud/WavEncoder.h"
++
++#include <stdexcept>
++
++namespace {
++
++bool SafeKeyterm(const std::string& term) {
++    if (term.empty()) {
++        return false;
++    }
++    if (term.find(',') != std::string::npos || term.find('\r') != std::string::npos ||
++        term.find('\n') != std::string::npos) {
++        return false;
++    }
++    return true;
++}
++
++}  // namespace
++
++HttpRequest BuildGnaniRequest(const std::vector<float>& audio_pcm, std::uint32_t sample_rate,
++                              const GnaniRequestOptions& options) {
++    if (options.api_key_id.empty()) {
++        throw std::runtime_error("GnaniRequest: api key id is required");
++    }
++    if (options.model.empty() || options.language.empty()) {
++        throw std::runtime_error("GnaniRequest: model and language are required");
++    }
++    MultipartBuilder builder(GnaniContract::kBoundary);
++    builder.AddField(GnaniContract::kModelField, options.model);
++    builder.AddField(GnaniContract::kLanguageField, options.language);
++    std::string joined_keyterms;
++    std::size_t used = 0;
++    for (const std::string& term : options.keyterms) {
++        if (used >= GnaniContract::kKeytermsCap) {
++            break;
++        }
++        if (!SafeKeyterm(term)) {
++            continue;
++        }
++        if (used > 0) {
++            joined_keyterms += ",";
++        }
++        joined_keyterms += term;
++        ++used;
++    }
++    if (used > 0) {
++        builder.AddField(GnaniContract::kKeytermsField, joined_keyterms);
++    }
++    builder.AddFile(GnaniContract::kAudioField, GnaniContract::kAudioFilename,
++                    GnaniContract::kAudioContentType, EncodeWav16Mono(audio_pcm, sample_rate));
++    HttpRequest request;
++    request.host = GnaniContract::kHost;
++    request.path = GnaniContract::kPath;
++    request.headers.emplace_back(GnaniContract::kApiKeyHeader, options.api_key_id);
++    request.content_type = builder.ContentType();
++    request.body = builder.Build();
++    return request;
++}
+diff --git a/src/stt/cloud/GnaniRequest.h b/src/stt/cloud/GnaniRequest.h
+new file mode 100644
+index 0000000..3af4965
+--- /dev/null
++++ b/src/stt/cloud/GnaniRequest.h
+@@ -0,0 +1,17 @@
++#pragma once
++
++#include "stt/cloud/IHttpTransport.h"
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++struct GnaniRequestOptions {
++    std::string api_key_id;
++    std::string model;
++    std::string language;
++    std::vector<std::string> keyterms;
++};
++
++HttpRequest BuildGnaniRequest(const std::vector<float>& audio_pcm, std::uint32_t sample_rate,
++                              const GnaniRequestOptions& options);
+diff --git a/src/stt/cloud/GnaniResponse.cpp b/src/stt/cloud/GnaniResponse.cpp
+new file mode 100644
+index 0000000..4f628fd
+--- /dev/null
++++ b/src/stt/cloud/GnaniResponse.cpp
+@@ -0,0 +1,135 @@
++#include "stt/cloud/GnaniResponse.h"
++
++#include <nlohmann/json.hpp>
++
++namespace {
++
++SttErrorCategory ClassifyStatus(int status) {
++    if (status == 401 || status == 403) {
++        return SttErrorCategory::Auth;
++    }
++    if (status == 429) {
++        return SttErrorCategory::RateLimited;
++    }
++    if (status == 408) {
++        return SttErrorCategory::Timeout;
++    }
++    if (status == 413) {
++        return SttErrorCategory::PayloadTooLarge;
++    }
++    if (status >= 500) {
++        return SttErrorCategory::Server;
++    }
++    if (status >= 400) {
++        return SttErrorCategory::InvalidRequest;
++    }
++    return SttErrorCategory::Unknown;
++}
++
++const nlohmann::json* FindTranscriptField(const nlohmann::json& json) {
++    for (const char* key : {"transcript", "text"}) {
++        if (json.contains(key) && json.at(key).is_string()) {
++            return &json.at(key);
++        }
++    }
++    if (json.contains("data") && json.at("data").is_object()) {
++        for (const char* key : {"transcript", "text"}) {
++            if (json.at("data").contains(key) && json.at("data").at(key).is_string()) {
++                return &json.at("data").at(key);
++            }
++        }
++    }
++    return nullptr;
++}
++
++std::string ExtractErrorDetail(const nlohmann::json& json) {
++    if (json.contains("error")) {
++        const nlohmann::json& error = json.at("error");
++        if (error.is_object()) {
++            std::string code;
++            if (error.contains("code") && error.at("code").is_string()) {
++                code = error.at("code").get<std::string>();
++            } else if (error.contains("type") && error.at("type").is_string()) {
++                code = error.at("type").get<std::string>();
++            }
++            std::string message;
++            if (error.contains("message") && error.at("message").is_string()) {
++                message = error.at("message").get<std::string>();
++            }
++            if (!code.empty() && !message.empty()) {
++                return code + ": " + message;
++            }
++            if (!code.empty()) {
++                return code;
++            }
++            return message;
++        }
++        if (error.is_string()) {
++            return error.get<std::string>();
++        }
++    }
++    for (const char* key : {"message", "detail"}) {
++        if (json.contains(key) && json.at(key).is_string()) {
++            return json.at(key).get<std::string>();
++        }
++    }
++    return {};
++}
++
++std::string ExtractRequestId(const nlohmann::json& json) {
++    for (const char* key : {"request_id", "id"}) {
++        if (json.contains(key) && json.at(key).is_string()) {
++            return json.at(key).get<std::string>();
++        }
++    }
++    return {};
++}
++
++}  // namespace
++
++bool ParseGnaniResponse(int http_status, const std::vector<std::uint8_t>& body,
++                        const std::string& request_id_header, GnaniSuccess& success,
++                        GnaniFailure& failure) {
++    const nlohmann::json json =
++        nlohmann::json::parse(body.begin(), body.end(), nullptr, false);
++    if (json.is_discarded()) {
++        failure.category = http_status >= 400 ? ClassifyStatus(http_status)
++                                              : SttErrorCategory::Unknown;
++        failure.http_status = http_status;
++        failure.request_id = request_id_header;
++        failure.detail = "unparseable response body";
++        return false;
++    }
++    if (http_status < 200 || http_status >= 300) {
++        failure.category = ClassifyStatus(http_status);
++        failure.http_status = http_status;
++        failure.request_id = request_id_header;
++        if (failure.request_id.empty() && json.is_object()) {
++            failure.request_id = ExtractRequestId(json);
++        }
++        failure.detail = json.is_object() ? ExtractErrorDetail(json) : std::string();
++        return false;
++    }
++    if (!json.is_object()) {
++        failure.category = SttErrorCategory::Unknown;
++        failure.http_status = http_status;
++        failure.request_id = request_id_header;
++        failure.detail = "success body is not a JSON object";
++        return false;
++    }
++    std::string request_id = request_id_header;
++    if (request_id.empty()) {
++        request_id = ExtractRequestId(json);
++    }
++    const nlohmann::json* transcript = FindTranscriptField(json);
++    if (transcript == nullptr) {
++        failure.category = SttErrorCategory::Unknown;
++        failure.http_status = http_status;
++        failure.request_id = request_id;
++        failure.detail = "no transcript field in success body";
++        return false;
++    }
++    success.transcript = transcript->get<std::string>();
++    success.request_id = request_id;
++    return true;
++}
+diff --git a/src/stt/cloud/GnaniResponse.h b/src/stt/cloud/GnaniResponse.h
+new file mode 100644
+index 0000000..f9834c2
+--- /dev/null
++++ b/src/stt/cloud/GnaniResponse.h
+@@ -0,0 +1,23 @@
++#pragma once
++
++#include "core/ISttProvider.h"
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++struct GnaniSuccess {
++    std::string transcript;
++    std::string request_id;
++};
++
++struct GnaniFailure {
++    SttErrorCategory category = SttErrorCategory::Unknown;
++    int http_status = 0;
++    std::string request_id;
++    std::string detail;
++};
++
++bool ParseGnaniResponse(int http_status, const std::vector<std::uint8_t>& body,
++                        const std::string& request_id_header, GnaniSuccess& success,
++                        GnaniFailure& failure);
+diff --git a/src/stt/cloud/IHttpTransport.h b/src/stt/cloud/IHttpTransport.h
+new file mode 100644
+index 0000000..041b546
+--- /dev/null
++++ b/src/stt/cloud/IHttpTransport.h
+@@ -0,0 +1,67 @@
++#pragma once
++
++#include <cstdint>
++#include <stdexcept>
++#include <string>
++#include <utility>
++#include <vector>
++
++struct HttpRequest {
++    std::string host;
++    std::string path;
++    std::vector<std::pair<std::string, std::string>> headers;
++    std::string content_type;
++    std::vector<std::uint8_t> body;
++    int timeout_ms = 15000;
++};
++
++struct HttpResponse {
++    int status = 0;
++    std::vector<std::pair<std::string, std::string>> headers;
++    std::vector<std::uint8_t> body;
++
++    std::string Header(const std::string& name) const {
++        for (const auto& header : headers) {
++            if (header.first.size() == name.size()) {
++                bool equal = true;
++                for (std::size_t i = 0; i < name.size(); ++i) {
++                    const char left = static_cast<char>(header.first[i] | 0x20);
++                    const char right = static_cast<char>(name[i] | 0x20);
++                    if (left != right) {
++                        equal = false;
++                        break;
++                    }
++                }
++                if (equal) {
++                    return header.second;
++                }
++            }
++        }
++        return {};
++    }
++};
++
++enum class HttpTransportErrorKind {
++    Timeout,
++    Network,
++};
++
++class HttpTransportError : public std::runtime_error {
++public:
++    HttpTransportError(HttpTransportErrorKind kind, const std::string& what)
++        : std::runtime_error(what), kind_(kind) {}
++
++    HttpTransportErrorKind Kind() const {
++        return kind_;
++    }
++
++private:
++    HttpTransportErrorKind kind_;
++};
++
++class IHttpTransport {
++public:
++    virtual ~IHttpTransport() = default;
++
++    virtual HttpResponse Post(const HttpRequest& request) = 0;
++};
+diff --git a/tests/gnani_request_test.cpp b/tests/gnani_request_test.cpp
+new file mode 100644
+index 0000000..411a34e
+--- /dev/null
++++ b/tests/gnani_request_test.cpp
+@@ -0,0 +1,103 @@
++#include <doctest/doctest.h>
++
++#include "stt/cloud/GnaniContract.h"
++#include "stt/cloud/GnaniRequest.h"
++
++#include <algorithm>
++#include <cstdint>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++namespace {
++
++std::string AsString(const std::vector<std::uint8_t>& bytes) {
++    return std::string(bytes.begin(), bytes.end());
++}
++
++bool Contains(const std::vector<std::uint8_t>& haystack, const std::string& needle) {
++    return std::search(haystack.begin(), haystack.end(), needle.begin(), needle.end()) !=
++           haystack.end();
++}
++
++std::size_t Count(const std::string& haystack, char needle) {
++    return static_cast<std::size_t>(
++        std::count(haystack.begin(), haystack.end(), needle));
++}
++
++GnaniRequestOptions Options() {
++    GnaniRequestOptions options;
++    options.api_key_id = "test-key-id";
++    options.model = "prisma-v3.0";
++    options.language = "indic-auto";
++    return options;
++}
++
++}  // namespace
++
++TEST_CASE("gnani request targets the documented endpoint and headers") {
++    const std::vector<float> pcm(16, 0.0f);
++    const HttpRequest request = BuildGnaniRequest(pcm, 16000, Options());
++    CHECK(request.host == GnaniContract::kHost);
++    CHECK(request.path == GnaniContract::kPath);
++    REQUIRE(request.headers.size() == 1);
++    CHECK(request.headers[0].first == "X-API-Key-ID");
++    CHECK(request.headers[0].second == "test-key-id");
++    CHECK(request.content_type.find("multipart/form-data") == 0);
++    CHECK(request.content_type.find(GnaniContract::kBoundary) != std::string::npos);
++}
++
++TEST_CASE("gnani request embeds model, language, and wav audio") {
++    const std::vector<float> pcm{0.5f, -0.5f, 0.25f};
++    const HttpRequest request = BuildGnaniRequest(pcm, 16000, Options());
++    CHECK(Contains(request.body, "name=\"model\"\r\n\r\nprisma-v3.0"));
++    CHECK(Contains(request.body, "name=\"language\"\r\n\r\nindic-auto"));
++    CHECK(Contains(request.body, "name=\"audio\"; filename=\"audio.wav\""));
++    CHECK(Contains(request.body, "Content-Type: audio/wav"));
++    CHECK(Contains(request.body, "RIFF"));
++    CHECK(Contains(request.body, "WAVE"));
++    const std::string body = AsString(request.body);
++    const std::string expected_tail = "\r\n--" + std::string(GnaniContract::kBoundary) + "--\r\n";
++    CHECK(body.substr(body.size() - expected_tail.size()) == expected_tail);
++}
++
++TEST_CASE("gnani request omits the keyterms field when none are given") {
++    const std::vector<float> pcm(4, 0.0f);
++    const HttpRequest request = BuildGnaniRequest(pcm, 16000, Options());
++    CHECK(!Contains(request.body, "name=\"keyterms\""));
++}
++
++TEST_CASE("gnani request caps and filters keyterms") {
++    const std::vector<float> pcm(4, 0.0f);
++    GnaniRequestOptions options = Options();
++    for (std::size_t i = 0; i < 260; ++i) {
++        options.keyterms.push_back("term" + std::to_string(i));
++    }
++    options.keyterms.push_back("unsafe,term");
++    options.keyterms.push_back("unsafe\r\nterm");
++    options.keyterms.push_back("");
++    const HttpRequest request = BuildGnaniRequest(pcm, 16000, options);
++    const std::string body = AsString(request.body);
++    const std::size_t field = body.find("name=\"keyterms\"\r\n\r\n");
++    REQUIRE(field != std::string::npos);
++    const std::size_t value_begin = field + std::string("name=\"keyterms\"\r\n\r\n").size();
++    const std::size_t value_end = body.find("\r\n--", value_begin);
++    const std::string joined = body.substr(value_begin, value_end - value_begin);
++    CHECK(Count(joined, ',') == GnaniContract::kKeytermsCap - 1);
++    CHECK(joined.find("term199") != std::string::npos);
++    CHECK(joined.find("term200") == std::string::npos);
++    CHECK(joined.find("unsafe") == std::string::npos);
++}
++
++TEST_CASE("gnani request rejects missing credentials and settings") {
++    const std::vector<float> pcm(4, 0.0f);
++    GnaniRequestOptions options = Options();
++    options.api_key_id = "";
++    CHECK_THROWS_AS(BuildGnaniRequest(pcm, 16000, options), std::runtime_error);
++    options = Options();
++    options.model = "";
++    CHECK_THROWS_AS(BuildGnaniRequest(pcm, 16000, options), std::runtime_error);
++    options = Options();
++    options.language = "";
++    CHECK_THROWS_AS(BuildGnaniRequest(pcm, 16000, options), std::runtime_error);
++}
+diff --git a/tests/gnani_response_test.cpp b/tests/gnani_response_test.cpp
+new file mode 100644
+index 0000000..3af26ce
+--- /dev/null
++++ b/tests/gnani_response_test.cpp
+@@ -0,0 +1,110 @@
++#include <doctest/doctest.h>
++
++#include "stt/cloud/GnaniResponse.h"
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++namespace {
++
++std::vector<std::uint8_t> Bytes(const std::string& text) {
++    return std::vector<std::uint8_t>(text.begin(), text.end());
++}
++
++}  // namespace
++
++TEST_CASE("gnani response parses a success with transcript and header request id") {
++    GnaniSuccess success;
++    GnaniFailure failure;
++    CHECK(ParseGnaniResponse(200, Bytes(R"({"transcript":"namaskara loka"})"), "req-123", success,
++                             failure));
++    CHECK(success.transcript == "namaskara loka");
++    CHECK(success.request_id == "req-123");
++}
++
++TEST_CASE("gnani response treats an empty transcript as success") {
++    GnaniSuccess success;
++    GnaniFailure failure;
++    CHECK(ParseGnaniResponse(200, Bytes(R"({"transcript":""})"), "req-456", success, failure));
++    CHECK(success.transcript.empty());
++    CHECK(success.request_id == "req-456");
++}
++
++TEST_CASE("gnani response falls back to alternate transcript field names") {
++    GnaniSuccess success;
++    GnaniFailure failure;
++    CHECK(ParseGnaniResponse(200, Bytes(R"({"text":"via text"})"), "", success, failure));
++    CHECK(success.transcript == "via text");
++    CHECK(ParseGnaniResponse(200, Bytes(R"({"data":{"transcript":"nested"}})"), "", success,
++                             failure));
++    CHECK(success.transcript == "nested");
++}
++
++TEST_CASE("gnani response picks the body request id when the header is absent") {
++    GnaniSuccess success;
++    GnaniFailure failure;
++    CHECK(ParseGnaniResponse(200, Bytes(R"({"transcript":"hi","request_id":"body-id"})"), "",
++                             success, failure));
++    CHECK(success.request_id == "body-id");
++}
++
++TEST_CASE("gnani response parses the error object shape") {
++    GnaniSuccess success;
++    GnaniFailure failure;
++    CHECK(!ParseGnaniResponse(401,
++                              Bytes(R"({"error":{"code":"invalid_api_key","message":"key rejected"}})"),
++                              "req-1", success, failure));
++    CHECK(failure.category == SttErrorCategory::Auth);
++    CHECK(failure.http_status == 401);
++    CHECK(failure.request_id == "req-1");
++    CHECK(failure.detail == "invalid_api_key: key rejected");
++}
++
++TEST_CASE("gnani response parses the error string shape") {
++    GnaniSuccess success;
++    GnaniFailure failure;
++    CHECK(!ParseGnaniResponse(429, Bytes(R"({"error":"too many requests"})"), "", success,
++                              failure));
++    CHECK(failure.category == SttErrorCategory::RateLimited);
++    CHECK(failure.detail == "too many requests");
++}
++
++TEST_CASE("gnani response parses the message and detail shapes") {
++    GnaniSuccess success;
++    GnaniFailure failure;
++    CHECK(!ParseGnaniResponse(500, Bytes(R"({"message":"upstream burst"})"), "req-2", success,
++                              failure));
++    CHECK(failure.category == SttErrorCategory::Server);
++    CHECK(failure.detail == "upstream burst");
++    CHECK(!ParseGnaniResponse(400, Bytes(R"({"detail":"audio must be 16 kHz"})"), "", success,
++                              failure));
++    CHECK(failure.category == SttErrorCategory::InvalidRequest);
++    CHECK(failure.detail == "audio must be 16 kHz");
++}
++
++TEST_CASE("gnani response classifies transport level status codes") {
++    GnaniSuccess success;
++    GnaniFailure failure;
++    CHECK(!ParseGnaniResponse(403, Bytes(R"({})"), "", success, failure));
++    CHECK(failure.category == SttErrorCategory::Auth);
++    CHECK(!ParseGnaniResponse(408, Bytes(R"({})"), "", success, failure));
++    CHECK(failure.category == SttErrorCategory::Timeout);
++    CHECK(!ParseGnaniResponse(413, Bytes(R"({})"), "", success, failure));
++    CHECK(failure.category == SttErrorCategory::PayloadTooLarge);
++    CHECK(!ParseGnaniResponse(503, Bytes("{}"), "", success, failure));
++    CHECK(failure.category == SttErrorCategory::Server);
++}
++
++TEST_CASE("gnani response survives malformed bodies without throwing") {
++    GnaniSuccess success;
++    GnaniFailure failure;
++    CHECK(!ParseGnaniResponse(200, Bytes("not json at all"), "", success, failure));
++    CHECK(failure.category == SttErrorCategory::Unknown);
++    CHECK(!ParseGnaniResponse(500, Bytes("still not json"), "", success, failure));
++    CHECK(failure.category == SttErrorCategory::Server);
++    CHECK(!ParseGnaniResponse(200, Bytes("[]"), "", success, failure));
++    CHECK(failure.detail == "success body is not a JSON object");
++    CHECK(!ParseGnaniResponse(200, Bytes(R"({"unexpected":"shape"})"), "", success, failure));
++    CHECK(failure.detail == "no transcript field in success body");
++}
+-- 
+2.47.3
+

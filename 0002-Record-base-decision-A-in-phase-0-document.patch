@@ -1,0 +1,30 @@
+From 08cd7cc3e6f8fca2b6a6065e31eb027add0847ef Mon Sep 17 00:00:00 2001
+From: zai-agent <agent@z.ai>
+Date: Fri, 30 Oct 2026 18:34:34 +0000
+Subject: [PATCH 2/7] Record base decision A in phase 0 document
+
+---
+ docs/BASE_DECISION.md | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/docs/BASE_DECISION.md b/docs/BASE_DECISION.md
+index 290c0e0..bd961b3 100644
+--- a/docs/BASE_DECISION.md
++++ b/docs/BASE_DECISION.md
+@@ -60,10 +60,10 @@ Status: **awaiting Devansh's decision (A / B / C in section 6)**. Written 2026-1
+ 
+ ## 6. Decision (to be filled in by Devansh)
+ 
+-- [ ] A — base on origin/main, port only the missing pieces (recommended)
++- [x] A — base on origin/main, port only the missing pieces (recommended)
+ - [ ] B — rebase the 7 local commits onto origin/main
+ - [ ] C — keep both branches separate
+ 
+-Chosen: **PENDING**.
++Chosen: **A — origin/main (`e60cd2a`)**, selected by Devansh in chat on 2026-10-31. Visibility into the 7 unpushed commits: Devansh pushes local main as a backup branch — `git push origin main:refs/heads/backup/local-main` — after which a commit-by-commit diff report of the 7 commits versus `e60cd2a` is produced before anything is ported.
+ 
+-Regardless of the choice: push local main to `backup/local-main` (or similar) first, so the 7 commits are safe and diffable. After the decision, `feature/stt-providers` will be cut from the chosen base, a diff report of the 7 commits versus the base will be produced if the backup branch is available, and S0 (`scripts/gnani_smoke.py`, `tests/data/README.md`) starts, stopping at CHECKPOINT S0.
++Executed for Phase 0: `feature/stt-providers` was cut from `e60cd2a`, carrying only this document as its first commit (the `phase0-base-decision` branch keeps the Phase 0 record). S0 (`scripts/gnani_smoke.py`, `tests/data/README.md`) starts on that branch only after the backup branch is pushed and the diff report is reviewed, and stops at CHECKPOINT S0.
+-- 
+2.47.3
+

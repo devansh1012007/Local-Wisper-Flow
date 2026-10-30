@@ -1,0 +1,644 @@
+From 723a314dd834cafd1584719379b9c77dc540714b Mon Sep 17 00:00:00 2001
+From: zai-agent <agent@z.ai>
+Date: Fri, 30 Oct 2026 20:25:24 +0000
+Subject: [PATCH 4/7] Add portable cloud STT primitives for WAV, multipart, and
+ clip splitting
+
+---
+ CMakeLists.txt                     |  9 +++
+ src/stt/cloud/ClipSplitter.cpp     | 61 +++++++++++++++++++
+ src/stt/cloud/ClipSplitter.h       | 13 ++++
+ src/stt/cloud/MultipartBuilder.cpp | 93 +++++++++++++++++++++++++++++
+ src/stt/cloud/MultipartBuilder.h   | 35 +++++++++++
+ src/stt/cloud/WavEncoder.cpp       | 60 +++++++++++++++++++
+ src/stt/cloud/WavEncoder.h         |  7 +++
+ tests/clip_splitter_test.cpp       | 76 ++++++++++++++++++++++++
+ tests/multipart_builder_test.cpp   | 95 ++++++++++++++++++++++++++++++
+ tests/wav_encoder_test.cpp         | 85 ++++++++++++++++++++++++++
+ 10 files changed, 534 insertions(+)
+ create mode 100644 src/stt/cloud/ClipSplitter.cpp
+ create mode 100644 src/stt/cloud/ClipSplitter.h
+ create mode 100644 src/stt/cloud/MultipartBuilder.cpp
+ create mode 100644 src/stt/cloud/MultipartBuilder.h
+ create mode 100644 src/stt/cloud/WavEncoder.cpp
+ create mode 100644 src/stt/cloud/WavEncoder.h
+ create mode 100644 tests/clip_splitter_test.cpp
+ create mode 100644 tests/multipart_builder_test.cpp
+ create mode 100644 tests/wav_encoder_test.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8ba9702..e391b08 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -177,6 +177,9 @@ add_executable(local-wisper-flow
+     src/audio/miniaudio_impl.cpp
+     src/audio/MiniaudioCapture.cpp
+     src/os/AppPaths.cpp
++    src/stt/cloud/WavEncoder.cpp
++    src/stt/cloud/MultipartBuilder.cpp
++    src/stt/cloud/ClipSplitter.cpp
+     src/stt/LocalWhisperProvider.cpp
+     src/llm/LocalLlamaProvider.cpp
+ )
+@@ -267,6 +270,9 @@ add_executable(lwf-tests
+     tests/preroll_test.cpp
+     tests/dictionary_test.cpp
+     tests/whisperfilter_test.cpp
++    tests/wav_encoder_test.cpp
++    tests/multipart_builder_test.cpp
++    tests/clip_splitter_test.cpp
+     src/core/ConfigManager.cpp
+     src/core/DictationFSM.cpp
+     src/core/DictationEngine.cpp
+@@ -277,6 +283,9 @@ add_executable(lwf-tests
+     src/core/PersonalDictionary.cpp
+     src/core/WhisperText.cpp
+     src/os/AppPaths.cpp
++    src/stt/cloud/WavEncoder.cpp
++    src/stt/cloud/MultipartBuilder.cpp
++    src/stt/cloud/ClipSplitter.cpp
+ )
+ target_include_directories(lwf-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+ target_link_libraries(lwf-tests PRIVATE doctest::doctest nlohmann_json::nlohmann_json)
+diff --git a/src/stt/cloud/ClipSplitter.cpp b/src/stt/cloud/ClipSplitter.cpp
+new file mode 100644
+index 0000000..a6cf05f
+--- /dev/null
++++ b/src/stt/cloud/ClipSplitter.cpp
+@@ -0,0 +1,61 @@
++#include "stt/cloud/ClipSplitter.h"
++
++#include <stdexcept>
++
++namespace {
++
++constexpr std::size_t kWindowSamples = 512;
++constexpr float kSilenceThreshold = 0.002f;
++constexpr std::size_t kBacktrackSeconds = 2;
++
++bool WindowIsSilent(const float* samples) {
++    for (std::size_t i = 0; i < kWindowSamples; ++i) {
++        if (samples[i] > kSilenceThreshold || samples[i] < -kSilenceThreshold) {
++            return false;
++        }
++    }
++    return true;
++}
++
++}  // namespace
++
++std::vector<AudioClip> SplitIntoClips(const std::vector<float>& audio_pcm,
++                                      std::uint32_t sample_rate, std::size_t max_clip_ms) {
++    if (sample_rate == 0) {
++        throw std::runtime_error("ClipSplitter: sample rate must be positive");
++    }
++    if (max_clip_ms == 0) {
++        throw std::runtime_error("ClipSplitter: max clip duration must be positive");
++    }
++    std::vector<AudioClip> clips;
++    const std::size_t total = audio_pcm.size();
++    if (total == 0) {
++        return clips;
++    }
++    const std::size_t limit = max_clip_ms * sample_rate / 1000;
++    const std::size_t backtrack = kBacktrackSeconds * sample_rate;
++    std::size_t begin = 0;
++    while (begin < total) {
++        const std::size_t end = begin + limit;
++        if (end >= total) {
++            clips.push_back({begin, total - begin});
++            break;
++        }
++        std::size_t cut = end;
++        std::size_t search_floor = end > backtrack ? end - backtrack : 0;
++        if (search_floor < begin) {
++            search_floor = begin;
++        }
++        for (std::size_t window_end = end / kWindowSamples * kWindowSamples;
++             window_end > search_floor && window_end > begin;
++             window_end -= kWindowSamples) {
++            if (WindowIsSilent(audio_pcm.data() + (window_end - kWindowSamples))) {
++                cut = window_end;
++                break;
++            }
++        }
++        clips.push_back({begin, cut - begin});
++        begin = cut;
++    }
++    return clips;
++}
+diff --git a/src/stt/cloud/ClipSplitter.h b/src/stt/cloud/ClipSplitter.h
+new file mode 100644
+index 0000000..45b4100
+--- /dev/null
++++ b/src/stt/cloud/ClipSplitter.h
+@@ -0,0 +1,13 @@
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++#include <vector>
++
++struct AudioClip {
++    std::size_t begin = 0;
++    std::size_t frames = 0;
++};
++
++std::vector<AudioClip> SplitIntoClips(const std::vector<float>& audio_pcm,
++                                      std::uint32_t sample_rate, std::size_t max_clip_ms);
+diff --git a/src/stt/cloud/MultipartBuilder.cpp b/src/stt/cloud/MultipartBuilder.cpp
+new file mode 100644
+index 0000000..8ba330b
+--- /dev/null
++++ b/src/stt/cloud/MultipartBuilder.cpp
+@@ -0,0 +1,93 @@
++#include "stt/cloud/MultipartBuilder.h"
++
++#include <stdexcept>
++#include <utility>
++
++namespace {
++
++bool ContainsLineBreak(const std::string& text) {
++    return text.find('\r') != std::string::npos || text.find('\n') != std::string::npos;
++}
++
++}  // namespace
++
++MultipartBuilder::MultipartBuilder(std::string boundary) : boundary_(std::move(boundary)) {
++    if (boundary_.empty() || boundary_.size() > 70) {
++        throw std::runtime_error("MultipartBuilder: boundary must be 1-70 characters");
++    }
++    if (ContainsLineBreak(boundary_)) {
++        throw std::runtime_error("MultipartBuilder: boundary must be a single line");
++    }
++    content_type_ = "multipart/form-data; boundary=" + boundary_;
++}
++
++void MultipartBuilder::AddField(const std::string& name, const std::string& value) {
++    ValidateHeaderToken(name);
++    ValidateValue(value);
++    Part part;
++    part.name = name;
++    part.payload.assign(value.begin(), value.end());
++    parts_.push_back(std::move(part));
++}
++
++void MultipartBuilder::AddFile(const std::string& name, const std::string& filename,
++                               const std::string& content_type,
++                               const std::vector<std::uint8_t>& data) {
++    ValidateHeaderToken(name);
++    ValidateHeaderToken(filename);
++    ValidateHeaderToken(content_type);
++    Part part;
++    part.name = name;
++    part.filename = filename;
++    part.content_type = content_type;
++    part.payload = data;
++    part.is_file = true;
++    parts_.push_back(std::move(part));
++}
++
++const std::string& MultipartBuilder::ContentType() const {
++    return content_type_;
++}
++
++std::vector<std::uint8_t> MultipartBuilder::Build() const {
++    std::vector<std::uint8_t> out;
++    const auto append_text = [&out](const std::string& text) {
++        out.insert(out.end(), text.begin(), text.end());
++    };
++    for (const Part& part : parts_) {
++        append_text("--" + boundary_ + "\r\n");
++        if (part.is_file) {
++            append_text("Content-Disposition: form-data; name=\"" + part.name + "\"; filename=\"" +
++                        part.filename + "\"\r\n");
++            append_text("Content-Type: " + part.content_type + "\r\n");
++        } else {
++            append_text("Content-Disposition: form-data; name=\"" + part.name + "\"\r\n");
++        }
++        append_text("\r\n");
++        out.insert(out.end(), part.payload.begin(), part.payload.end());
++        append_text("\r\n");
++    }
++    append_text("--" + boundary_ + "--\r\n");
++    return out;
++}
++
++void MultipartBuilder::ValidateHeaderToken(const std::string& text) const {
++    if (ContainsLineBreak(text)) {
++        throw std::runtime_error("MultipartBuilder: header tokens must be single-line");
++    }
++    if (text.find('"') != std::string::npos) {
++        throw std::runtime_error("MultipartBuilder: header tokens must not contain quotes");
++    }
++    if (text.find(boundary_) != std::string::npos) {
++        throw std::runtime_error("MultipartBuilder: header tokens must not contain the boundary");
++    }
++}
++
++void MultipartBuilder::ValidateValue(const std::string& text) const {
++    if (ContainsLineBreak(text)) {
++        throw std::runtime_error("MultipartBuilder: values must be single-line");
++    }
++    if (text.find(boundary_) != std::string::npos) {
++        throw std::runtime_error("MultipartBuilder: values must not contain the boundary");
++    }
++}
+diff --git a/src/stt/cloud/MultipartBuilder.h b/src/stt/cloud/MultipartBuilder.h
+new file mode 100644
+index 0000000..411a48c
+--- /dev/null
++++ b/src/stt/cloud/MultipartBuilder.h
+@@ -0,0 +1,35 @@
++#pragma once
++
++#include <cstdint>
++#include <string>
++#include <vector>
++
++class MultipartBuilder {
++public:
++    explicit MultipartBuilder(std::string boundary);
++
++    void AddField(const std::string& name, const std::string& value);
++
++    void AddFile(const std::string& name, const std::string& filename,
++                 const std::string& content_type, const std::vector<std::uint8_t>& data);
++
++    const std::string& ContentType() const;
++
++    std::vector<std::uint8_t> Build() const;
++
++private:
++    struct Part {
++        std::string name;
++        std::string filename;
++        std::string content_type;
++        std::vector<std::uint8_t> payload;
++        bool is_file = false;
++    };
++
++    void ValidateHeaderToken(const std::string& text) const;
++    void ValidateValue(const std::string& text) const;
++
++    std::string boundary_;
++    std::string content_type_;
++    std::vector<Part> parts_;
++};
+diff --git a/src/stt/cloud/WavEncoder.cpp b/src/stt/cloud/WavEncoder.cpp
+new file mode 100644
+index 0000000..b953b7f
+--- /dev/null
++++ b/src/stt/cloud/WavEncoder.cpp
+@@ -0,0 +1,60 @@
++#include "stt/cloud/WavEncoder.h"
++
++#include <algorithm>
++#include <cmath>
++#include <stdexcept>
++
++namespace {
++
++void AppendU16(std::vector<std::uint8_t>& out, std::uint16_t value) {
++    out.push_back(static_cast<std::uint8_t>(value & 0xFF));
++    out.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
++}
++
++void AppendU32(std::vector<std::uint8_t>& out, std::uint32_t value) {
++    out.push_back(static_cast<std::uint8_t>(value & 0xFF));
++    out.push_back(static_cast<std::uint8_t>((value >> 8) & 0xFF));
++    out.push_back(static_cast<std::uint8_t>((value >> 16) & 0xFF));
++    out.push_back(static_cast<std::uint8_t>((value >> 24) & 0xFF));
++}
++
++void AppendTag(std::vector<std::uint8_t>& out, const char* tag) {
++    out.insert(out.end(), tag, tag + 4);
++}
++
++std::int16_t FloatToPcm16(float sample) {
++    const float clamped = std::min(1.0f, std::max(-1.0f, sample));
++    return static_cast<std::int16_t>(std::lroundf(clamped * 32767.0f));
++}
++
++}  // namespace
++
++std::vector<std::uint8_t> EncodeWav16Mono(const std::vector<float>& audio_pcm,
++                                          std::uint32_t sample_rate) {
++    if (sample_rate == 0) {
++        throw std::runtime_error("WavEncoder: sample rate must be positive");
++    }
++    if (audio_pcm.size() > (0x7FFFFFFFull - 44ull) / 2ull) {
++        throw std::runtime_error("WavEncoder: audio too large for a RIFF file");
++    }
++    const std::size_t data_size = audio_pcm.size() * 2;
++    std::vector<std::uint8_t> out;
++    out.reserve(44 + data_size);
++    AppendTag(out, "RIFF");
++    AppendU32(out, static_cast<std::uint32_t>(36 + data_size));
++    AppendTag(out, "WAVE");
++    AppendTag(out, "fmt ");
++    AppendU32(out, 16);
++    AppendU16(out, 1);
++    AppendU16(out, 1);
++    AppendU32(out, sample_rate);
++    AppendU32(out, sample_rate * 2);
++    AppendU16(out, 2);
++    AppendU16(out, 16);
++    AppendTag(out, "data");
++    AppendU32(out, static_cast<std::uint32_t>(data_size));
++    for (float sample : audio_pcm) {
++        AppendU16(out, static_cast<std::uint16_t>(FloatToPcm16(sample)));
++    }
++    return out;
++}
+diff --git a/src/stt/cloud/WavEncoder.h b/src/stt/cloud/WavEncoder.h
+new file mode 100644
+index 0000000..042d129
+--- /dev/null
++++ b/src/stt/cloud/WavEncoder.h
+@@ -0,0 +1,7 @@
++#pragma once
++
++#include <cstdint>
++#include <vector>
++
++std::vector<std::uint8_t> EncodeWav16Mono(const std::vector<float>& audio_pcm,
++                                          std::uint32_t sample_rate);
+diff --git a/tests/clip_splitter_test.cpp b/tests/clip_splitter_test.cpp
+new file mode 100644
+index 0000000..6d024b0
+--- /dev/null
++++ b/tests/clip_splitter_test.cpp
+@@ -0,0 +1,76 @@
++#include <doctest/doctest.h>
++
++#include "stt/cloud/ClipSplitter.h"
++
++#include <cstddef>
++#include <stdexcept>
++#include <vector>
++
++namespace {
++
++std::vector<float> Speech(std::size_t samples) {
++    return std::vector<float>(samples, 0.3f);
++}
++
++std::vector<float> SilentSpeechMix(std::size_t total_samples, std::size_t silence_begin,
++                                   std::size_t silence_frames) {
++    std::vector<float> pcm = Speech(total_samples);
++    for (std::size_t i = 0; i < silence_frames && silence_begin + i < total_samples; ++i) {
++        pcm[silence_begin + i] = 0.0001f;
++    }
++    return pcm;
++}
++
++}  // namespace
++
++TEST_CASE("clip splitter returns one clip for short audio") {
++    const std::vector<float> pcm = Speech(80000);
++    const std::vector<AudioClip> clips = SplitIntoClips(pcm, 16000, 29500);
++    REQUIRE(clips.size() == 1);
++    CHECK(clips[0].begin == 0);
++    CHECK(clips[0].frames == 80000);
++}
++
++TEST_CASE("clip splitter hard cuts continuous audio at the limit") {
++    const std::vector<float> pcm = Speech(1040000);
++    const std::vector<AudioClip> clips = SplitIntoClips(pcm, 16000, 29500);
++    REQUIRE(clips.size() == 3);
++    CHECK(clips[0].begin == 0);
++    CHECK(clips[0].frames == 472000);
++    CHECK(clips[1].begin == 472000);
++    CHECK(clips[1].frames == 472000);
++    CHECK(clips[2].begin == 944000);
++    CHECK(clips[2].frames == 96000);
++}
++
++TEST_CASE("clip splitter prefers silence near the boundary") {
++    const std::vector<float> pcm = SilentSpeechMix(640000, 448000, 512);
++    const std::vector<AudioClip> clips = SplitIntoClips(pcm, 16000, 29500);
++    REQUIRE(clips.size() == 2);
++    CHECK(clips[0].begin == 0);
++    CHECK(clips[0].frames == 448512);
++    CHECK(clips[1].begin == 448512);
++    CHECK(clips[1].frames == 191488);
++}
++
++TEST_CASE("clip splitter ignores silence far from the boundary") {
++    const std::vector<float> pcm = SilentSpeechMix(640000, 320000, 512);
++    const std::vector<AudioClip> clips = SplitIntoClips(pcm, 16000, 29500);
++    REQUIRE(clips.size() == 2);
++    CHECK(clips[0].begin == 0);
++    CHECK(clips[0].frames == 472000);
++    CHECK(clips[1].begin == 472000);
++    CHECK(clips[1].frames == 168000);
++}
++
++TEST_CASE("clip splitter returns no clips for empty audio") {
++    const std::vector<float> pcm;
++    const std::vector<AudioClip> clips = SplitIntoClips(pcm, 16000, 29500);
++    CHECK(clips.empty());
++}
++
++TEST_CASE("clip splitter rejects zero limits") {
++    const std::vector<float> pcm = Speech(1000);
++    CHECK_THROWS_AS(SplitIntoClips(pcm, 0, 29500), std::runtime_error);
++    CHECK_THROWS_AS(SplitIntoClips(pcm, 16000, 0), std::runtime_error);
++}
+diff --git a/tests/multipart_builder_test.cpp b/tests/multipart_builder_test.cpp
+new file mode 100644
+index 0000000..e5544a9
+--- /dev/null
++++ b/tests/multipart_builder_test.cpp
+@@ -0,0 +1,95 @@
++#include <doctest/doctest.h>
++
++#include "stt/cloud/MultipartBuilder.h"
++
++#include <algorithm>
++#include <cstddef>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++namespace {
++
++std::string AsString(const std::vector<std::uint8_t>& bytes) {
++    return std::string(bytes.begin(), bytes.end());
++}
++
++std::size_t Find(const std::vector<std::uint8_t>& haystack, const std::string& needle,
++                 std::size_t from = 0) {
++    const auto it = std::search(haystack.begin() + static_cast<std::ptrdiff_t>(from),
++                                haystack.end(), needle.begin(), needle.end());
++    return it == haystack.end() ? std::string::npos
++                                : static_cast<std::size_t>(it - haystack.begin());
++}
++
++const std::vector<std::uint8_t> kBinaryPayload{0x01, 0x00, 0xFF, 0x0D, 0x0A, 0x00, 0xFE, 0x7F};
++const std::string kTerminator = "\r\n--BOUND--\r\n";
++
++}  // namespace
++
++TEST_CASE("multipart builder emits fields in canonical form") {
++    MultipartBuilder builder("BOUND");
++    builder.AddField("model", "prisma-v3.0");
++    const std::vector<std::uint8_t> body = builder.Build();
++    CHECK(AsString(body) ==
++          "--BOUND\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nprisma-v3.0\r\n"
++          "--BOUND--\r\n");
++}
++
++TEST_CASE("multipart builder emits file parts with content type and payload") {
++    MultipartBuilder builder("BOUND");
++    builder.AddField("language", "indic-auto");
++    builder.AddFile("audio", "audio.wav", "audio/wav", kBinaryPayload);
++    const std::vector<std::uint8_t> body = builder.Build();
++    const std::string expected_field =
++        "--BOUND\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\nindic-auto\r\n";
++    const std::string expected_header =
++        "--BOUND\r\nContent-Disposition: form-data; name=\"audio\"; filename=\"audio.wav\"\r\n"
++        "Content-Type: audio/wav\r\n\r\n";
++    const std::size_t field_offset = Find(body, expected_field);
++    const std::size_t header_offset = Find(body, expected_header);
++    REQUIRE(field_offset == 0);
++    REQUIRE(header_offset == expected_field.size());
++    const std::size_t payload_offset = header_offset + expected_header.size();
++    REQUIRE(body.size() == payload_offset + kBinaryPayload.size() + kTerminator.size());
++    for (std::size_t i = 0; i < kBinaryPayload.size(); ++i) {
++        CHECK(body[payload_offset + i] == kBinaryPayload[i]);
++    }
++    CHECK(AsString(std::vector<std::uint8_t>(body.end() - static_cast<std::ptrdiff_t>(kTerminator.size()),
++                                            body.end())) == kTerminator);
++}
++
++TEST_CASE("multipart builder keeps binary payloads byte exact") {
++    MultipartBuilder builder("BOUND");
++    builder.AddFile("audio", "clip.wav", "audio/wav", kBinaryPayload);
++    const std::vector<std::uint8_t> body = builder.Build();
++    const std::string header =
++        "--BOUND\r\nContent-Disposition: form-data; name=\"audio\"; filename=\"clip.wav\"\r\n"
++        "Content-Type: audio/wav\r\n\r\n";
++    const std::size_t payload_offset = Find(body, header) + header.size();
++    for (std::size_t i = 0; i < kBinaryPayload.size(); ++i) {
++        CHECK(body[payload_offset + i] == kBinaryPayload[i]);
++    }
++}
++
++TEST_CASE("multipart builder rejects header and value injection") {
++    CHECK_THROWS_AS(MultipartBuilder builder(""), std::runtime_error);
++    CHECK_THROWS_AS(MultipartBuilder builder("bad\r\nboundary"), std::runtime_error);
++    MultipartBuilder builder("BOUND");
++    CHECK_THROWS_AS(builder.AddField("name\"; evil", "v"), std::runtime_error);
++    CHECK_THROWS_AS(builder.AddField("model", "v\r\nX-Evil: 1"), std::runtime_error);
++    CHECK_THROWS_AS(builder.AddField("model", "v--BOUND--"), std::runtime_error);
++    CHECK_THROWS_AS(builder.AddFile("audio", "a.wav\r\nEvil", "audio/wav", {}), std::runtime_error);
++    CHECK_THROWS_AS(builder.AddFile("audio", "a.wav", "audio/wav \"x\"", {}), std::runtime_error);
++}
++
++TEST_CASE("multipart builder with no parts emits only the terminator") {
++    MultipartBuilder builder("BOUND");
++    const std::vector<std::uint8_t> body = builder.Build();
++    CHECK(AsString(body) == "--BOUND--\r\n");
++}
++
++TEST_CASE("multipart builder content type carries the boundary") {
++    MultipartBuilder builder("lwf-abc123");
++    CHECK(builder.ContentType() == "multipart/form-data; boundary=lwf-abc123");
++}
+diff --git a/tests/wav_encoder_test.cpp b/tests/wav_encoder_test.cpp
+new file mode 100644
+index 0000000..15fe706
+--- /dev/null
++++ b/tests/wav_encoder_test.cpp
+@@ -0,0 +1,85 @@
++#include <doctest/doctest.h>
++
++#include "stt/cloud/WavEncoder.h"
++
++#include <cstdint>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++namespace {
++
++std::uint16_t ReadU16(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
++    return static_cast<std::uint16_t>(static_cast<std::uint16_t>(bytes[offset]) |
++                                      (static_cast<std::uint16_t>(bytes[offset + 1]) << 8));
++}
++
++std::uint32_t ReadU32(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
++    return static_cast<std::uint32_t>(bytes[offset]) |
++           (static_cast<std::uint32_t>(bytes[offset + 1]) << 8) |
++           (static_cast<std::uint32_t>(bytes[offset + 2]) << 16) |
++           (static_cast<std::uint32_t>(bytes[offset + 3]) << 24);
++}
++
++std::string TagAt(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
++    return std::string(bytes.begin() + static_cast<std::ptrdiff_t>(offset),
++                       bytes.begin() + static_cast<std::ptrdiff_t>(offset + 4));
++}
++
++std::int16_t PcmAt(const std::vector<std::uint8_t>& wav, std::size_t sample_index) {
++    return static_cast<std::int16_t>(ReadU16(wav, 44 + sample_index * 2));
++}
++
++}  // namespace
++
++TEST_CASE("wav encoder writes a canonical 44 byte header") {
++    const std::vector<float> pcm{0.0f, 0.5f, -0.5f, 1.0f};
++    const std::vector<std::uint8_t> wav = EncodeWav16Mono(pcm, 16000);
++    REQUIRE(wav.size() == 52);
++    CHECK(TagAt(wav, 0) == "RIFF");
++    CHECK(TagAt(wav, 8) == "WAVE");
++    CHECK(TagAt(wav, 12) == "fmt ");
++    CHECK(TagAt(wav, 36) == "data");
++    CHECK(ReadU32(wav, 4) == 44);
++    CHECK(ReadU32(wav, 16) == 16);
++    CHECK(ReadU16(wav, 20) == 1);
++    CHECK(ReadU16(wav, 22) == 1);
++    CHECK(ReadU32(wav, 24) == 16000);
++    CHECK(ReadU32(wav, 28) == 32000);
++    CHECK(ReadU16(wav, 32) == 2);
++    CHECK(ReadU16(wav, 34) == 16);
++    CHECK(ReadU32(wav, 40) == 8);
++}
++
++TEST_CASE("wav encoder roundtrips sample values") {
++    const std::vector<float> pcm{0.0f, 0.5f, -0.5f, 1.0f, -1.0f, 0.25f};
++    const std::vector<std::uint8_t> wav = EncodeWav16Mono(pcm, 16000);
++    CHECK(PcmAt(wav, 0) == 0);
++    CHECK(PcmAt(wav, 1) == 16384);
++    CHECK(PcmAt(wav, 2) == -16384);
++    CHECK(PcmAt(wav, 3) == 32767);
++    CHECK(PcmAt(wav, 4) == -32767);
++    CHECK(PcmAt(wav, 5) == 8192);
++}
++
++TEST_CASE("wav encoder clamps out of range samples") {
++    const std::vector<float> pcm{2.0f, -2.0f, 100.0f, -100.0f};
++    const std::vector<std::uint8_t> wav = EncodeWav16Mono(pcm, 16000);
++    CHECK(PcmAt(wav, 0) == 32767);
++    CHECK(PcmAt(wav, 1) == -32767);
++    CHECK(PcmAt(wav, 2) == 32767);
++    CHECK(PcmAt(wav, 3) == -32767);
++}
++
++TEST_CASE("wav encoder accepts empty audio") {
++    const std::vector<float> pcm;
++    const std::vector<std::uint8_t> wav = EncodeWav16Mono(pcm, 16000);
++    CHECK(wav.size() == 44);
++    CHECK(ReadU32(wav, 4) == 36);
++    CHECK(ReadU32(wav, 40) == 0);
++}
++
++TEST_CASE("wav encoder rejects a zero sample rate") {
++    const std::vector<float> pcm{0.5f};
++    CHECK_THROWS_AS(EncodeWav16Mono(pcm, 0), std::runtime_error);
++}
+-- 
+2.47.3
+
