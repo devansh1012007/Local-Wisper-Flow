@@ -170,6 +170,7 @@ add_executable(local-wisper-flow
     src/core/ConfigManager.cpp
     src/core/DictationFSM.cpp
     src/core/ProviderRouter.cpp
+    src/core/SttRouter.cpp
     src/core/TransformManager.cpp
     src/core/Utf8.cpp
     src/core/PersonalDictionary.cpp
@@ -182,6 +183,7 @@ add_executable(local-wisper-flow
     src/stt/cloud/ClipSplitter.cpp
     src/stt/cloud/GnaniRequest.cpp
     src/stt/cloud/GnaniResponse.cpp
+    src/stt/cloud/GnaniProvider.cpp
     src/stt/LocalWhisperProvider.cpp
     src/llm/LocalLlamaProvider.cpp
     src/core/DictationEngine.cpp
@@ -279,11 +281,14 @@ add_executable(lwf-tests
     tests/clip_splitter_test.cpp
     tests/gnani_request_test.cpp
     tests/gnani_response_test.cpp
+    tests/gnani_provider_test.cpp
+    tests/stt_router_test.cpp
     src/core/ConfigManager.cpp
     src/core/DictationFSM.cpp
     src/core/DictationEngine.cpp
     src/core/DictationCleanup.cpp
     src/core/ProviderRouter.cpp
+    src/core/SttRouter.cpp
     src/core/TransformManager.cpp
     src/core/Utf8.cpp
     src/core/PersonalDictionary.cpp
@@ -294,6 +299,7 @@ add_executable(lwf-tests
     src/stt/cloud/ClipSplitter.cpp
     src/stt/cloud/GnaniRequest.cpp
     src/stt/cloud/GnaniResponse.cpp
+    src/stt/cloud/GnaniProvider.cpp
 )
 target_include_directories(lwf-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(lwf-tests PRIVATE doctest::doctest nlohmann_json::nlohmann_json)

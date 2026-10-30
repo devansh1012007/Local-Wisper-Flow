@@ -19,6 +19,32 @@ enum class SttErrorCategory {
     Unknown,
 };
 
+inline const char* ToString(SttErrorCategory category) {
+    switch (category) {
+        case SttErrorCategory::None:
+            return "none";
+        case SttErrorCategory::Auth:
+            return "auth";
+        case SttErrorCategory::RateLimited:
+            return "rate_limited";
+        case SttErrorCategory::Timeout:
+            return "timeout";
+        case SttErrorCategory::Network:
+            return "network";
+        case SttErrorCategory::InvalidRequest:
+            return "invalid_request";
+        case SttErrorCategory::PayloadTooLarge:
+            return "payload_too_large";
+        case SttErrorCategory::Server:
+            return "server";
+        case SttErrorCategory::Cancelled:
+            return "cancelled";
+        case SttErrorCategory::Unknown:
+            break;
+    }
+    return "unknown";
+}
+
 struct SttAttemptStats {
     std::string provider;
     std::string request_id;
