@@ -180,6 +180,8 @@ add_executable(local-wisper-flow
     src/stt/cloud/WavEncoder.cpp
     src/stt/cloud/MultipartBuilder.cpp
     src/stt/cloud/ClipSplitter.cpp
+    src/stt/cloud/GnaniRequest.cpp
+    src/stt/cloud/GnaniResponse.cpp
     src/stt/LocalWhisperProvider.cpp
     src/llm/LocalLlamaProvider.cpp
     src/core/DictationEngine.cpp
@@ -275,6 +277,8 @@ add_executable(lwf-tests
     tests/wav_encoder_test.cpp
     tests/multipart_builder_test.cpp
     tests/clip_splitter_test.cpp
+    tests/gnani_request_test.cpp
+    tests/gnani_response_test.cpp
     src/core/ConfigManager.cpp
     src/core/DictationFSM.cpp
     src/core/DictationEngine.cpp
@@ -288,6 +292,8 @@ add_executable(lwf-tests
     src/stt/cloud/WavEncoder.cpp
     src/stt/cloud/MultipartBuilder.cpp
     src/stt/cloud/ClipSplitter.cpp
+    src/stt/cloud/GnaniRequest.cpp
+    src/stt/cloud/GnaniResponse.cpp
 )
 target_include_directories(lwf-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(lwf-tests PRIVATE doctest::doctest nlohmann_json::nlohmann_json)
