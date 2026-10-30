@@ -107,6 +107,11 @@ shortcut works.
 | `whisper_disable_temp_fallback` | `false` | true kills temperature-fallback latency spikes |
 | `avoid_altgr` | `true` | Pass AltGr (Right Alt + Ctrl) through untouched |
 | `dictionary_path` | `dictionary.json` | Personal dictionary (words + replacements) |
+| `stt_provider` | `local` | `local` keeps Whisper on-device; `gnani` routes through cloud STT |
+| `stt_consent_accepted` | `false` | Consent gate for cloud STT; cloud stays off until accepted |
+| `stt_language` | `indic-auto` | Gnani language code (`indic-auto` or a comma list) |
+| `stt_timeout_ms` | `15000` | Per-request cloud timeout (failures fall back to local) |
+| `stt_max_clips` | `40` | Cloud request budget per dictation (30 s clips) |
 
 Out-of-range values are clamped with a warning; wrong-typed optional keys fall back
 to their defaults instead of crashing.

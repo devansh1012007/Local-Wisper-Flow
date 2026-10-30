@@ -16,6 +16,7 @@ models/*.wav
 _deps-cache/*.tar.gz
 tests/data/*
 !tests/data/README.md
+__pycache__/
 _deps-src/
 imgui.ini
 scripts/*retry*

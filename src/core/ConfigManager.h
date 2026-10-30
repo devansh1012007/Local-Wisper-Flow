@@ -36,6 +36,11 @@ public:
     bool WhisperDisableTempFallback();
     bool AvoidAltGr();
     std::string DictionaryPath();
+    std::string SttProvider();
+    bool SttConsentAccepted();
+    std::string SttLanguage();
+    int SttTimeoutMs();
+    int SttMaxClips();
 
     const std::vector<std::string>& Warnings() const;
 
@@ -64,6 +69,11 @@ private:
         bool whisper_disable_temp_fallback = false;
         bool avoid_altgr = true;
         std::string dictionary_path = "dictionary.json";
+        std::string stt_provider = "local";
+        bool stt_consent_accepted = false;
+        std::string stt_language = "indic-auto";
+        int stt_timeout_ms = 15000;
+        int stt_max_clips = 40;
     };
 
     Data ParseFile(const std::string& path);

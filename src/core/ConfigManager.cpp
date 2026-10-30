@@ -33,6 +33,11 @@ constexpr const char* kWhisperBeamSizeKey = "whisper_beam_size";
 constexpr const char* kWhisperDisableTempFallbackKey = "whisper_disable_temp_fallback";
 constexpr const char* kAvoidAltGrKey = "avoid_altgr";
 constexpr const char* kDictionaryPathKey = "dictionary_path";
+constexpr const char* kSttProviderKey = "stt_provider";
+constexpr const char* kSttConsentAcceptedKey = "stt_consent_accepted";
+constexpr const char* kSttLanguageKey = "stt_language";
+constexpr const char* kSttTimeoutMsKey = "stt_timeout_ms";
+constexpr const char* kSttMaxClipsKey = "stt_max_clips";
 
 }  // namespace
 
@@ -162,6 +167,31 @@ std::string ConfigManager::DictionaryPath() {
     return data_.dictionary_path;
 }
 
+std::string ConfigManager::SttProvider() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return data_.stt_provider;
+}
+
+bool ConfigManager::SttConsentAccepted() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return data_.stt_consent_accepted;
+}
+
+std::string ConfigManager::SttLanguage() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return data_.stt_language;
+}
+
+int ConfigManager::SttTimeoutMs() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return data_.stt_timeout_ms;
+}
+
+int ConfigManager::SttMaxClips() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return data_.stt_max_clips;
+}
+
 const std::vector<std::string>& ConfigManager::Warnings() const {
     return warnings_;
 }
@@ -256,6 +286,11 @@ ConfigManager::Data ConfigManager::ParseFile(const std::string& path) {
     read_bool(kWhisperDisableTempFallbackKey, data.whisper_disable_temp_fallback);
     read_bool(kAvoidAltGrKey, data.avoid_altgr);
     read_string(kDictionaryPathKey, data.dictionary_path);
+    read_string(kSttProviderKey, data.stt_provider);
+    read_bool(kSttConsentAcceptedKey, data.stt_consent_accepted);
+    read_string(kSttLanguageKey, data.stt_language);
+    read_int(kSttTimeoutMsKey, data.stt_timeout_ms);
+    read_int(kSttMaxClipsKey, data.stt_max_clips);
 
     if (data.vad_threshold < 0.01f || data.vad_threshold > 0.99f) {
         warnings_.push_back("ConfigManager: 'vad_threshold' outside [0.01, 0.99], clamped");
@@ -273,6 +308,8 @@ ConfigManager::Data ConfigManager::ParseFile(const std::string& path) {
     clamp_int(kInjectRestoreDelayMsKey, data.inject_restore_delay_ms, 50, 5000);
     clamp_int(kWhisperThreadsKey, data.whisper_threads, 1, 16);
     clamp_int(kWhisperBeamSizeKey, data.whisper_beam_size, 1, 12);
+    clamp_int(kSttTimeoutMsKey, data.stt_timeout_ms, 1000, 60000);
+    clamp_int(kSttMaxClipsKey, data.stt_max_clips, 1, 200);
 
     for (const std::string& warning : warnings_) {
         std::cerr << "[cfg] " << warning << '\n';

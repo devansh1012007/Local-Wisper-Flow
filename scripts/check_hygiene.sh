@@ -29,6 +29,27 @@ if [ -n "$violations" ]; then
     status=1
 fi
 
+violations=$(grep -rn --include='*.cpp' --include='*.h' -E '#include[[:space:]]*<winhttp\.h>|WinHttpOpen\(|WinHttpSendRequest\(' src/ | grep -v '^src/os/WindowsHttpClient\.' || true)
+if [ -n "$violations" ]; then
+    echo "FAIL: WinHTTP usage outside src/os/WindowsHttpClient.*:"
+    echo "$violations"
+    status=1
+fi
+
+violations=$(grep -rn --include='*.cpp' --include='*.h' -E 'api\.vachana\.ai' src/ | grep -v '^src/stt/cloud/' || true)
+if [ -n "$violations" ]; then
+    echo "FAIL: cloud endpoints outside src/stt/cloud/:"
+    echo "$violations"
+    status=1
+fi
+
+violations=$(grep -rn --include='*.py' -E 'api\.vachana\.ai' scripts/ server/ | grep -v '^scripts/gnani_smoke\.py' || true)
+if [ -n "$violations" ]; then
+    echo "FAIL: cloud endpoints outside the smoke script:"
+    echo "$violations"
+    status=1
+fi
+
 if [ "$status" -eq 0 ]; then
     echo "hygiene: OK"
 fi

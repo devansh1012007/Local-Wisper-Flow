@@ -206,9 +206,10 @@ if(WIN32)
     target_sources(local-wisper-flow PRIVATE
         src/os/WindowsClipboardInjector.cpp
         src/os/WindowsHotkeyListener.cpp
+        src/os/WindowsHttpClient.cpp
         src/os/WindowsTextInjector.cpp
     )
-    target_link_libraries(local-wisper-flow PRIVATE user32 shell32)
+    target_link_libraries(local-wisper-flow PRIVATE user32 shell32 winhttp)
 
     find_package(OpenGL REQUIRED)
 

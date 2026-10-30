@@ -4,10 +4,14 @@
 #include "core/DictationFSM.h"
 #include "core/EngineEvent.h"
 #include "core/IInferenceProvider.h"
+#include "core/ISttProvider.h"
 #include "core/ProviderRouter.h"
+#include "core/SttRouter.h"
 #include "llm/LocalLlamaProvider.h"
 #include "os/AppPaths.h"
 #include "stt/LocalWhisperProvider.h"
+#include "stt/cloud/GnaniContract.h"
+#include "stt/cloud/GnaniProvider.h"
 #ifdef LWF_HAVE_GRPC
 #include "stt/GrpcInferenceProvider.h"
 #endif
@@ -19,11 +23,13 @@
 #include "audio/MiniaudioCapture.h"
 #include "os/WindowsClipboardInjector.h"
 #include "os/WindowsHotkeyListener.h"
+#include "os/WindowsHttpClient.h"
 #include "ui/MainWindow.h"
 #endif
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -139,7 +145,56 @@ int RunWindowsApp() {
             use_remote = false;
 #endif
         }
-        ProviderRouter router(std::move(local_stt), std::move(remote_provider), use_remote);
+        auto local_chain = std::make_unique<ProviderRouter>(std::move(local_stt),
+                                                            std::move(remote_provider), use_remote);
+
+#ifdef _WIN32
+        WindowsHttpClient http_client;
+#endif
+        std::unique_ptr<ISttProvider> cloud_provider;
+        const std::string stt_provider_name = config.SttProvider();
+        const bool stt_consent = config.SttConsentAccepted();
+        if (stt_provider_name != "local" && stt_provider_name != "gnani") {
+            std::cerr << "[stt] unknown stt_provider '" << stt_provider_name
+                      << "', using local" << '\n';
+        }
+        if (stt_provider_name == "gnani" && !stt_consent) {
+            std::cerr << "[stt] stt_provider=gnani ignored: stt_consent_accepted is false"
+                      << '\n';
+        }
+        const char* gnani_key_env = std::getenv(GnaniContract::kApiKeyEnv);
+        const std::string gnani_key = gnani_key_env != nullptr ? gnani_key_env : "";
+        if (stt_provider_name == "gnani" && stt_consent && gnani_key.empty()) {
+            std::cerr << "[stt] stt_provider=gnani ignored: " << GnaniContract::kApiKeyEnv
+                      << " is not set" << '\n';
+        }
+#ifdef _WIN32
+        if (stt_provider_name == "gnani" && stt_consent && !gnani_key.empty()) {
+            GnaniProviderSettings gnani_settings;
+            gnani_settings.api_key_id = gnani_key;
+            gnani_settings.language = config.SttLanguage();
+            gnani_settings.timeout_ms = config.SttTimeoutMs();
+            gnani_settings.max_clips = static_cast<std::size_t>(config.SttMaxClips());
+            gnani_settings.keyterms = dictionary.Words();
+            cloud_provider = std::make_unique<GnaniProvider>(http_client, gnani_settings);
+            std::cout << "[stt] cloud provider gnani enabled (language "
+                      << config.SttLanguage() << ")" << std::endl;
+        }
+#else
+        if (stt_provider_name == "gnani" && stt_consent && !gnani_key.empty()) {
+            std::cerr << "[stt] stt_provider=gnani ignored: cloud providers require a Windows build"
+                      << '\n';
+        }
+#endif
+
+        SttRoutingConfig stt_routing;
+        stt_routing.provider = stt_provider_name;
+        stt_routing.consent_accepted = stt_consent;
+        stt_routing.api_key_source = [] {
+            const char* key = std::getenv(GnaniContract::kApiKeyEnv);
+            return key != nullptr ? std::string(key) : std::string();
+        };
+        SttRouter router(std::move(local_chain), std::move(cloud_provider), stt_routing);
         RouterLlm router_llm(router);
 
         CleanupSettings cleanup_settings;
@@ -185,6 +240,7 @@ int RunWindowsApp() {
         WindowsHotkeyListener hotkey(hotkey_code, config.AvoidAltGr());
         std::atomic<bool> quit{false};
         std::atomic<bool> engine_alive{true};
+        router.SetCancelCheck([&quit] { return quit.load(); });
 
         std::thread engine_thread([&] {
             try {
@@ -247,7 +303,10 @@ int main() {
                   << " vad_threshold=" << config.VadThreshold()
                   << " llm_model=" << config.LlmModelPath()
                   << " use_remote=" << (config.UseRemote() ? "true" : "false")
-                  << " remote_endpoint=" << config.RemoteEndpoint() << std::endl;
+                  << " remote_endpoint=" << config.RemoteEndpoint()
+                  << " stt_provider=" << config.SttProvider()
+                  << " stt_consent=" << (config.SttConsentAccepted() ? "true" : "false")
+                  << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Fatal: " << e.what() << std::endl;
         return 1;

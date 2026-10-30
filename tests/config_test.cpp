@@ -157,6 +157,59 @@ TEST_CASE("config vad threshold out of range is clamped") {
     CHECK(config.VadThreshold() == doctest::Approx(0.99f));
 }
 
+TEST_CASE("config stt keys default to local-only operation") {
+    WriteConfig(R"({
+        "hotkey_code": 165,
+        "whisper_model_path": "ggml-base.en.bin",
+        "vad_threshold": 0.6
+    })");
+    ConfigManager config(kConfigPath);
+    CHECK(config.SttProvider() == "local");
+    CHECK(config.SttConsentAccepted() == false);
+    CHECK(config.SttLanguage() == "indic-auto");
+    CHECK(config.SttTimeoutMs() == 15000);
+    CHECK(config.SttMaxClips() == 40);
+}
+
+TEST_CASE("config stt cloud keys load when present") {
+    WriteConfig(R"({
+        "hotkey_code": 165,
+        "whisper_model_path": "ggml-base.en.bin",
+        "vad_threshold": 0.6,
+        "stt_provider": "gnani",
+        "stt_consent_accepted": true,
+        "stt_language": "kn,hi",
+        "stt_timeout_ms": 25000,
+        "stt_max_clips": 12
+    })");
+    ConfigManager config(kConfigPath);
+    CHECK(config.SttProvider() == "gnani");
+    CHECK(config.SttConsentAccepted() == true);
+    CHECK(config.SttLanguage() == "kn,hi");
+    CHECK(config.SttTimeoutMs() == 25000);
+    CHECK(config.SttMaxClips() == 12);
+}
+
+TEST_CASE("config stt keys tolerate wrong types and clamp ranges") {
+    WriteConfig(R"({
+        "hotkey_code": 165,
+        "whisper_model_path": "ggml-base.en.bin",
+        "vad_threshold": 0.6,
+        "stt_provider": 7,
+        "stt_consent_accepted": "yes",
+        "stt_language": ["kn"],
+        "stt_timeout_ms": 10,
+        "stt_max_clips": 9999
+    })");
+    ConfigManager config(kConfigPath);
+    CHECK(config.SttProvider() == "local");
+    CHECK(config.SttConsentAccepted() == false);
+    CHECK(config.SttLanguage() == "indic-auto");
+    CHECK(config.SttTimeoutMs() == 1000);
+    CHECK(config.SttMaxClips() == 200);
+    CHECK(config.Warnings().size() >= 4);
+}
+
 TEST_CASE("config missing required key fails loudly") {
     WriteConfig(R"({
         "hotkey_code": 165
