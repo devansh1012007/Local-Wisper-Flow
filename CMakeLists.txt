@@ -6,7 +6,7 @@ if(WIN32)
     add_compile_definitions(_USE_MATH_DEFINES)
 endif()
 
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5.0 CACHE STRING
     "Compat shim: vendored deps declare pre-3.5 minimums which CMake >= 4 rejects")
 
 set(CMAKE_CXX_STANDARD 17)
@@ -179,6 +179,8 @@ add_executable(local-wisper-flow
     src/os/AppPaths.cpp
     src/stt/LocalWhisperProvider.cpp
     src/llm/LocalLlamaProvider.cpp
+    src/core/DictationEngine.cpp
+    src/core/DictationCleanup.cpp
 )
 
 target_include_directories(local-wisper-flow PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

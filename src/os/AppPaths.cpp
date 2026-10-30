@@ -159,12 +159,12 @@ std::string ResolveAsset(const std::string& configured_path) {
     if (absolute) {
         return configured_path;
     }
-    if (FileExists(configured_path)) {
-        return configured_path;
-    }
     const std::string in_exe = JoinPath(ExeDir(), configured_path);
     if (FileExists(in_exe)) {
         return in_exe;
+    }
+    if (FileExists(configured_path)) {
+        return configured_path;
     }
     const std::string in_data = JoinPath(DataDir(), configured_path);
     if (FileExists(in_data)) {

@@ -97,6 +97,10 @@ void MiniaudioCapture::Stop() {
     }
     capturing_.store(false, std::memory_order_relaxed);
     level_.store(0.0f, std::memory_order_relaxed);
+    if (device_running_.load(std::memory_order_relaxed)) {
+        ma_device_stop(&device_);
+        device_running_.store(false, std::memory_order_relaxed);
+    }
 }
 
 float MiniaudioCapture::AudioLevel() const noexcept {

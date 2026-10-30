@@ -192,8 +192,7 @@ void DictationEngine::TranscribeAndInject(const EngineEvent& release_event) {
 
     std::vector<float> pcm = audio_.GetRecordedAudio();
     if (!gate_.SpeechDetected()) {
-        std::cout << "[engine] nothing heard" << std::endl;
-        fsm_.TriggerEvent(Trigger::SST_FAILED);
+        FailToIdle(EngineErrorCode::SttFailed, "no speech detected");
         return;
     }
     const std::pair<std::size_t, std::size_t> interval = gate_.SpeechInterval(pcm.size());
