@@ -14,8 +14,7 @@ models/*.wav
 *.swo
 *.env
 _deps-cache/*.tar.gz
-tests/data/*
-!tests/data/README.md
+tests/data/
 _deps-src/
 imgui.ini
 scripts/*retry*
