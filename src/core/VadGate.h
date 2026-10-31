@@ -83,7 +83,7 @@ private:
             return vad_->IsSpeech(std::vector<float>(chunk, chunk + count));
         }
         for (std::size_t i = 0; i < count; ++i) {
-            if (chunk[i] > 0.002f || chunk[i] < -0.002f) {
+            if (chunk[i] > 0.0001f || chunk[i] < -0.0001f) {
                 return true;
             }
         }
