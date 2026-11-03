@@ -1,31 +1,50 @@
-#!/bin/sh
-# Fails when source hygiene rules are broken.
-# 1. windows.h outside src/os/*.cpp
-# 2. comments in C++ sources (the closing "// namespace" marker is allowed)
-# 3. TODO/FIXME markers left in code
-
+#!/usr/bin/env sh
 set -eu
+cd "$(dirname "$0")/.."
 
 status=0
+report() {
+    echo "HYGIENE FAIL: $1"
+    status=1
+}
 
-violations=$(grep -rn --include='*.cpp' --include='*.h' -E '^[[:space:]]*#include[[:space:]]*<windows\.h>' src/ | grep -v '^src/os/' || true)
-if [ -n "$violations" ]; then
-    echo "FAIL: <windows.h> outside src/os:"
-    echo "$violations"
+for f in $(grep -rln 'windows\.h' src 2>/dev/null); do
+    case "$f" in
+        src/os/*) ;;
+        *) report "<windows.h> outside src/os: $f" ;;
+    esac
+done
+
+if [ "$#" -ge 1 ]; then
+    added=$(git diff -U0 "$1" -- src tests | grep '^+' | grep -v '^+++' || true)
+    bad=$(printf '%s\n' "$added" | grep -E '//|/\*' | grep -v '://' || true)
+    if [ -n "$bad" ]; then
+        report "comments added in changed lines:"
+        echo "$bad"
+        status=1
+    fi
+else
+    bad=$(grep -rn '//\|/\*' src tests 2>/dev/null | grep -v '://' | grep -v '\}  // namespace' || true)
+    if [ -n "$bad" ]; then
+        report "comments present in tree (baseline namespace enders excluded):"
+        echo "$bad"
+        status=1
+    fi
+fi
+
+todo=$(grep -rn 'TODO\|FIXME' src tests 2>/dev/null || true)
+if [ -n "$todo" ]; then
+    report "TODO/FIXME left in code:"
+    echo "$todo"
     status=1
 fi
 
-violations=$(grep -rn --include='*.cpp' --include='*.h' -E '//|/\*' src/ | grep -v -E '//[[:space:]]*namespace([[:space:]].*)?$' || true)
-if [ -n "$violations" ]; then
-    echo "FAIL: comments found in sources (project rule: no comments):"
-    echo "$violations"
-    status=1
-fi
-
-violations=$(grep -rn --include='*.cpp' --include='*.h' --include='*.py' -E 'TODO|FIXME' src/ server/ tests/ || true)
-if [ -n "$violations" ]; then
-    echo "FAIL: TODO/FIXME left in code:"
-    echo "$violations"
+network=$(grep -rniE 'winhttp|wininet|<curl|sys/socket\.h|ws2_32|getaddrinfo' src 2>/dev/null \
+    | grep -v '^src/stt/GrpcInferenceProvider' \
+    | grep -v '^src/os/WindowsDownloader' || true)
+if [ -n "$network" ]; then
+    report "network API usage outside allowlist (src/stt/GrpcInferenceProvider, src/os/WindowsDownloader):"
+    echo "$network"
     status=1
 fi
 

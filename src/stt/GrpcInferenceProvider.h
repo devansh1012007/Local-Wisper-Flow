@@ -19,9 +19,6 @@ public:
                             const std::string& system_prompt) override;
 
 private:
-    void EnsureChannel();
-
-    std::string endpoint_;
     std::shared_ptr<grpc::Channel> channel_;
     std::unique_ptr<inference::InferenceService::Stub> stub_;
 };

@@ -1,10 +1,13 @@
 #pragma once
 
-#include <functional>
+#include "core/EngineTypes.h"
 
 class IHotkeyListener {
 public:
     virtual ~IHotkeyListener() = default;
 
-    virtual void StartListening(std::function<void(bool is_pressed)> callback) = 0;
+    virtual void Start() = 0;
+    virtual void Stop() = 0;
+    virtual bool PollEvent(EngineEvent& out) = 0;
+    virtual void SetCancelArmed(bool armed) = 0;
 };

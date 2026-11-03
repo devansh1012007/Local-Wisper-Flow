@@ -1,186 +1,284 @@
 #include "core/PersonalDictionary.h"
+#include "core/Log.h"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
-#include <iostream>
+#include <set>
+#include <sstream>
+#include <stdexcept>
 
 namespace {
 
-std::string ToLowerAscii(const std::string& text) {
-    std::string out = text;
-    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) {
-        return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : static_cast<char>(c);
-    });
+std::string ToLowerUtf8Safe(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char c : text) {
+        const unsigned char u = static_cast<unsigned char>(c);
+        if (u < 0x80) {
+            out.push_back(static_cast<char>(std::tolower(u)));
+        } else {
+            out.push_back(c);
+        }
+    }
     return out;
 }
 
-std::string TrimCopy(const std::string& text) {
-    const std::size_t begin = text.find_first_not_of(" \t\r\n");
-    if (begin == std::string::npos) {
-        return {};
-    }
-    const std::size_t end = text.find_last_not_of(" \t\r\n");
-    return text.substr(begin, end - begin + 1);
-}
-
 bool IsWordChar(char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
-           static_cast<unsigned char>(c) >= 0x80;
+    return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_' || c >= 0;
 }
 
-}  // namespace
+struct Token {
+    std::size_t begin;
+    std::size_t end;
+};
 
-void PersonalDictionary::Load(const std::string& path) {
-    words_.clear();
-    replacements_.clear();
+std::vector<Token> WordTokens(const std::string& text) {
+    std::vector<Token> tokens;
+    std::size_t i = 0;
+    while (i < text.size()) {
+        const unsigned char u = static_cast<unsigned char>(text[i]);
+        if (std::isalnum(u) == 0 && u < 0x80) {
+            ++i;
+            continue;
+        }
+        const std::size_t begin = i;
+        while (i < text.size()) {
+            const unsigned char w = static_cast<unsigned char>(text[i]);
+            if (std::isalnum(w) != 0 || w >= 0x80) {
+                ++i;
+            } else {
+                break;
+            }
+        }
+        tokens.push_back({begin, i});
+    }
+    return tokens;
+}
 
+bool WholeWordFindInsensitive(const std::string& text, const std::string& needle,
+                              std::size_t& out_begin, std::size_t& out_end) {
+    const std::string lowered = ToLowerUtf8Safe(text);
+    const std::string target = ToLowerUtf8Safe(needle);
+    if (target.empty()) {
+        return false;
+    }
+    std::size_t pos = 0;
+    for (;;) {
+        pos = lowered.find(target, pos);
+        if (pos == std::string::npos) {
+            return false;
+        }
+        const std::size_t after = pos + target.size();
+        const bool left_ok = pos == 0 || !std::isalnum(static_cast<unsigned char>(text[pos - 1]));
+        const bool right_ok =
+            after >= text.size() || !std::isalnum(static_cast<unsigned char>(text[after]));
+        if (left_ok && right_ok) {
+            out_begin = pos;
+            out_end = after;
+            return true;
+        }
+        ++pos;
+    }
+}
+
+}
+
+bool PersonalDictionary::Load(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
-        return;
+        return false;
     }
-
     nlohmann::json json;
     try {
         file >> json;
-    } catch (const nlohmann::json::exception& e) {
-        std::cerr << "[dictionary] failed to parse '" << path << "': " << e.what() << '\n';
-        return;
+    } catch (const nlohmann::json::exception&) {
+        return false;
     }
 
-    const auto add_word = [&](const std::string& raw) {
-        const std::string word = TrimCopy(raw);
-        if (word.empty()) {
-            return;
-        }
-        const std::string folded = ToLowerAscii(word);
-        for (const std::string& existing : words_) {
-            if (ToLowerAscii(existing) == folded) {
-                return;
-            }
-        }
-        words_.push_back(word);
-    };
+    std::vector<std::string> words;
+    std::vector<std::pair<std::string, std::string>> replacements;
 
     if (json.is_array()) {
         for (const auto& element : json) {
             if (element.is_string()) {
-                add_word(element.get<std::string>());
+                words.push_back(element.get<std::string>());
             }
         }
-        return;
-    }
-
-    if (!json.is_object()) {
-        std::cerr << "[dictionary] '" << path << "' must be an array or an object\n";
-        return;
-    }
-
-    const auto words = json.find("words");
-    if (words != json.end() && words->is_array()) {
-        for (const auto& element : *words) {
-            if (element.is_string()) {
-                add_word(element.get<std::string>());
+    } else if (json.is_object()) {
+        if (json.contains("words") && json["words"].is_array()) {
+            for (const auto& element : json["words"]) {
+                if (element.is_string()) {
+                    words.push_back(element.get<std::string>());
+                }
             }
         }
-    }
-
-    const auto replacements = json.find("replacements");
-    if (replacements != json.end() && replacements->is_array()) {
-        for (const auto& element : *replacements) {
-            if (!element.is_object()) {
-                continue;
-            }
-            Replacement entry;
-            const auto from = element.find("from");
-            const auto to = element.find("to");
-            if (from == element.end() || to == element.end() || !from->is_string() ||
-                !to->is_string()) {
-                std::cerr << "[dictionary] skipping malformed replacement entry\n";
-                continue;
-            }
-            entry.from = from->get<std::string>();
-            entry.to = to->get<std::string>();
-            if (!entry.from.empty()) {
-                replacements_.push_back(std::move(entry));
+        if (json.contains("replacements") && json["replacements"].is_array()) {
+            for (const auto& element : json["replacements"]) {
+                if (element.is_object() && element.contains("from") && element.contains("to")) {
+                    replacements.emplace_back(element["from"].get<std::string>(),
+                                              element["to"].get<std::string>());
+                }
             }
         }
+    } else {
+        return false;
     }
+
+    words.erase(std::remove_if(words.begin(), words.end(),
+                               [](const std::string& w) {
+                                   return w.empty() || w.size() > 60;
+                               }),
+                words.end());
+    words_ = std::move(words);
+    replacements_ = std::move(replacements);
+    loaded_ = true;
+    return true;
 }
 
-void PersonalDictionary::AddWord(const std::string& word) {
-    const std::string trimmed = TrimCopy(word);
+void PersonalDictionary::SetWords(std::vector<std::string> words) {
+    words_ = std::move(words);
+    loaded_ = true;
+}
+
+void PersonalDictionary::SetReplacements(
+    std::vector<std::pair<std::string, std::string>> replacements) {
+    replacements_ = std::move(replacements);
+}
+
+void PersonalDictionary::AddWord(std::string word) {
+    const std::string trimmed = [](const std::string& input) {
+        const std::size_t begin = input.find_first_not_of(" \t\r\n");
+        if (begin == std::string::npos) {
+            return std::string();
+        }
+        const std::size_t end = input.find_last_not_of(" \t\r\n");
+        return input.substr(begin, end - begin + 1);
+    }(word);
     if (trimmed.empty()) {
         return;
     }
-    const std::string folded = ToLowerAscii(trimmed);
-    for (const std::string& existing : words_) {
-        if (ToLowerAscii(existing) == folded) {
-            return;
-        }
-    }
-    words_.push_back(trimmed);
+    words_.erase(std::remove(words_.begin(), words_.end(), trimmed), words_.end());
+    words_.insert(words_.begin(), trimmed);
+    loaded_ = true;
 }
 
-bool PersonalDictionary::RemoveWord(const std::string& word) {
-    const std::string folded = ToLowerAscii(TrimCopy(word));
-    for (std::size_t i = 0; i < words_.size(); ++i) {
-        if (ToLowerAscii(words_[i]) == folded) {
-            words_.erase(words_.begin() + static_cast<std::ptrdiff_t>(i));
-            return true;
-        }
-    }
-    return false;
+const std::vector<std::string>& PersonalDictionary::Words() const {
+    return words_;
 }
 
-std::string PersonalDictionary::PromptFragment() const {
-    truncated_last_prompt_ = false;
+const std::vector<std::pair<std::string, std::string>>& PersonalDictionary::Replacements()
+    const {
+    return replacements_;
+}
+
+bool PersonalDictionary::Loaded() const {
+    return loaded_;
+}
+
+std::string PersonalDictionary::InitialPrompt(std::size_t cap_chars) const {
     if (words_.empty()) {
         return {};
     }
-    std::string fragment = "Custom vocabulary:";
+    std::string listing = "Glossary: ";
+    std::size_t used = 0;
+    std::size_t included = 0;
     for (const std::string& word : words_) {
-        const std::string piece = " " + word + ",";
-        if (fragment.size() + piece.size() > kPromptCharCap) {
-            truncated_last_prompt_ = true;
+        const std::size_t needed = word.size() + (included > 0 ? 2 : 0);
+        if (listing.size() + needed > cap_chars) {
+            lwf::Log::Warning("personal dictionary prompt truncated at " +
+                         std::to_string(included) + " of " +
+                         std::to_string(words_.size()) + " words");
             break;
         }
-        fragment += piece;
+        if (included > 0) {
+            listing += ", ";
+        }
+        listing += word;
+        used += needed;
+        ++included;
     }
-    fragment.back() = '.';
-    return fragment;
+    return included > 0 ? listing : std::string();
 }
 
-std::string PersonalDictionary::Enforce(const std::string& text) const {
-    if (replacements_.empty() || text.empty()) {
-        return text;
+std::size_t PersonalDictionary::EditDistance(const std::string& a, const std::string& b) {
+    const std::size_t rows = a.size() + 1;
+    const std::size_t cols = b.size() + 1;
+    if (rows * cols > 64 * 64) {
+        return 999;
     }
-    std::string out = text;
-    for (const Replacement& replacement : replacements_) {
-        const std::string folded_from = ToLowerAscii(replacement.from);
-        if (folded_from.empty()) {
-            continue;
+    std::vector<std::size_t> previous(cols, 0);
+    std::vector<std::size_t> current(cols, 0);
+    for (std::size_t c = 0; c < cols; ++c) {
+        previous[c] = c;
+    }
+    for (std::size_t r = 1; r < rows; ++r) {
+        current[0] = r;
+        for (std::size_t c = 1; c < cols; ++c) {
+            const std::size_t substitution = previous[c - 1] + (a[r - 1] == b[c - 1] ? 0 : 1);
+            const std::size_t deletion = previous[c] + 1;
+            const std::size_t insertion = current[c - 1] + 1;
+            current[c] = std::min({substitution, deletion, insertion});
         }
-        const std::string folded_out = ToLowerAscii(out);
-        std::string result;
-        result.reserve(out.size());
-        std::size_t i = 0;
-        while (i < out.size()) {
-            if (folded_out.compare(i, folded_from.size(), folded_from) == 0) {
-                const bool left_ok = i == 0 || !IsWordChar(out[i - 1]);
-                const std::size_t end = i + folded_from.size();
-                const bool right_ok = end >= out.size() || !IsWordChar(out[end]);
-                if (left_ok && right_ok) {
-                    result += replacement.to;
-                    i = end;
+        std::swap(previous, current);
+    }
+    return previous[cols - 1];
+}
+
+std::string PersonalDictionary::Enforce(const std::string& text, bool fuzzy_enabled) const {
+    std::string out = text;
+
+    for (const auto& [from, to] : replacements_) {
+        for (;;) {
+            std::size_t begin = 0;
+            std::size_t end = 0;
+            if (!WholeWordFindInsensitive(out, from, begin, end)) {
+                break;
+            }
+            const std::string result = out.substr(0, begin) + to + out.substr(end);
+            if (result == out) {
+                break;
+            }
+            out = result;
+        }
+    }
+
+    const std::vector<Token> tokens = WordTokens(out);
+    std::string rebuilt;
+    std::size_t last = 0;
+    for (const Token& token : tokens) {
+        const std::string original = out.substr(token.begin, token.end - token.begin);
+        const std::string lowered = ToLowerUtf8Safe(original);
+        std::string replacement_word;
+
+        for (const std::string& word : words_) {
+            if (ToLowerUtf8Safe(word) == lowered && word != original) {
+                replacement_word = word;
+                break;
+            }
+        }
+
+        if (replacement_word.empty() && fuzzy_enabled && original.size() >= 6) {
+            for (const std::string& word : words_) {
+                if (word.size() < 6) {
                     continue;
                 }
+                if (ToLowerUtf8Safe(word) == lowered) {
+                    break;
+                }
+                if (EditDistance(ToLowerUtf8Safe(word), lowered) == 1) {
+                    replacement_word = word;
+                    break;
+                }
             }
-            result += out[i];
-            ++i;
         }
-        out = std::move(result);
+
+        rebuilt += out.substr(last, token.begin - last);
+        rebuilt += replacement_word.empty() ? original : replacement_word;
+        last = token.end;
     }
-    return out;
+    rebuilt += out.substr(last);
+    return rebuilt;
 }

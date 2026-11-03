@@ -1,134 +1,317 @@
 #include "os/WindowsHotkeyListener.h"
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 #include <windows.h>
+#include <wtsapi32.h>
 
-#include <chrono>
-#include <iostream>
+#include <algorithm>
+#include <array>
+#include <cstring>
+#include <mutex>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
-constexpr UINT kWmStopListener = WM_APP + 1;
+constexpr UINT kWmAppLearnAbort = WM_APP + 41;
+constexpr UINT kWmAppSessionUnlock = WM_APP + 42;
+constexpr UINT kWmAppReinstallHook = WM_APP + 43;
+constexpr UINT kUnassignedVk = 0xE7;
 
-std::function<void(bool)> g_callback;
-std::atomic<std::uint32_t> g_virtual_key{0};
-std::atomic<int> g_key_state{-1};
-std::atomic<bool> g_swallow_enabled{true};
-std::atomic<bool> g_avoid_altgr{true};
-HHOOK g_hook = nullptr;
+template <typename T, std::size_t Capacity>
+class SpscRing {
+public:
+    bool Push(const T& value) {
+        const std::size_t head = head_.load(std::memory_order_relaxed);
+        const std::size_t next = (head + 1) % Capacity;
+        if (next == tail_.load(std::memory_order_acquire)) {
+            return false;
+        }
+        slots_[head] = value;
+        head_.store(next, std::memory_order_release);
+        return true;
+    }
 
-bool IsAltGrCombo(const KBDLLHOOKSTRUCT* info) {
-    if (!g_avoid_altgr.load(std::memory_order_relaxed)) {
+    bool Pop(T& out) {
+        const std::size_t tail = tail_.load(std::memory_order_relaxed);
+        if (tail == head_.load(std::memory_order_acquire)) {
+            return false;
+        }
+        out = slots_[tail];
+        tail_.store((tail + 1) % Capacity, std::memory_order_release);
+        return true;
+    }
+
+private:
+    std::array<T, Capacity> slots_{};
+    std::atomic<std::size_t> head_{0};
+    std::atomic<std::size_t> tail_{0};
+};
+
+bool RequiresAltGrLayout() {
+    const HKL layout = GetKeyboardLayout(0);
+    const SHORT scanned = VkKeyScanExW(L'{', layout);
+    if (scanned == -1) {
         return false;
     }
-    if (info->vkCode != VK_RMENU) {
-        return false;
-    }
-    return (GetKeyState(VK_LCONTROL) & 0x8000) != 0;
+    const SHORT shifted = VkKeyScanExW(L'-', layout);
+    (void)shifted;
+    const UINT shift_state = (scanned >> 8) & 0xFF;
+    return (shift_state & 0x06) == 0x06;
 }
 
-LRESULT CALLBACK KeyboardHookProc(int code, WPARAM wparam, LPARAM lparam) {
-    if (code == HC_ACTION && g_callback) {
-        const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lparam);
-        const bool injected = (info->flags & LLKHF_INJECTED) != 0;
-        if (!injected && info->vkCode == g_virtual_key.load(std::memory_order_relaxed)) {
-            if (IsAltGrCombo(info)) {
-                g_key_state.store(-1);
-                return CallNextHookEx(nullptr, code, wparam, lparam);
-            }
-            const bool down = (wparam == WM_KEYDOWN || wparam == WM_SYSKEYDOWN);
-            const bool up = (wparam == WM_KEYUP || wparam == WM_SYSKEYUP);
-            if (down || up) {
-                const int next = down ? 1 : 0;
-                const int prev = g_key_state.exchange(next);
-                if (prev != next) {
-                    g_callback(down);
-                }
-            }
-            if (g_swallow_enabled.load(std::memory_order_relaxed)) {
-                return 1;
-            }
-            return CallNextHookEx(nullptr, code, wparam, lparam);
+}
+
+struct WindowsHotkeyListener::Impl {
+    HotkeyTracker tracker;
+    SpscRing<EngineEvent, 256> events;
+    std::atomic<bool> running{false};
+    std::atomic<bool> hook_installed{false};
+    std::atomic<bool> learn_mode{false};
+    std::atomic<bool> learned_ready{false};
+    std::string learned_binding;
+    std::vector<std::uint32_t> learned_keys;
+    std::thread thread;
+    std::atomic<std::uint32_t> thread_id{0};
+    HWND message_window = nullptr;
+    HHOOK hook = nullptr;
+    std::mutex tracker_mutex;
+    std::atomic<bool> suppress_next_win_up{false};
+
+    static LRESULT CALLBACK HookProc(int code, WPARAM wParam, LPARAM lParam);
+    static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam,
+                                       LPARAM lParam);
+    void PumpMessages();
+    bool HandleLearnMode(const KBDLLHOOKSTRUCT* info, bool is_down);
+    LRESULT DispatchKey(bool is_down, const KBDLLHOOKSTRUCT* info);
+    void ReinstallHook();
+};
+
+WindowsHotkeyListener::Impl* g_listener_instance = nullptr;
+
+LRESULT CALLBACK WindowsHotkeyListener::Impl::HookProc(int code, WPARAM wParam,
+                                                       LPARAM lParam) {
+    if (code != HC_ACTION) {
+        return CallNextHookEx(nullptr, code, wParam, lParam);
+    }
+    const KBDLLHOOKSTRUCT* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
+    if (info == nullptr) {
+        return CallNextHookEx(nullptr, code, wParam, lParam);
+    }
+    const bool is_down = wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN;
+    const bool is_up = wParam == WM_KEYUP || wParam == WM_SYSKEYUP;
+    if (!is_down && !is_up) {
+        return CallNextHookEx(nullptr, code, wParam, lParam);
+    }
+    return instance()->DispatchKey(is_down, info);
+}
+
+WindowsHotkeyListener::Impl* WindowsHotkeyListener::Impl::instance() {
+    return g_listener_instance;
+}
+
+LRESULT WindowsHotkeyListener::Impl::DispatchKey(bool is_down,
+                                                 const KBDLLHOOKSTRUCT* info) {
+    RawKeyEvent event;
+    event.vk = static_cast<std::uint32_t>(info->vkCode);
+    event.is_down = is_down;
+    event.injected = (info->flags & LLKHF_INJECTED) != 0;
+    event.timestamp_ms = static_cast<std::int64_t>(info->time);
+
+    if (HandleLearnMode(info, is_down)) {
+        return 1;
+    }
+
+    TrackerResult result;
+    {
+        std::lock_guard<std::mutex> lock(tracker_mutex);
+        result = tracker.Feed(event);
+    }
+
+    for (const EngineEvent& engine_event : result.events) {
+        events.Push(engine_event);
+    }
+
+    const bool win_involved = event.vk == HotkeyBinding::kWin;
+    if (win_involved && is_down && result.swallow) {
+        suppress_next_win_up.store(true);
+    }
+    if (win_involved && !is_down && result.swallow && suppress_next_win_up.load()) {
+        suppress_next_win_up.store(false);
+        INPUT dummy{};
+        dummy.type = INPUT_KEYBOARD;
+        dummy.ki.wVk = kUnassignedVk;
+        dummy.ki.dwFlags = 0;
+        INPUT dummy_up = dummy;
+        dummy_up.ki.dwFlags = KEYEVENTF_KEYUP;
+        SendInput(1, &dummy, sizeof(INPUT));
+        SendInput(1, &dummy_up, sizeof(INPUT));
+    }
+
+    return result.swallow ? 1 : CallNextHookEx(nullptr, 0, is_down ? WM_KEYDOWN : WM_KEYUP,
+                                               reinterpret_cast<LPARAM>(info));
+}
+
+bool WindowsHotkeyListener::Impl::HandleLearnMode(const KBDLLHOOKSTRUCT* info,
+                                                  bool is_down) {
+    if (!learn_mode.load()) {
+        return false;
+    }
+    const std::uint32_t vk = static_cast<std::uint32_t>(info->vkCode);
+    if (is_down) {
+        if (std::find(learned_keys.begin(), learned_keys.end(), vk) == learned_keys.end()) {
+            learned_keys.push_back(vk);
+        }
+    } else {
+        if (!learned_keys.empty()) {
+            Binding binding;
+            binding.keys = learned_keys;
+            binding.role = BindingRole::PushToTalk;
+            learned_binding = HotkeyBinding::Serialize(binding);
+            learned_ready.store(true);
+            learn_mode.store(false);
+            learned_keys.clear();
         }
     }
-    return CallNextHookEx(nullptr, code, wparam, lparam);
+    return true;
 }
 
-}  // namespace
+LRESULT CALLBACK WindowsHotkeyListener::Impl::WindowProc(HWND window, UINT message,
+                                                         WPARAM wParam, LPARAM lParam) {
+    if (message == kWmAppSessionUnlock || message == kWmAppReinstallHook) {
+        instance()->ReinstallHook();
+        return 0;
+    }
+    if (message == WM_WTSSESSION_CHANGE && wParam == WTS_SESSION_UNLOCK) {
+        instance()->ReinstallHook();
+        return 0;
+    }
+    if (message == WM_POWERBROADCAST && wParam == PBT_APMRESUMEAUTOMATIC) {
+        instance()->ReinstallHook();
+        return TRUE;
+    }
+    if (message == WM_DESTROY) {
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
 
-WindowsHotkeyListener::WindowsHotkeyListener(std::uint32_t virtual_key, bool avoid_altgr)
-    : virtual_key_(virtual_key), avoid_altgr_(avoid_altgr) {}
+void WindowsHotkeyListener::Impl::ReinstallHook() {
+    if (hook != nullptr) {
+        UnhookWindowsHookEx(hook);
+        hook = nullptr;
+    }
+    hook = SetWindowsHookExW(WH_KEYBOARD_LL, &Impl::HookProc, GetModuleHandleW(nullptr), 0);
+    hook_installed.store(hook != nullptr);
+}
+
+void WindowsHotkeyListener::Impl::PumpMessages() {
+    MSG message;
+    BOOL has_message = PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE);
+    while (has_message) {
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
+        has_message = PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE);
+    }
+}
+
+WindowsHotkeyListener::WindowsHotkeyListener(std::vector<Binding> bindings,
+                                             HotkeyTracker::Options options)
+    : impl_(std::make_unique<Impl>()) {
+    impl_->tracker.SetBindings(std::move(bindings));
+    impl_->tracker.SetOptions(options);
+    g_listener_instance = impl_.get();
+}
 
 WindowsHotkeyListener::~WindowsHotkeyListener() {
-    if (thread_.joinable()) {
-        std::uint32_t thread_id = thread_id_.load();
-        for (int attempt = 0; attempt < 40 && thread_id != 0; ++attempt) {
-            if (PostThreadMessageW(static_cast<DWORD>(thread_id), kWmStopListener, 0, 0)) {
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(25));
-            thread_id = thread_id_.load();
-        }
-        thread_.join();
+    Stop();
+    if (g_listener_instance == impl_.get()) {
+        g_listener_instance = nullptr;
     }
 }
 
-void WindowsHotkeyListener::StartListening(std::function<void(bool is_pressed)> callback) {
-    if (running_.exchange(true)) {
+void WindowsHotkeyListener::Start() {
+    if (impl_->running.exchange(true)) {
         return;
     }
-    callback_ = std::move(callback);
-    g_callback = callback_;
-    g_virtual_key.store(virtual_key_);
-    g_key_state.store(-1);
-    g_swallow_enabled.store(swallow_enabled_.load(std::memory_order_relaxed),
-                            std::memory_order_relaxed);
-    g_avoid_altgr.store(avoid_altgr_, std::memory_order_relaxed);
-    thread_ = std::thread([this] { ThreadMain(); });
+    impl_->thread = std::thread([this] {
+        impl_->thread_id.store(GetCurrentThreadId());
+        WNDCLASSW window_class{};
+        window_class.lpfnWndProc = &Impl::WindowProc;
+        window_class.lpszClassName = L"LwfHotkeyListenerWindow";
+        window_class.hInstance = GetModuleHandleW(nullptr);
+        RegisterClassW(&window_class);
+        impl_->message_window =
+            CreateWindowExW(0, window_class.lpszClassName, L"", 0, 0, 0, 0, 0, HWND_MESSAGE,
+                            nullptr, window_class.hInstance, nullptr);
+        WTSRegisterSessionNotification(impl_->message_window, NOTIFY_FOR_THIS_SESSION);
+        impl_->ReinstallHook();
+
+        while (impl_->running.load()) {
+            impl_->PumpMessages();
+            MsgWaitForMultipleObjects(0, nullptr, FALSE, 50, QS_ALLINPUT);
+        }
+
+        WTSUnRegisterSessionNotification(impl_->message_window);
+        if (impl_->hook != nullptr) {
+            UnhookWindowsHookEx(impl_->hook);
+            impl_->hook = nullptr;
+        }
+        impl_->hook_installed.store(false);
+        DestroyWindow(impl_->message_window);
+        impl_->message_window = nullptr;
+    });
 }
 
-void WindowsHotkeyListener::SetSwallowEnabled(bool enabled) {
-    swallow_enabled_.store(enabled, std::memory_order_relaxed);
-    g_swallow_enabled.store(enabled, std::memory_order_relaxed);
+void WindowsHotkeyListener::Stop() {
+    if (!impl_->running.exchange(false)) {
+        return;
+    }
+    if (impl_->thread.joinable()) {
+        impl_->thread.join();
+    }
+}
+
+bool WindowsHotkeyListener::PollEvent(EngineEvent& out) {
+    return impl_->events.Pop(out);
+}
+
+void WindowsHotkeyListener::SetCancelArmed(bool armed) {
+    std::lock_guard<std::mutex> lock(impl_->tracker_mutex);
+    impl_->tracker.SetCancelArmed(armed);
+}
+
+void WindowsHotkeyListener::UpdateBindings(std::vector<Binding> bindings) {
+    std::lock_guard<std::mutex> lock(impl_->tracker_mutex);
+    impl_->tracker.SetBindings(std::move(bindings));
+}
+
+void WindowsHotkeyListener::SetTrackerOptions(const HotkeyTracker::Options& options) {
+    std::lock_guard<std::mutex> lock(impl_->tracker_mutex);
+    impl_->tracker.SetOptions(options);
+}
+
+void WindowsHotkeyListener::BeginLearnMode() {
+    std::lock_guard<std::mutex> lock(impl_->tracker_mutex);
+    impl_->learned_keys.clear();
+    impl_->learned_ready.store(false);
+    impl_->learn_mode.store(true);
+}
+
+bool WindowsHotkeyListener::TryTakeLearnedBinding(std::string& out) {
+    if (!impl_->learned_ready.load()) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(impl_->tracker_mutex);
+    if (!impl_->learned_ready.load()) {
+        return false;
+    }
+    out = impl_->learned_binding;
+    impl_->learned_ready.store(false);
+    return true;
 }
 
 bool WindowsHotkeyListener::HookInstalled() const {
-    return hook_installed_.load(std::memory_order_relaxed);
-}
-
-void WindowsHotkeyListener::ThreadMain() {
-    MSG message;
-    PeekMessageW(&message, nullptr, 0, 0, PM_NOREMOVE);
-    thread_id_.store(GetCurrentThreadId());
-
-    g_hook = SetWindowsHookExW(WH_KEYBOARD_LL, &KeyboardHookProc, GetModuleHandleW(nullptr), 0);
-    if (g_hook == nullptr) {
-        std::cerr << "[hotkey] SetWindowsHookEx failed, error " << GetLastError() << '\n';
-        thread_id_.store(0);
-        running_.store(false);
-        hook_installed_.store(false);
-        return;
-    }
-    hook_installed_.store(true);
-
-    BOOL result = 0;
-    while ((result = GetMessageW(&message, nullptr, 0, 0)) > 0) {
-        if (message.message == kWmStopListener) {
-            break;
-        }
-        TranslateMessage(&message);
-        DispatchMessageW(&message);
-    }
-
-    UnhookWindowsHookEx(g_hook);
-    g_hook = nullptr;
-    g_callback = nullptr;
-    hook_installed_.store(false);
-    thread_id_.store(0);
+    return impl_->hook_installed.load();
 }

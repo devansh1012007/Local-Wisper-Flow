@@ -14,15 +14,18 @@ constexpr Transition kTransitionTable[] = {
     {State::ARMED,          Trigger::HOTKEY_RELEASE, State::IDLE},
     {State::ARMED,          Trigger::VAD_SPEECH,     State::CAPTURING},
     {State::ARMED,          Trigger::TIMEOUT,        State::IDLE},
+    {State::ARMED,          Trigger::CANCEL,         State::IDLE},
 
     {State::CAPTURING,      Trigger::HOTKEY_RELEASE, State::TRANSCRIBING},
     {State::CAPTURING,      Trigger::VAD_SPEECH,     State::CAPTURING},
     {State::CAPTURING,      Trigger::VAD_SILENCE,    State::TRANSCRIBING},
     {State::CAPTURING,      Trigger::TIMEOUT,        State::TRANSCRIBING},
+    {State::CAPTURING,      Trigger::CANCEL,         State::IDLE},
 
     {State::TRANSCRIBING,   Trigger::SST_COMPLETE,   State::POSTPROCESSING},
     {State::TRANSCRIBING,   Trigger::SST_FAILED,     State::IDLE},
     {State::TRANSCRIBING,   Trigger::TIMEOUT,        State::IDLE},
+    {State::TRANSCRIBING,   Trigger::CANCEL,         State::IDLE},
 
     {State::POSTPROCESSING, Trigger::SST_COMPLETE,   State::EMITTING},
     {State::POSTPROCESSING, Trigger::SST_FAILED,     State::EMITTING},
@@ -119,6 +122,8 @@ const char* ToString(Trigger trigger) {
             return "SST_FAILED";
         case Trigger::TIMEOUT:
             return "TIMEOUT";
+        case Trigger::CANCEL:
+            return "CANCEL";
     }
     return "UNKNOWN";
 }

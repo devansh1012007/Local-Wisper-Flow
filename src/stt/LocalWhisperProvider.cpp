@@ -1,14 +1,13 @@
 #include "stt/LocalWhisperProvider.h"
 
-#include "core/WhisperText.h"
+#include "core/Log.h"
 #include "whisper.h"
 
 #include <stdexcept>
-#include <utility>
 
 namespace {
 
-constexpr std::size_t kWarmUpSamples = 16000 / 10;
+constexpr std::size_t kMaxPromptChars = 600;
 
 whisper_context* LoadModel(const std::string& model_path) {
     whisper_context_params params = whisper_context_default_params();
@@ -19,10 +18,34 @@ whisper_context* LoadModel(const std::string& model_path) {
     return ctx;
 }
 
-}  // namespace
+std::string MergePrompt(const std::string& prefix, const std::string& context) {
+    std::string combined = prefix;
+    std::string ctx = context;
+    while (combined.size() + ctx.size() + 1 > kMaxPromptChars && !ctx.empty()) {
+        const std::size_t space = ctx.find(' ');
+        if (space == std::string::npos) {
+            ctx.clear();
+        } else {
+            ctx = ctx.substr(space + 1);
+        }
+    }
+    if (!ctx.empty()) {
+        if (!combined.empty()) {
+            combined += " ";
+        }
+        combined += ctx;
+    }
+    if (combined.size() > kMaxPromptChars) {
+        lwf::Log::Debug("whisper prompt truncated to " + std::to_string(kMaxPromptChars) + " chars");
+        combined = combined.substr(0, kMaxPromptChars);
+    }
+    return combined;
+}
 
-LocalWhisperProvider::LocalWhisperProvider(const std::string& model_path, WhisperSettings settings)
-    : ctx_(LoadModel(model_path)), settings_(std::move(settings)) {}
+}
+
+LocalWhisperProvider::LocalWhisperProvider(const std::string& model_path)
+    : ctx_(LoadModel(model_path)) {}
 
 LocalWhisperProvider::~LocalWhisperProvider() {
     if (ctx_ != nullptr) {
@@ -31,57 +54,55 @@ LocalWhisperProvider::~LocalWhisperProvider() {
     }
 }
 
-void LocalWhisperProvider::SetInitialPrompt(const std::string& prompt) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    initial_prompt_ = prompt;
+void LocalWhisperProvider::SetPromptPrefix(std::string prefix) {
+    prompt_prefix_ = std::move(prefix);
 }
 
-void LocalWhisperProvider::WarmUp() {
-    Transcribe(std::vector<float>(kWarmUpSamples, 0.0f));
+void LocalWhisperProvider::RequestCancel() {
+    cancel_requested_.store(true);
 }
 
 std::string LocalWhisperProvider::Transcribe(const std::vector<float>& audio_pcm) {
+    return RunWhisper(audio_pcm, {});
+}
+
+std::string LocalWhisperProvider::TranscribeWithPrompt(const std::vector<float>& audio_pcm,
+                                                       const std::string& prompt) {
+    return RunWhisper(audio_pcm, prompt);
+}
+
+std::string LocalWhisperProvider::RunWhisper(const std::vector<float>& audio_pcm,
+                                             const std::string& prompt) {
     if (ctx_ == nullptr) {
         throw std::runtime_error("LocalWhisperProvider: context not initialized");
     }
     if (audio_pcm.empty()) {
         return {};
     }
+    cancel_requested_.store(false);
 
-    std::string initial_prompt;
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        initial_prompt = initial_prompt_;
-    }
-
-    whisper_full_params params = settings_.beam_size > 1
-                                     ? whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH)
-                                     : whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
     params.translate = false;
     params.print_progress = false;
     params.print_special = false;
     params.print_realtime = false;
     params.print_timestamps = false;
     params.no_context = true;
-    params.no_timestamps = true;
-    params.suppress_nst = settings_.suppress_non_speech_tokens;
-    params.n_threads = settings_.threads;
-    if (settings_.beam_size > 1) {
-        params.beam_search.beam_size = settings_.beam_size;
-    }
-    if (settings_.disable_temperature_fallback) {
-        params.temperature_inc = 0.0f;
-    }
-    if (settings_.language.empty() || settings_.language == "auto") {
-        params.language = nullptr;
-    } else {
-        params.language = settings_.language.c_str();
-    }
-    if (!initial_prompt.empty()) {
-        params.initial_prompt = initial_prompt.c_str();
+    params.abort_callback = [](void* data) -> bool {
+        auto* flag = static_cast<std::atomic<bool>*>(data);
+        return flag != nullptr && flag->load();
+    };
+    params.abort_callback_user_data = &cancel_requested_;
+
+    const std::string merged = MergePrompt(prompt_prefix_, prompt);
+    if (!merged.empty()) {
+        params.initial_prompt = merged.c_str();
     }
 
     if (whisper_full(ctx_, params, audio_pcm.data(), static_cast<int>(audio_pcm.size())) != 0) {
+        if (cancel_requested_.load()) {
+            throw std::runtime_error("LocalWhisperProvider: transcription cancelled");
+        }
         throw std::runtime_error("LocalWhisperProvider: whisper_full failed");
     }
 
@@ -93,7 +114,7 @@ std::string LocalWhisperProvider::Transcribe(const std::vector<float>& audio_pcm
             text += segment;
         }
     }
-    return WhisperText::FilterHallucinations(text);
+    return text;
 }
 
 std::string LocalWhisperProvider::ProcessText(const std::string& text, const std::string&) {

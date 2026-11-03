@@ -1,40 +1,204 @@
 #include "core/DictationEngine.h"
-
-#include "core/DictationCleanup.h"
+#include "core/AudioGain.h"
+#include "core/ErrorCode.h"
+#include "core/IToneFeedback.h"
+#include "core/Log.h"
+#include "core/InjectionException.h"
+#include "core/IClock.h"
+#include "core/CommandModeController.h"
+#include "core/StreamingDictation.h"
+#include "core/TextPipeline.h"
 
 #include <algorithm>
-#include <iostream>
+#include <cmath>
 #include <utility>
 #include <vector>
 
 namespace {
 
-std::string TrimCopy(const std::string& text) {
-    const std::size_t begin = text.find_first_not_of(" \t\r\n");
-    if (begin == std::string::npos) {
-        return {};
-    }
-    const std::size_t end = text.find_last_not_of(" \t\r\n");
-    return text.substr(begin, end - begin + 1);
+State CurrentState(DictationFSM& fsm) {
+    return fsm.GetCurrentState();
 }
 
-}  // namespace
+bool IsCapturingLike(State state) {
+    return state == State::ARMED || state == State::CAPTURING;
+}
 
-DictationEngine::DictationEngine(IAudioCapture& audio, IInferenceProvider& stt,
-                                 DictationCleanup& cleanup, ITextInjector& injector,
-                                 DictationFSM& fsm, IVadProvider* vad, EngineSettings settings,
-                                 IEngineSink* sink)
-    : audio_(audio),
+void FailToIdle(DictationFSM& fsm) {
+    for (int i = 0; i < 4 && fsm.GetCurrentState() != State::IDLE; ++i) {
+        fsm.TriggerEvent(Trigger::SST_FAILED);
+    }
+}
+
+void CompleteToIdle(DictationFSM& fsm) {
+    for (int i = 0; i < 4 && fsm.GetCurrentState() != State::IDLE; ++i) {
+        fsm.TriggerEvent(Trigger::SST_COMPLETE);
+    }
+}
+
+}
+
+DictationEngine::DictationEngine(IAudioCapture& capture, IVadProvider* vad,
+                                 IInferenceProvider& stt, TextPipeline& pipeline,
+                                 ITextInjector& injector, DictationFSM& fsm, const IClock& clock,
+                                 IEngineSink& sink, const EngineSettings& settings)
+    : capture_(capture),
+      vad_(vad),
       stt_(stt),
-      cleanup_(cleanup),
+      pipeline_(pipeline),
       injector_(injector),
       fsm_(fsm),
-      settings_(settings),
+      clock_(clock),
       sink_(sink),
-      gate_(vad) {}
+      settings_(settings),
+      streamer_(std::make_unique<StreamingDictator>(stt)) {
+    capture_.SetChunkSink(this);
+}
 
-DictationEngine::ChunkSink DictationEngine::Sink() {
-    return [this](const float* samples, std::size_t count) { pipe_.Write(samples, count); };
+DictationEngine::~DictationEngine() {
+    Stop();
+}
+
+void DictationEngine::Start() {
+    if (running_.exchange(true)) {
+        return;
+    }
+    worker_ = std::thread([this] { Run(); });
+}
+
+void DictationEngine::Stop() {
+    if (!running_.exchange(false)) {
+        return;
+    }
+    queue_.Close();
+    if (worker_.joinable()) {
+        worker_.join();
+    }
+}
+
+void DictationEngine::Run() {
+    while (running_.load()) {
+        std::optional<EngineEvent> event = queue_.PopFor(20);
+        if (event) {
+            HandleEvent(*event);
+            if (event->type == EngineEventType::Quit) {
+                break;
+            }
+        }
+        Tick();
+    }
+}
+
+bool DictationEngine::ProcessOne(int timeout_ms) {
+    std::optional<EngineEvent> event = queue_.PopFor(timeout_ms);
+    if (!event) {
+        Tick();
+        return false;
+    }
+    HandleEvent(*event);
+    Tick();
+    return true;
+}
+
+void DictationEngine::PostEvent(EngineEventType type) {
+    EngineEvent event;
+    event.type = type;
+    event.timestamp_ms = clock_.NowMs();
+    queue_.Push(event);
+}
+
+void DictationEngine::RequestCancel() {
+    cancel_requested_.store(true);
+    if (streamer_) {
+        streamer_->Cancel();
+    }
+}
+
+void DictationEngine::OnAudioChunk(const float* samples, std::size_t frame_count) {
+    float peak = 0.0f;
+    for (std::size_t i = 0; i < frame_count; ++i) {
+        peak = std::max(peak, std::fabs(samples[i]));
+    }
+    audio_level_.store(peak, std::memory_order_relaxed);
+
+    const State state = CurrentState(fsm_);
+    if (state != State::ARMED && state != State::CAPTURING) {
+        return;
+    }
+    const std::int64_t before = total_samples_.fetch_add(static_cast<std::int64_t>(frame_count));
+    ++chunk_count_;
+    bool speech = true;
+    if (vad_ == nullptr) {
+        if (state == State::ARMED) {
+            speech_started_.store(true);
+            fsm_.TriggerEvent(Trigger::VAD_SPEECH);
+        }
+        last_speech_ms_ = clock_.NowMs();
+    } else {
+        const std::vector<float> chunk(samples, samples + frame_count);
+        speech = vad_->IsSpeech(chunk);
+        if (speech) {
+            ++speech_chunk_count_;
+            last_speech_ms_ = clock_.NowMs();
+            if (state == State::ARMED) {
+                speech_started_.store(true);
+                fsm_.TriggerEvent(Trigger::VAD_SPEECH);
+            }
+        }
+    }
+    if (speech) {
+        speech_seen_.store(true);
+        silence_start_samples_.store(-1);
+    } else if (speech_seen_.load() && silence_start_samples_.load() == -1) {
+        silence_start_samples_.store(before);
+    }
+}
+
+float DictationEngine::AudioLevel() const noexcept {
+    return audio_level_.load(std::memory_order_relaxed);
+}
+
+void DictationEngine::SetHandsFree(bool enabled) {
+    hands_free_.store(enabled);
+}
+
+void DictationEngine::SetCommandController(CommandModeController* controller) {
+    command_ = controller;
+}
+
+void DictationEngine::SetToneFeedback(IToneFeedback* tones) {
+    tones_ = tones;
+}
+
+void DictationEngine::EmitError(ErrorCode code, const std::string& detail) {
+    if (settings_.sound_enabled) {
+        PlayTone(ToneGenerator::ErrorTone());
+    }
+    sink_.OnError(code, detail);
+}
+
+void DictationEngine::PlayTone(const ToneGenerator::ToneSpec& spec) {
+    if (tones_ != nullptr) {
+        tones_->Play(spec, settings_.sound_volume);
+    }
+}
+
+void DictationEngine::HandleCommandMode(std::int64_t now_ms) {
+    if (CurrentState(fsm_) != State::IDLE || command_ == nullptr) {
+        return;
+    }
+    if (!command_->BeginSelection()) {
+        sink_.OnStatus("select some text first");
+        return;
+    }
+    in_command_mode_.store(true);
+    if (!fsm_.TriggerEvent(Trigger::HOTKEY_PRESS)) {
+        in_command_mode_.store(false);
+        command_->CancelPending();
+        return;
+    }
+    BeginCapture(now_ms);
+    sink_.OnStatus("command mode: speak the instruction");
 }
 
 std::string DictationEngine::LastText() const {
@@ -42,204 +206,377 @@ std::string DictationEngine::LastText() const {
     return last_text_;
 }
 
-void DictationEngine::Run(EngineEventQueue& queue, const std::atomic<bool>& quit) {
-    while (!quit.load()) {
-        std::optional<EngineEvent> event = queue.PopFor(std::chrono::milliseconds(30));
-        if (event) {
-            HandleEvent(*event, quit);
-            continue;
-        }
-        if (fsm_.CurrentState() == State::CAPTURING) {
-            PollCapture();
-        } else {
-            pipe_.ReadAll();
-        }
-    }
+std::size_t DictationEngine::StreamedSegments() const {
+    return streamer_ ? streamer_->CommittedCount() : 0;
 }
 
-void DictationEngine::HandleEvent(const EngineEvent& event, const std::atomic<bool>& quit) {
+void DictationEngine::MaybeCommitStreamingSegment() {
+    if (!settings_.streaming_stt || streamer_ == nullptr) {
+        return;
+    }
+    const std::int64_t silence_start = silence_start_samples_.load();
+    if (silence_start < 0) {
+        return;
+    }
+    const std::int64_t total = total_samples_.load();
+    const std::int64_t committed = committed_samples_.load();
+    if (silence_start > total || committed > silence_start) {
+        return;
+    }
+    int rate = capture_.SampleRate();
+    if (rate <= 0) {
+        rate = 16000;
+    }
+    const std::int64_t silence_ms = (total - silence_start) * 1000 / rate;
+    const std::int64_t segment_ms = (silence_start - committed) * 1000 / rate;
+    if (silence_ms < settings_.streaming_pause_ms ||
+        segment_ms < settings_.streaming_min_segment_ms) {
+        return;
+    }
+    const std::vector<float> all = capture_.GetRecordedAudio();
+    if (silence_start > static_cast<std::int64_t>(all.size())) {
+        return;
+    }
+    std::vector<float> segment(all.begin() + static_cast<std::ptrdiff_t>(committed),
+                               all.begin() + static_cast<std::ptrdiff_t>(silence_start));
+    committed_samples_.store(silence_start);
+    silence_start_samples_.store(-1);
+    if (settings_.quiet_speech_boost && !segment.empty() && chunk_count_ > 0) {
+        segment = AudioGain::NormalizeLoudness(segment, true,
+                                               static_cast<double>(speech_chunk_count_) /
+                                                   static_cast<double>(chunk_count_));
+    }
+    streamer_->CommitSegment(std::move(segment));
+}
+
+std::vector<float> DictationEngine::TakeTail() {
+    const std::vector<float> all = capture_.GetRecordedAudio();
+    const std::int64_t committed = committed_samples_.load();
+    if (committed <= 0) {
+        return all;
+    }
+    if (committed >= static_cast<std::int64_t>(all.size())) {
+        return {};
+    }
+    return std::vector<float>(all.begin() + static_cast<std::ptrdiff_t>(committed), all.end());
+}
+
+void DictationEngine::HandleEvent(const EngineEvent& event) {
     switch (event.type) {
-        case EngineEventType::Quit:
-            return;
         case EngineEventType::PttPress:
-            if (fsm_.CurrentState() != State::IDLE) {
-                return;
-            }
-            BeginCapture(event);
-            return;
+            HandlePress(event.timestamp_ms);
+            break;
         case EngineEventType::PttRelease:
-            if (fsm_.CurrentState() != State::CAPTURING) {
-                return;
-            }
-            FinishCapture(StopReason::HotkeyRelease, event);
-            return;
+            HandleRelease(event.timestamp_ms);
+            break;
+        case EngineEventType::Toggle:
+            HandleToggle(event.timestamp_ms);
+            break;
+        case EngineEventType::CommandMode:
+            HandleCommandMode(event.timestamp_ms);
+            break;
+        case EngineEventType::PasteLast:
+            HandlePasteLast();
+            break;
         case EngineEventType::Cancel:
-            if (fsm_.CurrentState() == State::CAPTURING) {
-                try {
-                    audio_.Stop();
-                } catch (const std::exception& e) {
-                    FailToIdle(EngineErrorCode::MicLost, e.what());
-                    return;
-                }
-                pipe_.SetEnabled(false);
-                pipe_.Clear();
-                fsm_.TriggerEvent(Trigger::HOTKEY_RELEASE);
-                fsm_.TriggerEvent(Trigger::SST_FAILED);
-                std::cout << "[engine] cancelled" << std::endl;
-            }
-            return;
+            HandleCancel();
+            break;
+        case EngineEventType::Quit:
+            break;
     }
 }
 
-void DictationEngine::BeginCapture(const EngineEvent& press) {
+void DictationEngine::HandlePress(std::int64_t now_ms) {
+    if (CurrentState(fsm_) != State::IDLE) {
+        return;
+    }
     if (!fsm_.TriggerEvent(Trigger::HOTKEY_PRESS)) {
         return;
     }
-    fsm_.TriggerEvent(Trigger::VAD_SPEECH);
-    press_time_ = press.timestamp;
-    gate_.Reset();
-    pipe_.Clear();
-    pipe_.SetEnabled(true);
-    try {
-        audio_.Start();
-    } catch (const std::exception& e) {
-        pipe_.SetEnabled(false);
-        fsm_.TriggerEvent(Trigger::HOTKEY_RELEASE);
-        FailToIdle(EngineErrorCode::MicUnavailable, e.what());
-        return;
-    }
-    std::cout << "[engine] capturing" << std::endl;
+    BeginCapture(now_ms);
 }
 
-void DictationEngine::PollCapture() {
-    if (audio_.DeviceLost()) {
-        try {
-            audio_.Stop();
-        } catch (const std::exception&) {
+void DictationEngine::HandleToggle(std::int64_t now_ms) {
+    const State state = CurrentState(fsm_);
+    if (state == State::IDLE) {
+        SetHandsFree(true);
+        if (!fsm_.TriggerEvent(Trigger::HOTKEY_PRESS)) {
+            return;
         }
-        fsm_.TriggerEvent(Trigger::HOTKEY_RELEASE);
-        FailToIdle(EngineErrorCode::MicLost, "microphone device stopped");
+        BeginCapture(now_ms);
         return;
     }
-    DrainGate();
-    if (!gate_.SpeechDetected()) {
-        return;
-    }
-    if (settings_.hands_free_silence_ms > 0 &&
-        gate_.SilenceMs(settings_.sample_rate) >=
-            std::chrono::milliseconds(settings_.hands_free_silence_ms)) {
-        FinishCapture(StopReason::SilenceStop,
-                      EngineEvent{EngineEventType::PttRelease, std::chrono::steady_clock::now()});
-        return;
-    }
-    if (gate_.DurationMs(settings_.sample_rate) >= settings_.max_recording) {
-        FinishCapture(StopReason::MaxDuration,
-                      EngineEvent{EngineEventType::PttRelease, std::chrono::steady_clock::now()});
+    if (IsCapturingLike(state)) {
+        SetHandsFree(false);
+        if (state == State::CAPTURING) {
+            StopAndTranscribe(now_ms, false);
+        } else {
+            DiscardCapture("hands-free stopped before speech");
+        }
     }
 }
 
-void DictationEngine::DrainGate() {
-    const std::vector<float> samples = pipe_.ReadAll();
-    if (!samples.empty()) {
-        gate_.Feed(samples.data(), samples.size());
+void DictationEngine::HandleRelease(std::int64_t now_ms) {
+    const State state = CurrentState(fsm_);
+    if (state == State::CAPTURING) {
+        StopAndTranscribe(now_ms, false);
+        return;
+    }
+    if (state == State::ARMED) {
+        const bool too_short = (now_ms - press_ms_) < settings_.min_hold_ms;
+        SetHandsFree(false);
+        DiscardCapture(too_short ? "tap shorter than the minimum hold time"
+                                 : "no speech detected");
     }
 }
 
-void DictationEngine::FinishCapture(StopReason reason, const EngineEvent& release_event) {
-    pipe_.SetEnabled(false);
-    DrainGate();
+void DictationEngine::BeginCapture(std::int64_t now_ms) {
+    press_ms_ = now_ms;
+    capture_start_ms_ = now_ms;
+    last_speech_ms_ = now_ms;
+    chunk_count_ = 0;
+    speech_chunk_count_ = 0;
+    speech_started_.store(false);
+    cancel_requested_.store(false);
+    total_samples_.store(0);
+    silence_start_samples_.store(-1);
+    committed_samples_.store(0);
+    speech_seen_.store(false);
+    if (streamer_) {
+        streamer_->Begin();
+    }
     try {
-        audio_.Stop();
+        capture_.Start();
+        if (settings_.sound_enabled) {
+            PlayTone(ToneGenerator::StartTone());
+        }
     } catch (const std::exception& e) {
-        fsm_.TriggerEvent(Trigger::HOTKEY_RELEASE);
-        FailToIdle(EngineErrorCode::MicLost, e.what());
-        return;
-    }
-    switch (reason) {
-        case StopReason::HotkeyRelease:
+        EmitError(ErrorCode::MicUnavailable, e.what());
+        if (CurrentState(fsm_) == State::ARMED) {
             fsm_.TriggerEvent(Trigger::HOTKEY_RELEASE);
-            break;
-        case StopReason::SilenceStop:
-            fsm_.TriggerEvent(Trigger::VAD_SILENCE);
-            break;
-        case StopReason::MaxDuration:
+        }
+    }
+}
+
+void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired) {
+    (void)now_ms;
+    (void)timeout_fired;
+    capture_.Stop();
+    if (settings_.sound_enabled) {
+        PlayTone(ToneGenerator::StopTone());
+    }
+    const std::vector<float> full = capture_.GetRecordedAudio();
+    if (CurrentState(fsm_) == State::CAPTURING) {
+        if (timeout_fired) {
             fsm_.TriggerEvent(Trigger::TIMEOUT);
-            break;
+        } else {
+            fsm_.TriggerEvent(Trigger::HOTKEY_RELEASE);
+        }
     }
-    TranscribeAndInject(release_event);
-}
-
-void DictationEngine::FailToIdle(EngineErrorCode code, const std::string& detail) {
-    if (sink_ != nullptr) {
-        sink_->OnError(code, detail);
-    }
-    std::cerr << "[engine] error: " << detail << '\n';
-    fsm_.TriggerEvent(Trigger::SST_FAILED);
-    pipe_.SetEnabled(false);
-    pipe_.Clear();
-}
-
-void DictationEngine::TranscribeAndInject(const EngineEvent& release_event) {
-    const std::chrono::milliseconds held =
-        std::chrono::duration_cast<std::chrono::milliseconds>(release_event.timestamp -
-                                                              press_time_);
-    if (held < settings_.min_hold) {
-        std::cout << "[engine] tap shorter than " << settings_.min_hold.count()
-                  << " ms ignored" << std::endl;
-        fsm_.TriggerEvent(Trigger::SST_FAILED);
+    if (full.size() < static_cast<std::size_t>(settings_.min_tap_samples)) {
+        sink_.OnStatus("tap ignored: recording too short");
+        FailToIdle(fsm_);
         return;
     }
 
-    std::vector<float> pcm = audio_.GetRecordedAudio();
-    if (!gate_.SpeechDetected()) {
-        std::cout << "[engine] nothing heard" << std::endl;
-        fsm_.TriggerEvent(Trigger::SST_FAILED);
-        return;
+    const double speech_ratio = chunk_count_ > 0
+                                    ? static_cast<double>(speech_chunk_count_) /
+                                          static_cast<double>(chunk_count_)
+                                    : 0.0;
+    std::string raw;
+    bool used_streaming = false;
+    if (streamer_ && settings_.streaming_stt && streamer_->CommittedCount() > 0) {
+        std::vector<float> tail = TakeTail();
+        if (settings_.quiet_speech_boost && !tail.empty()) {
+            tail = AudioGain::NormalizeLoudness(tail, true, speech_ratio);
+        }
+        std::string streamed;
+        if (streamer_->Finish(tail, streamed)) {
+            raw = streamed;
+            used_streaming = true;
+        }
     }
-    const std::pair<std::size_t, std::size_t> interval = gate_.SpeechInterval(pcm.size());
-    if (interval.second > interval.first) {
-        pcm = std::vector<float>(pcm.begin() + interval.first, pcm.begin() + interval.second);
+    if (!used_streaming && !cancel_requested_.load()) {
+        std::vector<float> pcm = full;
+        if (settings_.quiet_speech_boost) {
+            pcm = AudioGain::NormalizeLoudness(pcm, true, speech_ratio);
+        }
+        try {
+            raw = stt_.Transcribe(pcm);
+        } catch (const std::exception& e) {
+            EmitError(ErrorCode::SttFailed, e.what());
+            FailToIdle(fsm_);
+            return;
+        }
     }
-    if (pcm.empty()) {
-        std::cout << "[engine] nothing heard" << std::endl;
-        fsm_.TriggerEvent(Trigger::SST_FAILED);
+
+    if (cancel_requested_.load()) {
+        sink_.OnStatus("cancelled during transcription, result discarded");
+        FailToIdle(fsm_);
         return;
     }
 
-    std::string text;
+    if (CurrentState(fsm_) == State::TRANSCRIBING) {
+        fsm_.TriggerEvent(Trigger::SST_COMPLETE);
+    }
+
+    if (in_command_mode_.load()) {
+        in_command_mode_.store(false);
+        if (command_ == nullptr) {
+            FailToIdle(fsm_);
+            return;
+        }
+        const CommandModeController::Result result = command_->Run(raw, 8000);
+        if (!result.ok) {
+            EmitError(result.code, result.error);
+            FailToIdle(fsm_);
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lock(text_mutex_);
+            last_text_ = result.edited_text;
+        }
+        sink_.OnStatus("command applied");
+        CompleteToIdle(fsm_);
+        return;
+    }
+
+    const std::string final_text = pipeline_.Process(raw);
+
+    if (cancel_requested_.load()) {
+        sink_.OnStatus("cancelled during cleanup, result discarded");
+        FailToIdle(fsm_);
+        return;
+    }
+    if (final_text.empty()) {
+        sink_.OnStatus("nothing to inject");
+        FailToIdle(fsm_);
+        return;
+    }
+
     try {
-        std::cout << "[stt] transcribing " << (pcm.size() * 1000 / settings_.sample_rate)
-                  << " ms of audio" << std::endl;
-        text = TrimCopy(stt_.Transcribe(pcm));
-    } catch (const std::exception& e) {
-        FailToIdle(EngineErrorCode::SttFailed, e.what());
+        injector_.InjectText(final_text);
+    } catch (const InjectionException& e) {
+        EmitError(e.Code(), e.what());
+        FailToIdle(fsm_);
         return;
-    }
-    if (text.empty()) {
-        std::cout << "[engine] nothing heard" << std::endl;
-        fsm_.TriggerEvent(Trigger::SST_FAILED);
+    } catch (const std::exception& e) {
+        EmitError(ErrorCode::InjectFailed, e.what());
+        FailToIdle(fsm_);
         return;
     }
 
-    fsm_.TriggerEvent(Trigger::SST_COMPLETE);
-    const std::string processed =
-        settings_.dictionary != nullptr ? settings_.dictionary->Enforce(cleanup_.Clean(text))
-                                       : cleanup_.Clean(text);
-    fsm_.TriggerEvent(Trigger::SST_COMPLETE);
-
-    try {
-        injector_.InjectText(processed);
-    } catch (const std::exception& e) {
-        FailToIdle(EngineErrorCode::InjectFailed, e.what());
-        return;
-    }
     {
         std::lock_guard<std::mutex> lock(text_mutex_);
-        last_text_ = processed;
+        last_text_ = final_text;
     }
-    fsm_.TriggerEvent(Trigger::SST_COMPLETE);
-    if (sink_ != nullptr) {
-        sink_->OnStatus("injected " + std::to_string(processed.size()) + " chars");
+    sink_.OnStatus("injected: text ready");
+    CompleteToIdle(fsm_);
+}
+
+void DictationEngine::DiscardCapture(const char* reason) {
+    RequestCancel();
+    try {
+        capture_.Stop();
+    } catch (const std::exception& e) {
+        lwf::Log::Debug(std::string("capture stop during discard failed: ") + e.what());
     }
-    std::cout << "[engine] injected " << processed.size() << " chars" << std::endl;
+    const State state = CurrentState(fsm_);
+    if (state == State::CAPTURING) {
+        fsm_.TriggerEvent(Trigger::TIMEOUT);
+        FailToIdle(fsm_);
+    } else if (state == State::ARMED) {
+        fsm_.TriggerEvent(Trigger::HOTKEY_RELEASE);
+    } else if (state == State::TRANSCRIBING) {
+        fsm_.TriggerEvent(Trigger::TIMEOUT);
+    } else if (state == State::POSTPROCESSING) {
+        fsm_.TriggerEvent(Trigger::TIMEOUT);
+        FailToIdle(fsm_);
+    }
+    sink_.OnStatus(std::string("dictation discarded: ") + reason);
+}
+
+void DictationEngine::HandlePasteLast() {
+    std::string text;
+    {
+        std::lock_guard<std::mutex> lock(text_mutex_);
+        text = last_text_;
+    }
+    if (text.empty()) {
+        sink_.OnStatus("nothing to paste");
+        return;
+    }
+    try {
+        injector_.InjectText(text);
+        sink_.OnStatus("pasted last transcript");
+    } catch (const std::exception& e) {
+        sink_.OnError(ErrorCode::InjectFailed, e.what());
+    }
+}
+
+void DictationEngine::HandleCancel() {
+    const State state = CurrentState(fsm_);
+    if (state == State::IDLE || state == State::EMITTING) {
+        return;
+    }
+    if (in_command_mode_.exchange(false) && command_ != nullptr) {
+        command_->CancelPending();
+    }
+    RequestCancel();
+    try {
+        capture_.Stop();
+    } catch (const std::exception& e) {
+        lwf::Log::Debug(std::string("capture stop during discard failed: ") + e.what());
+    }
+    if (state == State::ARMED || state == State::CAPTURING || state == State::TRANSCRIBING) {
+        fsm_.TriggerEvent(Trigger::CANCEL);
+    }
+    sink_.OnStatus("cancelled");
+}
+
+void DictationEngine::HandleMicLost() {
+    RequestCancel();
+    try {
+        capture_.Stop();
+    } catch (const std::exception& e) {
+        lwf::Log::Debug(std::string("capture stop after mic loss failed: ") + e.what());
+    }
+    const State state = CurrentState(fsm_);
+    if (state == State::ARMED || state == State::CAPTURING || state == State::TRANSCRIBING) {
+        fsm_.TriggerEvent(Trigger::CANCEL);
+    }
+    EmitError(ErrorCode::MicLost, "microphone was lost or unplugged mid-dictation");
+    sink_.OnStatus("dictation discarded: microphone lost");
+}
+
+void DictationEngine::Tick() {
+    const std::int64_t now = clock_.NowMs();
+    const State state = CurrentState(fsm_);
+    if (!IsCapturingLike(state)) {
+        return;
+    }
+    if (capture_.DeviceLost()) {
+        HandleMicLost();
+        return;
+    }
+    const bool hands_free = hands_free_.load();
+    const bool speech = speech_started_.load();
+    if (state == State::CAPTURING) {
+        MaybeCommitStreamingSegment();
+        if (hands_free && settings_.hands_free_silence_ms > 0 && speech &&
+            now - last_speech_ms_ >= settings_.hands_free_silence_ms) {
+            SetHandsFree(false);
+            StopAndTranscribe(now, false);
+            return;
+        }
+        if (now - capture_start_ms_ >= settings_.max_recording_ms) {
+            StopAndTranscribe(now, true);
+            return;
+        }
+    } else if (state == State::ARMED) {
+        if (now - capture_start_ms_ >= settings_.max_recording_ms) {
+            fsm_.TriggerEvent(Trigger::TIMEOUT);
+            sink_.OnStatus("no speech detected, stopped");
+        }
+    }
 }

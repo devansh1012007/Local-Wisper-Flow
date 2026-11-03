@@ -1,0 +1,3 @@
+[
+        {"name": "Fix Grammar", "prompt": "Fix: {text}"}
+    ]
