@@ -53,6 +53,7 @@ const std::vector<SettingsStore::SchemaEntry>& BuildSchema() {
         {"history_max_entries", SettingsStore::Type::Int, 1000, "", 10, 100000, true},
         {"history_max_age_days", SettingsStore::Type::Int, 90, "", 1, 3650, true},
         {"debug_log_transcripts", SettingsStore::Type::Bool, 0, "", 0, 0, true},
+        {"dictation_enabled", SettingsStore::Type::Bool, 1, "", 0, 0, true},
         {"first_run", SettingsStore::Type::Bool, 1, "", 0, 0, true},
     };
     return schema;

@@ -4,27 +4,27 @@
 
 namespace OverlayModel {
 
-Visual VisualFor(PillState state, const std::string& error_message) {
+Visual VisualFor(PillState state, const std::string& message) {
     Visual visual;
     visual.state = state;
     switch (state) {
         case PillState::Hidden:
             visual.visible = false;
             break;
+        case PillState::Ready:
         case PillState::Listening:
+        case PillState::Thinking:
+        case PillState::Paused:
             visual.visible = true;
             break;
-        case PillState::Processing:
+        case PillState::Done:
             visual.visible = true;
+            visual.dwell_after_ms = 600;
             break;
-        case PillState::Error:
+        case PillState::Attention:
             visual.visible = true;
-            visual.message = error_message;
-            visual.auto_hide_after_ms = 3000;
-            break;
-        case PillState::Cancelled:
-            visual.visible = true;
-            visual.auto_hide_after_ms = 600;
+            visual.message = message;
+            visual.dwell_after_ms = 6000;
             break;
     }
     return visual;
@@ -69,4 +69,4 @@ Rect PillPosition(const Rect& work_area, int pill_width, int pill_height, int ma
     return position;
 }
 
-}
+}  // namespace OverlayModel

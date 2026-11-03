@@ -2,9 +2,10 @@
 #include "core/OverlayModel.h"
 #include "core/SettingsStore.h"
 #include "core/SettingsUiModel.h"
+#include "ui/theme/ThemePalette.h"
 
 #include <doctest/doctest.h>
-#include <fstream>
+#include <cmath>
 #include <fstream>
 #include <string>
 
@@ -20,26 +21,36 @@ TEST_CASE("waveform ring keeps the last N samples in order") {
     CHECK(snapshot.back() == 69.0f);
 }
 
-TEST_CASE("visual mapping covers every state including auto-hide timers") {
+TEST_CASE("visual mapping covers every mini state including dwell times") {
     const auto hidden = OverlayModel::VisualFor(OverlayModel::PillState::Hidden, "");
     CHECK_FALSE(hidden.visible);
-    CHECK(hidden.auto_hide_after_ms == 0);
+    CHECK(hidden.dwell_after_ms == 0);
+
+    const auto ready = OverlayModel::VisualFor(OverlayModel::PillState::Ready, "");
+    CHECK(ready.visible);
+    CHECK(ready.dwell_after_ms == 0);
 
     const auto listening = OverlayModel::VisualFor(OverlayModel::PillState::Listening, "");
     CHECK(listening.visible);
-    CHECK(listening.auto_hide_after_ms == 0);
+    CHECK(listening.dwell_after_ms == 0);
 
-    const auto processing = OverlayModel::VisualFor(OverlayModel::PillState::Processing, "");
-    CHECK(processing.visible);
+    const auto thinking = OverlayModel::VisualFor(OverlayModel::PillState::Thinking, "");
+    CHECK(thinking.visible);
+    CHECK(thinking.dwell_after_ms == 0);
 
-    const auto error = OverlayModel::VisualFor(OverlayModel::PillState::Error, "mic blocked");
-    CHECK(error.visible);
-    CHECK(error.message == "mic blocked");
-    CHECK(error.auto_hide_after_ms == 3000);
+    const auto paused = OverlayModel::VisualFor(OverlayModel::PillState::Paused, "");
+    CHECK(paused.visible);
+    CHECK(paused.dwell_after_ms == 0);
 
-    const auto cancelled = OverlayModel::VisualFor(OverlayModel::PillState::Cancelled, "");
-    CHECK(cancelled.visible);
-    CHECK(cancelled.auto_hide_after_ms == 600);
+    const auto done = OverlayModel::VisualFor(OverlayModel::PillState::Done, "");
+    CHECK(done.visible);
+    CHECK(done.dwell_after_ms == 600);
+
+    const auto attention =
+        OverlayModel::VisualFor(OverlayModel::PillState::Attention, "mic blocked");
+    CHECK(attention.visible);
+    CHECK(attention.message == "mic blocked");
+    CHECK(attention.dwell_after_ms == 6000);
 }
 
 TEST_CASE("pill position is bottom center above the taskbar with dpi scaling") {
@@ -124,4 +135,54 @@ TEST_CASE("snippet editor validates and dedupes") {
     editor.Add("big", std::string(4001, 'x'));
     CHECK_FALSE(editor.Valid(error));
     CHECK(error.find("4000") != std::string::npos);
+}
+
+TEST_CASE("theme palettes keep the mockup token values") {
+    using lwf::ui::kDarkPalette;
+    using lwf::ui::kLightPalette;
+    CHECK(kDarkPalette.bg == 0x0E1714u);
+    CHECK(kDarkPalette.surface == 0x14221Du);
+    CHECK(kDarkPalette.border == 0x29392Fu);
+    CHECK(kDarkPalette.text == 0xEDE6D6u);
+    CHECK(kDarkPalette.muted == 0xA8B3AAu);
+    CHECK(kDarkPalette.accent == 0xC9A96Eu);
+    CHECK(kDarkPalette.err == 0xD98A8Fu);
+    CHECK(kLightPalette.bg == 0xF6F1E4u);
+    CHECK(kLightPalette.surface == 0xFFFDF7u);
+    CHECK(kLightPalette.text == 0x1C2B26u);
+    CHECK(kLightPalette.accent == 0x1F3A5Fu);
+    CHECK(kLightPalette.brass == 0x7A5C25u);
+}
+
+TEST_CASE("theme palettes satisfy the contrast policy except the two hairline pairs") {
+    using lwf::ui::ContrastRatio;
+    for (const lwf::ui::Palette& palette : {lwf::ui::kDarkPalette, lwf::ui::kLightPalette}) {
+        INFO((palette.bg == 0x0E1714u ? "dark" : "light"));
+        // Body text: 4.5:1 on page background and card surface.
+        CHECK(ContrastRatio(palette.text, palette.bg) >= 4.5);
+        CHECK(ContrastRatio(palette.text, palette.surface) >= 4.5);
+        // Helper text: 4.5:1.
+        CHECK(ContrastRatio(palette.muted, palette.bg) >= 4.5);
+        CHECK(ContrastRatio(palette.muted, palette.surface) >= 4.5);
+        // Meaningful colors: 4.5:1 (the mockup passes them at body level).
+        CHECK(ContrastRatio(palette.accent, palette.surface) >= 4.5);
+        CHECK(ContrastRatio(palette.ok, palette.surface) >= 4.5);
+        CHECK(ContrastRatio(palette.warn, palette.surface) >= 4.5);
+        CHECK(ContrastRatio(palette.err, palette.surface) >= 4.5);
+        CHECK(ContrastRatio(palette.brass, palette.surface) >= 4.5);
+        // Text on accent fills (primary buttons) at 4.5:1.
+        CHECK(ContrastRatio(palette.on_accent, palette.accent) >= 4.5);
+        // The two decorative hairline pairs are the documented exemption:
+        // they sit below 3:1 by design and never carry state on their own.
+        CHECK(ContrastRatio(palette.border, palette.bg) < 3.0);
+        CHECK(ContrastRatio(palette.border, palette.surface) < 3.0);
+    }
+}
+
+TEST_CASE("contrast math matches the WCAG formula") {
+    using lwf::ui::ContrastRatio;
+    CHECK(std::abs(ContrastRatio(0xEDE6D6, 0x0E1714) - 14.67) < 0.02);
+    CHECK(std::abs(ContrastRatio(0xEDE6D6, 0x14221D) - 13.23) < 0.02);
+    CHECK(std::abs(ContrastRatio(0xC9A96E, 0x14221D) - 7.35) < 0.02);
+    CHECK(std::abs(ContrastRatio(0x1C2B26, 0xF6F1E4) - 13.09) < 0.02);
 }

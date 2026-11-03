@@ -97,3 +97,27 @@ docs/MANUAL_TEST_WINDOWS.md — not claimed as verified. models.json urls/sha256
 await Devansh (docs/QUESTIONS.md #2). History purge is a manual decision
 (docs/QUESTIONS.md #4).
 
+
+## GUI redesign (R series)
+
+Baseline: docs/UI_AUDIT.md (R0) audits src/ui against the pinned GLFW 3.4 /
+Dear ImGui v1.92.9b contracts; docs/design/mockup.html is the color/spacing
+reference. Constraint for every R step: visual/UX only - audio, STT, LLM and
+injection logic are not touched.
+
+| id | title | status | commit | gates | manual-check | notes |
+|----|-------|--------|--------|-------|--------------|-------|
+| R0 | UI audit + design reference | DONE | 2249b56 | n/a (docs only) | no | found D1-D12 defect register incl. shared-context blocker |
+| R1 | Theme tokens, one context per window, Mini dot, Full Home/Speech/Cleanup/Privacy/About/Welcome, live-apply settings | DONE (pending Windows verification) | this change | Linux lwf_tests: 162/162 green (3 runs); UI sources syntax-checked against real v1.92.9b headers | yes | fixes audit D1-D4, D6 (fonts pending approval), D9, D10, D13, D14; SettingsWindow + OnboardingWizard absorbed into Full and deleted |
+
+R1 notes:
+- Each OS window now owns its Dear ImGui context (audit section 1 fix); the
+  loop switches contexts and quits only via the tray.
+- `dictation_enabled` was missing from the settings schema, so the tray
+  toggle silently wrote nothing (audit D13); added, default on.
+- The engine bridge no longer touches the UI from the engine thread; errors
+  go through a mutex-guarded attention box drained by the main loop (D14).
+- Default built-in font scaled by DPI; real fonts wait for the approval that
+  D0 flagged. Display sizes use SetWindowFontScale until then.
+- Windows build not run on this box (Linux CI here): MANUAL_TEST_WINDOWS.md
+  section R is the gate before R2.

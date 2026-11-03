@@ -40,15 +40,14 @@
 #include "stt/GrpcInferenceProvider.h"
 #include "stt/LocalWhisperProvider.h"
 #include "ui/MainWindow.h"
-#include "ui/OnboardingWizard.h"
 #include "ui/Overlay.h"
-#include "ui/SettingsWindow.h"
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <thread>
@@ -60,31 +59,56 @@ namespace {
 
 constexpr std::uint32_t kSampleRate = 16000;
 
+// Single-slot attention message written by the engine thread and drained by
+// the main loop. Keeps every UI call on the main thread.
+class AttentionBox {
+public:
+    void Set(std::string message) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        message_ = std::move(message);
+        pending_ = true;
+    }
+
+    bool Take(std::string& out) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!pending_) {
+            return false;
+        }
+        pending_ = false;
+        out = message_;
+        return true;
+    }
+
+private:
+    std::mutex mutex_;
+    std::string message_;
+    bool pending_ = false;
+};
+
 class EngineBridge final : public IEngineSink {
 public:
-    EngineBridge(UiBus& bus, Overlay& overlay, WindowsTray& tray, HistoryStore& history)
-        : bus_(bus), overlay_(overlay), tray_(tray), history_(history) {}
+    EngineBridge(AttentionBox& attention, WindowsTray& tray, HistoryStore& history)
+        : attention_(attention), tray_(tray), history_(history) {}
 
     void OnStatus(const std::string& message) override {
         lwf::Log::Info("engine: " + message);
-        if (message.find("cancelled") != std::string::npos) {
-            overlay_.SetState(OverlayModel::PillState::Cancelled, {});
-        } else if (message.find("select some text") != std::string::npos) {
-            overlay_.SetState(OverlayModel::PillState::Error, message);
+        if (message.find("select some text") != std::string::npos) {
+            attention_.Set(message);
         }
+        // A cancelled dictation needs no visual event; the badge simply
+        // returns to Ready.
     }
 
     void OnError(ErrorCode code, const std::string& detail) override {
         lwf::Log::Error(std::string(ToString(code)) + ": " + detail);
-        overlay_.SetState(OverlayModel::PillState::Error, UserMessage(code));
+        attention_.Set(UserMessage(code));
         tray_.NotifyError(code, detail);
     }
 
     void RecordHistory(const HistoryEntry& entry) { history_.Append(entry); }
 
 private:
-    UiBus& bus_;
-    Overlay& overlay_;
+    AttentionBox& attention_;
     WindowsTray& tray_;
     HistoryStore& history_;
 };
@@ -258,9 +282,8 @@ int main() {
         config.Store().SetBool("first_run", config.Store().GetBool("first_run"));
 
         UiBus ui_bus;
+        AttentionBox attention;
         Overlay overlay;
-        SettingsWindow settings_window(config.Store(), ui_bus);
-        OnboardingWizard wizard(config.Store());
         WindowsTray tray(ui_bus, config.Store());
 
         std::vector<std::pair<ErrorCode, std::string>> startup_errors;
@@ -354,7 +377,7 @@ int main() {
                              config.Store().GetInt("history_max_entries"),
                              config.Store().GetInt("history_max_age_days"));
 
-        EngineBridge bridge(ui_bus, overlay, tray, history);
+        EngineBridge bridge(attention, tray, history);
         for (const auto& notice : startup_errors) {
             bridge.OnError(notice.first, notice.second);
         }
@@ -408,29 +431,39 @@ int main() {
 
         tray.Start();
 
-        MainWindow dashboard(fsm, audio);
-        if (!dashboard.Init()) {
-            lwf::Log::Error("dashboard init failed");
+        MainWindow full(fsm, audio, config.Store(), ui_bus);
+        if (!full.Init()) {
+            lwf::Log::Error("full window init failed");
             tray.Stop();
             hotkey.Stop();
             return 1;
         }
 
         lwf::Log::Info("ready: hold the hotkey and speak");
-        overlay.Init();
-        settings_window.Init();
-        if (wizard.IsNeeded()) {
-            wizard.Open();
-            settings_window.Open();
+        if (overlay.Init()) {
+            overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
+            overlay.SetActivateHandler([&ui_bus] {
+                ui_bus.PostCommand(UiCommandType::SetEnabled, "1");
+            });
+        } else {
+            lwf::Log::Error("mini badge init failed; continuing without it");
+        }
+        if (full.FirstRunNeeded()) {
+            full.SetVisible(true);
         }
 
         std::atomic<bool> quit{false};
-        while (!quit.load() && !dashboard.ShouldClose()) {
+        State previous_state = State::IDLE;
+        auto done_flash_until = std::chrono::steady_clock::time_point{};
+        const auto done_flash_duration = std::chrono::milliseconds(600);
+        while (!quit.load()) {
+            glfwPollEvents();
+
             UiCommand command;
             while (ui_bus.PollCommand(command)) {
                 switch (command.type) {
                     case UiCommandType::OpenSettings:
-                        settings_window.Open();
+                        full.SetVisible(true);
                         break;
                     case UiCommandType::OpenHistory:
                     case UiCommandType::OpenLogsFolder:
@@ -454,6 +487,7 @@ int main() {
                         settings.streaming_pause_ms = config.Store().GetInt("streaming_pause_ms");
                         spoken.SetAggressive(config.Store().GetBool("spoken_commands_aggressive"));
                         snippets.SetMode(config.Store().GetString("snippet_mode"));
+                        overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
                         break;
                     case UiCommandType::ToggleAutostart:
                         Autostart::SetEnabled(!Autostart::IsEnabled());
@@ -469,7 +503,7 @@ int main() {
                 config.Store().SetString("hotkey_ptt", learned);
                 config.Save();
                 hotkey.UpdateBindings(LoadBindings(config.Store()));
-                wizard.SetDetectedHotkey(learned);
+                full.SetDetectedHotkey(learned);
             }
 
             EngineEvent event;
@@ -487,12 +521,42 @@ int main() {
             status.enabled = config.Store().GetBool("dictation_enabled");
             ui_bus.PublishStatus(status);
             overlay.PushLevel(audio.AudioLevel());
-            wizard.SetMicLevel(audio.AudioLevel());
 
-            dashboard.RunOnce();
+            // Mini badge state, derived here so the engine thread never
+            // touches the UI. Attention beats the done flash, which beats
+            // the live FSM state; the badge itself handles the dwell times.
+            std::string attention_message;
+            if (attention.Take(attention_message)) {
+                overlay.SetState(OverlayModel::PillState::Attention, attention_message);
+            } else if (state == State::IDLE && previous_state == State::EMITTING) {
+                done_flash_until = std::chrono::steady_clock::now() + done_flash_duration;
+                overlay.SetState(OverlayModel::PillState::Done, {});
+            } else if (state != State::IDLE ||
+                       std::chrono::steady_clock::now() >= done_flash_until) {
+                OverlayModel::PillState mini_state;
+                switch (state) {
+                    case State::CAPTURING:
+                        mini_state = OverlayModel::PillState::Listening;
+                        break;
+                    case State::TRANSCRIBING:
+                    case State::POSTPROCESSING:
+                    case State::EMITTING:
+                        mini_state = OverlayModel::PillState::Thinking;
+                        break;
+                    default:
+                        mini_state = config.Store().GetBool("dictation_enabled")
+                                         ? OverlayModel::PillState::Ready
+                                         : OverlayModel::PillState::Paused;
+                        break;
+                }
+                overlay.SetState(mini_state, {});
+            }
+            previous_state = state;
+
+            full.SetLastTranscript(engine.LastText());
+            full.RunOnce(1.0f / 60.0f);
+            full.TakeCloseRequest();  // close hides; the tray owns Quit
             overlay.RenderFrame(1.0f / 60.0f);
-            settings_window.RenderFrame();
-            wizard.RenderFrame();
             std::this_thread::sleep_for(std::chrono::milliseconds(8));
         }
 
@@ -501,7 +565,8 @@ int main() {
         tray.Stop();
         tone_player.Shutdown();
         overlay.Shutdown();
-        settings_window.Shutdown();
+        full.Shutdown();
+        glfwTerminate();
         lwf::Log::Info("shutdown complete");
         return 0;
     } catch (const std::exception& e) {

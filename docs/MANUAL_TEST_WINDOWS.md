@@ -256,3 +256,60 @@ Expected: v0 keys unchanged, new keys added with defaults, `config.json.bak` cre
 ```
 [ ] PASS   [ ] FAIL   notes:
 ```
+
+## R: GUI redesign step 1 (theme, mini, full window)
+
+Build first, then run through these in order. Mark PASS only on real Windows
+hardware. All of R replaces the old dashboard/settings/wizard windows.
+
+### R-a: window architecture (audit D1 fix)
+1. Build: `cmake -S . -B build -G "Visual Studio 17 2022" -A x64` then
+   `cmake --build build --config Release` (two-phase as before).
+2. Launch. Expect: no debug assert at startup; a small dot (the mini badge)
+   bottom-center just above the taskbar; no main window unless first run.
+3. Quit from the tray. Expect: clean exit, no crash, nothing in the crash
+   folder (old code null-derefed on double shutdown).
+
+### R-b: mini badge states
+1. Ready: outline mic at reduced opacity. Hover it: it should come to full
+   opacity and the desktop under it should not be blocked once you move away.
+2. Hold the PTT hotkey and speak: filled brass mic, breathing ring, five
+   level bars moving with your voice.
+3. Release: three thinking dots, then a brief check, then back to Ready.
+4. Tray: disable dictation. Badge shows the paused mic (muted, slash). Click
+   it: dictation re-enables (verify the tray checkmark follows).
+5. Stop the mic (unplug or privacy toggle) and trigger a dictation: the
+   attention dot appears; hover it to read the message; it clears after 6 s.
+6. Set `"reduce_motion": true` in `%APPDATA%` config.json and restart.
+   Repeat 2-3: ring and dots static, bars settle. Turn it back off.
+
+### R-c: full window
+1. Tray > Settings...: the full window opens (960x640 default, native title
+   bar, rail with Home/Speech/Cleanup/Privacy/About, dark Hunter-and-Brass
+   theme).
+2. Home: Right now line, hotkey chips, Trust card, Quick settings toggles,
+   Last dictation (dictate something first, then Copy it back from the
+   clipboard).
+3. Quick settings: toggle Dictation off/on - the badge and the tray checkmark
+   must follow immediately. Toggle Clean up text and Hands-free: each shows
+   "Saved" top-right once.
+4. Speech: model path edit shows "Applies after restart." after commit;
+   language combo works; Boost quiet speech toggle applies live.
+5. Cleanup: enable, skip-short slider, timeout slider, aggressive toggle.
+6. Privacy: the transcript-logging toggle shows the red warning when on.
+7. Close the window with the X: it hides; the app keeps dictating. Reopen
+   from the tray. Quit must still come from the tray only.
+
+### R-d: first run
+1. Delete `%APPDATA%\LocalWisperFlow\config.json` (or set first_run=true and
+   clear whisper_model_path), relaunch.
+2. The full window opens on Welcome: mic test (bar moves), microphone
+   settings button opens ms-settings, hotkey chord capture, model list with
+   unverified warnings, finish lands on Home.
+3. Relaunch: no Welcome; window stays hidden until opened.
+
+### R-e: regression basics
+1. One normal dictation end to end: text lands where the cursor is.
+2. Cancel one dictation with the cancel hotkey: badge returns to Ready, no
+   attention dot.
+3. Second instance: launching the exe again just opens the full window.

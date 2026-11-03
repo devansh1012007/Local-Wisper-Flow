@@ -285,9 +285,8 @@ if(LWF_BUILD_FULL)
             src/os/WindowStyles.cpp
             src/os/WindowsTray.cpp
             src/ui/MainWindow.cpp
-            src/ui/OnboardingWizard.cpp
             src/ui/Overlay.cpp
-            src/ui/SettingsWindow.cpp
+            src/ui/theme/ThemePalette.cpp
         )
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/source/app.manifest")
             target_sources(local-wisper-flow PRIVATE source/app.manifest)
@@ -333,7 +332,6 @@ if(LWF_BUILD_FULL)
             target_link_libraries(imgui PUBLIC glfw)
         endif()
 
-        target_sources(local-wisper-flow PRIVATE src/ui/MainWindow.cpp)
         target_link_libraries(local-wisper-flow PRIVATE imgui OpenGL::GL)
     endif()
 

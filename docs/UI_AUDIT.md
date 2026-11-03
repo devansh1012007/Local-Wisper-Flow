@@ -297,9 +297,37 @@ Delete the standalone `Begin/End` rendering entirely.
 | D10 | LOW | `OnboardingWizard.cpp:44-46,56,73-74` | ms-settings tooltip instead of launch; cwd-relative `models.json`; copy promises a nonexistent Download button |
 | D11 | LOW | `MainWindow.cpp:86` | FPS counter in a user-facing window |
 | D12 | LOW | includes across `src/ui/` | Mixed imgui include styles (`<imgui_impl_glfw.h>` vs `"backends/imgui_impl_glfw.h"`) — standardize when adding the shared UI module |
+| D13 | HIGH (silent no-op) | `SettingsStore.cpp` schema | `dictation_enabled` was missing from the schema; `SetNumber` rejects unschemated keys, so the tray's "Enable dictation" wrote nothing and `GetBool` always returned false. Found during R1; the key is UI-only state |
+| D14 | HIGH (data race) | `main.cpp` `EngineBridge` | The engine thread called `Overlay::SetState` directly, writing `state_`/`message_` while the render thread read them. Found during R1; fixed with a mutex-guarded attention box drained by the main loop |
 
 D1-D4 are fixed structurally by the context-per-window rewrite and by porting
 the widgets into Full pages; none of them require touching engine code.
+
+## 5.1 Fix status after R1 (theme tokens, Mini, Full shell)
+
+Landed in the R1 change (see docs/PROGRESS.md):
+
+- D1 (blocker): fixed - one Dear ImGui context per OS window; the loop
+  switches contexts; SettingsWindow and OnboardingWizard no longer exist as
+  OS windows (absorbed into the Full window), so the count is two.
+- D2, D3, D4: fixed by the absorption (widgets ported; the broken Checkbox
+  and the unbounded path copy went away with the port; the wizard renders
+  inside the Full window's frame).
+- D5: unchanged in R1 (History page is R2; the tray label still opens logs).
+- D6: partially - theme tokens and DPI scaling are in; real fonts still wait
+  for approval, so the built-in font is scaled (`FontScaleMain`), with
+  `SetWindowFontScale` for the two display sizes.
+- D7: partially - all mini metrics scale with DPI; work-area refresh after
+  display changes is still R3.
+- D8: partially - hover (Ready opacity, attention message) and click-resume
+  work via a runtime pass-through toggle; dragging the dot is R3.
+- D9: fixed - pages apply live, footer buttons gone, restart banner replaces
+  the stale flags.
+- D10: fixed - ms-settings launches for real, models.json resolves from the
+  exe directory, the copy no longer promises a download button.
+- D11: fixed - the debug panel is gone.
+- D12: fixed - one include style (`imgui.h`, `backends/...`).
+- D13, D14: found and fixed during R1 (see register above).
 
 ## 6. Guardrails for D1+ (unchanged from the brief)
 
