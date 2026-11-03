@@ -41,6 +41,7 @@ set(LWF_CORE_SOURCES
     src/core/AudioGain.cpp
     src/core/CommandModeController.cpp
     src/core/ConfigManager.cpp
+    src/core/ConsentGate.cpp
     src/core/DictationCleanup.cpp
     src/core/DictationEngine.cpp
     src/core/CrashReporter.cpp
@@ -90,6 +91,8 @@ add_executable(lwf_tests
     tests/test_cleanup.cpp
     tests/test_appcontext.cpp
     tests/test_config_compat.cpp
+    tests/consent_test.cpp
+    tests/secrets_redaction_test.cpp
     tests/test_crash.cpp
     tests/test_engine.cpp
     tests/test_worker.cpp
