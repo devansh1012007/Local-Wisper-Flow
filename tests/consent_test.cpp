@@ -51,6 +51,23 @@ TEST_CASE("gate rejects unknown providers without consulting consent") {
     CHECK(verdict.reason.find("not-a-provider") != std::string::npos);
 }
 
+TEST_CASE("every registered provider allows cloud with consent and a key") {
+    for (const std::string& provider : KnownCloudProviders()) {
+        SttConsentInputs inputs;
+        inputs.provider = provider;
+        inputs.consent_accepted = true;
+        inputs.api_key_present = true;
+        CHECK(EvaluateCloudConsent(inputs).decision == SttConsentDecision::CloudAllowed);
+        SttConsentInputs missing;
+        missing.provider = provider;
+        missing.consent_accepted = true;
+        missing.api_key_present = false;
+        const SttConsentVerdict verdict = EvaluateCloudConsent(missing);
+        CHECK(verdict.decision == SttConsentDecision::ApiKeyMissing);
+        CHECK(verdict.reason.find("is not set") != std::string::npos);
+    }
+}
+
 TEST_CASE("every known cloud provider resolves to an api key env variable") {
     const std::vector<std::string> providers = KnownCloudProviders();
     CHECK(providers.size() >= 1);

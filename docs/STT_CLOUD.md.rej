@@ -1,0 +1,41 @@
+diff a/docs/STT_CLOUD.md b/docs/STT_CLOUD.md	(rejected hunks)
+@@ -125,8 +125,38 @@ server-side half of the equation lands here after the S0 smoke run against the r
+ endpoint. Cost is a formula, not a promise: `audio_hours x price_per_hour`, with the
+ Muse Voice Transcribe $0.18/h as the one vendor-verified constant so far.
+ 
++## ElevenLabs Scribe (S7)
++
++`stt_provider="elevenlabs"` routes dictation through ElevenLabs Speech to Text
++(Scribe). Contract, verified against the vendor's API reference on 2026-11-04:
++
++- `POST https://api.elevenlabs.io/v1/speech-to-text`, auth header `xi-api-key`,
++  key read only from `ELEVENLABS_API_KEY`.
++- Multipart fields: `model_id` (default `scribe_v2`), optional `language_code`
++  (ISO-639-1/-3; omitted for auto-detect), optional repeated `keyterms` parts
++  (each ≤ 50 chars, ≤ 5 words, characters `< > { } [ ] \` rejected by the vendor;
++  we cap at 200 like Gnani), and the `file` part (in-memory WAV, same as Gnani).
++- Success body: `text` plus `language_code`/`language_probability`/`words`; we
++  use `text` only. Errors are classified by the shared HTTP status map (422 →
++  invalid_request, 401/403 → auth, 429 → rate_limited, 413 → payload, 5xx →
++  server); the documented error shape is `{"detail": {"status", "message"}}`
++  and the parser also accepts the string form.
++- Fallback, cancellation, empty-transcript, and clip-budget semantics are
++  identical to the Gnani provider (same clip loop, same router).
++
++Language handling: `stt_language` is provider-neutral. `sttlang::ElevenLabsLanguageCode`
++(`src/stt/cloud/LanguageMap.cpp`) takes the first valid ISO token of the comma
++list ("kn,hi" → "kn") and falls back to auto-detect for `auto`, `indic-auto`,
++or unknown tokens. `sttlang::MuseLanguageBias` (used in S8) maps codes to the
++vendor's language names and expands `indic-auto` to the Indic subset of Muse's
++documented 25-language list.
++
++## Meta Muse Voice Transcribe (S8)
++
++pending - next stage.
++
+ ## What is intentionally not here yet
+ 
+ - S6 leftover: the live-API half of the latency numbers (needs the S0 smoke run).
+-- S7/S8: ElevenLabs and Meta Muse providers behind the same `ISttProvider`.
++- S8: Meta Muse provider behind the same `ISttProvider`.
+ - S9: full documentation pass.
