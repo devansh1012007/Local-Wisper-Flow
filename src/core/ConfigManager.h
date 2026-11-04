@@ -22,6 +22,11 @@ public:
     std::string LlmModelPath();
     bool UseRemote();
     std::string RemoteEndpoint();
+    std::string SttProvider();
+    bool SttConsentAccepted();
+    std::string SttLanguage();
+    int SttTimeoutMs();
+    int SttMaxClips();
 
     void SetHotkeyCode(int value);
     void SetWhisperModelPath(const std::string& value);

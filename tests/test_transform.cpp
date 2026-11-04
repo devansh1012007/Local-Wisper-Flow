@@ -1,5 +1,6 @@
 #include "core/ILlmProvider.h"
 #include "core/TransformManager.h"
+#include "V0ConfigFixture.h"
 
 #include <doctest/doctest.h>
 #include <atomic>
@@ -33,6 +34,7 @@ void WaitFor(std::atomic<bool>& flag) {
 }  // namespace
 
 TEST_CASE("transform manager runs async and trims") {
+    SeedTestDataFiles();
     PassthroughLlm llm;
     TransformManager manager(llm, "transforms.json");
 
@@ -49,6 +51,7 @@ TEST_CASE("transform manager runs async and trims") {
 }
 
 TEST_CASE("unknown transform yields empty result") {
+    SeedTestDataFiles();
     PassthroughLlm llm;
     TransformManager manager(llm, "transforms.json");
 
@@ -65,6 +68,7 @@ TEST_CASE("unknown transform yields empty result") {
 }
 
 TEST_CASE("empty text yields empty result without calling provider") {
+    SeedTestDataFiles();
     PassthroughLlm llm;
     TransformManager manager(llm, "transforms.json");
 

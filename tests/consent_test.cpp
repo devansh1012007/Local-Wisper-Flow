@@ -37,7 +37,7 @@ TEST_CASE("gate refuses cloud without the provider key and names the env variabl
 
 TEST_CASE("gate rejects unknown providers without consulting consent") {
     for (const std::string& provider : std::vector<std::string>{"local", "", "not-a-provider",
-                                                                 "GNANI"}) {
+                                                                "GNANI"}) {
         SttConsentInputs inputs;
         inputs.provider = provider;
         inputs.consent_accepted = true;

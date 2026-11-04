@@ -26,7 +26,9 @@
 #include "core/SpokenCommandProcessor.h"
 #include "core/TextPipeline.h"
 #include "core/AppVersion.h"
+#include "core/ConsentGate.h"
 #include "core/CrashReporter.h"
+#include "core/SttRouter.h"
 #include "core/UiBus.h"
 #include "core/UnavailableProviders.h"
 #include "llm/LocalLlamaProvider.h"
@@ -37,6 +39,11 @@
 #include "os/WindowsHotkeyListener.h"
 #include "os/WindowsTextInjector.h"
 #include "os/WindowsTray.h"
+#include "stt/cloud/ElevenLabsProvider.h"
+#include "stt/cloud/GnaniProvider.h"
+#include "stt/cloud/LanguageMap.h"
+#include "stt/cloud/MuseProvider.h"
+#include "stt/cloud/WindowsHttpClient.h"
 #include "stt/GrpcInferenceProvider.h"
 #include "stt/LocalWhisperProvider.h"
 #include "ui/MainWindow.h"
@@ -45,6 +52,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -310,8 +318,9 @@ int main() {
                                         "speech model is missing; open Settings > Speech");
         }
         UnavailableStt unavailable_stt;
-        IInferenceProvider& stt = local_stt ? static_cast<IInferenceProvider&>(*local_stt)
-                                            : static_cast<IInferenceProvider&>(unavailable_stt);
+        IInferenceProvider& local_stack =
+            local_stt ? static_cast<IInferenceProvider&>(*local_stt)
+                      : static_cast<IInferenceProvider&>(unavailable_stt);
         WindowsTextInjector injector;
 
         AppContextResolver app_context;
@@ -371,6 +380,67 @@ int main() {
         pipeline.SetDictionary(&dictionary);
         pipeline.SetSnippets(&snippets);
 
+        const std::string stt_provider_name = config.SttProvider();
+        const bool stt_consent = config.SttConsentAccepted();
+        std::unique_ptr<ISttProvider> cloud_provider;
+        WindowsHttpClient http_client;
+        if (IsKnownCloudProvider(stt_provider_name)) {
+            const char* key_env = ApiKeyEnvFor(stt_provider_name);
+            const char* key_value = key_env != nullptr ? std::getenv(key_env) : nullptr;
+            const std::string api_key = key_value != nullptr ? key_value : "";
+            SttConsentInputs consent_inputs;
+            consent_inputs.provider = stt_provider_name;
+            consent_inputs.consent_accepted = stt_consent;
+            consent_inputs.api_key_present = !api_key.empty();
+            const SttConsentVerdict verdict = EvaluateCloudConsent(consent_inputs);
+            if (verdict.decision != SttConsentDecision::CloudAllowed) {
+                lwf::Log::Warning("stt_provider=" + stt_provider_name + " ignored: " +
+                                  verdict.reason);
+            } else if (stt_provider_name == "gnani") {
+                GnaniProviderSettings gnani_settings;
+                gnani_settings.api_key_id = api_key;
+                gnani_settings.language = config.SttLanguage();
+                gnani_settings.timeout_ms = config.SttTimeoutMs();
+                gnani_settings.max_clips = static_cast<std::size_t>(config.SttMaxClips());
+                gnani_settings.keyterms = dictionary.Words();
+                cloud_provider = std::make_unique<GnaniProvider>(http_client, gnani_settings);
+                lwf::Log::Info("cloud provider gnani enabled (language " + config.SttLanguage() +
+                               ")");
+            } else if (stt_provider_name == "elevenlabs") {
+                ElevenLabsProviderSettings elevenlabs_settings;
+                elevenlabs_settings.api_key = api_key;
+                elevenlabs_settings.language_code =
+                    sttlang::ElevenLabsLanguageCode(config.SttLanguage());
+                elevenlabs_settings.timeout_ms = config.SttTimeoutMs();
+                elevenlabs_settings.max_clips = static_cast<std::size_t>(config.SttMaxClips());
+                elevenlabs_settings.keyterms = dictionary.Words();
+                cloud_provider =
+                    std::make_unique<ElevenLabsProvider>(http_client, elevenlabs_settings);
+                lwf::Log::Info("cloud provider elevenlabs enabled");
+            } else if (stt_provider_name == "muse") {
+                MuseProviderSettings muse_settings;
+                muse_settings.api_key = api_key;
+                muse_settings.language_bias = sttlang::MuseLanguageBias(config.SttLanguage());
+                muse_settings.keywords = dictionary.Words();
+                muse_settings.timeout_ms = config.SttTimeoutMs();
+                muse_settings.max_clips = static_cast<std::size_t>(config.SttMaxClips());
+                cloud_provider = std::make_unique<MuseProvider>(http_client, muse_settings);
+                lwf::Log::Info("cloud provider muse enabled");
+            }
+        } else if (stt_provider_name != "local") {
+            lwf::Log::Warning("unknown stt_provider '" + stt_provider_name + "'; using local");
+        }
+        SttRoutingConfig stt_routing;
+        stt_routing.provider = stt_provider_name;
+        stt_routing.consent_accepted = stt_consent;
+        stt_routing.api_key_source = [stt_provider_name] {
+            const char* env_name = ApiKeyEnvFor(stt_provider_name);
+            const char* key = env_name != nullptr ? std::getenv(env_name) : nullptr;
+            return key != nullptr ? std::string(key) : std::string();
+        };
+        auto local_chain = std::make_unique<LocalProviderStack>(local_stack, passthrough_llm);
+        SttRouter stt_router(std::move(local_chain), std::move(cloud_provider), stt_routing);
+
         HistoryStore history(data_dir + "\\history.jsonl",
                              config.Store().GetBool("history_enabled"),
                              config.Store().GetBool("keep_raw_in_history"),
@@ -417,8 +487,8 @@ int main() {
             bridge.OnError(ErrorCode::ModelMissing,
                            "voice activity model is missing; running without silence gating");
         }
-        DictationEngine engine(audio, vad_provider.get(), stt, pipeline, injector, fsm, clock,
-                               bridge, settings);
+        DictationEngine engine(audio, vad_provider.get(), stt_router, pipeline, injector, fsm,
+                               clock, bridge, settings);
         engine.SetToneFeedback(&tone_player);
         engine.SetCommandController(&command_controller);
 
@@ -582,7 +652,10 @@ int main() {
     try {
         ConfigManager config("config.json");
         std::cout << "Local Wisper Flow core build: hotkey=" << config.HotkeyCode()
-                  << " model=" << config.WhisperModelPath() << std::endl;
+                  << " model=" << config.WhisperModelPath()
+                  << " stt_provider=" << config.SttProvider()
+                  << " stt_consent=" << (config.SttConsentAccepted() ? "true" : "false")
+                  << std::endl;
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "Fatal: " << e.what() << std::endl;

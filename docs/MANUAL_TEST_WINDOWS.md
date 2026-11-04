@@ -24,7 +24,7 @@ until a PASS box is filled. Add one section per task id with exact steps.
 | E | E2 resilience | mic unplug, missing models, corrupt config, disk full |
 | E | E3 crash handling | crash file, one-time notice, About version |
 | F | F4 installer | per-user install, tasks, uninstall data choice |
-| S | S4/S5 cloud STT | consent UI, gating, fallback, secrets, cancellation |
+| S | S4-S8 cloud STT | consent UI, gating, fallback, secrets, cancellation, three providers |
 
 Portable logic (FSM tables, tracker, pipeline, stores, streaming fallback,
 resilience/chaos, privacy) is unit-tested on Linux and covered by ctest; the
@@ -253,6 +253,38 @@ Expected: v0 keys unchanged, new keys added with defaults, `config.json.bak` cre
    No keeps %APPDATA%\LocalWisperFlow, Yes deletes it.
 5. An unsigned build triggers SmartScreen on first launch ("More info" ->
    "Run anyway"); signing removes it.
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+
+## S4-S8: cloud STT (Gnani, ElevenLabs, Muse)
+1. Fresh install: Settings > Cloud shows provider local/gnani/elevenlabs/muse;
+   consent box is unchecked; dictated text still comes from local Whisper.
+2. Tick the consent box, set stt_provider=gnani, do NOT set GNANI_API_KEY,
+   restart: log carries a warning that the key env variable is not set, and
+   dictation still works through local Whisper (no cloud request). Repeat for
+   ELEVENLABS_API_KEY and META_MODEL_API_KEY.
+3. Set GNANI_API_KEY, run `python scripts/gnani_smoke.py --file
+   tests/data/sample.wav --dry-run` (layout check), then without --dry-run:
+   the live response shape must match src/stt/cloud/GnaniContract.h; if field
+   names differ, update the contract constants before trusting cloud mode.
+   For elevenlabs/muse no offline smoke script exists - verify the first live
+   dictation against the contract sections of docs/STT_CLOUD.md.
+4. With cloud enabled per provider, dictate: log lines show provider=<name>,
+   request_id, status, bytes and latency - never the key, never the
+   transcript.
+5. Break the key (set the env var to garbage): the utterance still lands
+   (cloud-to-local fallback for that utterance) and the log shows the auth
+   error category.
+6. Press Esc while a cloud transcription is in flight: nothing is injected,
+   no fallback fires, app returns to idle.
+7. Search the whole logs directory for all three API key values: zero hits.
+   Also confirm config.json never contains any of them.
+8. stt_language mapping: set stt_language="kn,hi" - gnani receives language
+   kn,hi; elevenlabs receives language_code kn; muse receives languageBias
+   ["Kannada","Hindi"] (check the first live request with a proxy or the
+   vendor dashboards' request logs).
 
 ```
 [ ] PASS   [ ] FAIL   notes:

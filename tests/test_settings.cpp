@@ -1,6 +1,7 @@
 #include "core/ConfigManager.h"
 #include "core/PathResolver.h"
 #include "os/DataDir.h"
+#include "V0ConfigFixture.h"
 
 #include <doctest/doctest.h>
 #include <atomic>
@@ -59,6 +60,7 @@ TEST_CASE("settings round trip preserves known and unknown keys") {
 }
 
 TEST_CASE("v0 config loads with defaults for new keys") {
+    SeedV0Config();
     SettingsStore store("tests/data/config_v0.json");
     CHECK(store.GetInt("hotkey_code") == 165);
     CHECK(store.GetString("whisper_model_path") == "ggml-base.en.bin");

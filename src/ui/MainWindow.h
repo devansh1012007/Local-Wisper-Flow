@@ -11,9 +11,9 @@ class MiniaudioCapture;
 class SettingsStore;
 class UiBus;
 
-// The Full window: rail navigation plus pages (Home, Speech, Cleanup, Privacy,
-// About, and the first-run Welcome). Owns its GLFW window and its Dear ImGui
-// context (one context per OS window, docs/UI_AUDIT.md section 1).
+// The Full window: rail navigation plus pages (Home, Speech, Cloud, Cleanup,
+// Privacy, About, and the first-run Welcome). Owns its GLFW window and its
+// Dear ImGui context (one context per OS window, docs/UI_AUDIT.md section 1).
 //
 // Closing the window hides it - the tray owns Quit. Settings changes apply
 // live: every edit is written, saved and followed by an ApplySettings command
@@ -52,6 +52,7 @@ private:
     void DrawPageChrome(const char* title, const char* subtitle, float scale);
     void DrawHomePage(float scale);
     void DrawSpeechPage(float scale);
+    void DrawCloudPage(float scale);
     void DrawCleanupPage(float scale);
     void DrawPrivacyPage(float scale);
     void DrawAboutPage(float scale);
@@ -65,7 +66,7 @@ private:
     void DrawRestartBanner(float scale);
     void DrawHotkeyChips(const std::string& chord, float scale);
 
-    enum class Page { Welcome, Home, Speech, Cleanup, Privacy, About };
+    enum class Page { Welcome, Home, Speech, Cloud, Cleanup, Privacy, About };
 
     const DictationFSM& fsm_;
     const MiniaudioCapture& audio_;

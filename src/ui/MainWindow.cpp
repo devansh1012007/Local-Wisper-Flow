@@ -287,6 +287,9 @@ void MainWindow::RenderPages(float scale) {
         case Page::Speech:
             DrawSpeechPage(scale);
             break;
+        case Page::Cloud:
+            DrawCloudPage(scale);
+            break;
         case Page::Cleanup:
             DrawCleanupPage(scale);
             break;
@@ -325,6 +328,7 @@ void MainWindow::DrawRail(float scale) {
         const NavItem items[] = {
             {"##nav_home", "Home", Page::Home},
             {"##nav_speech", "Speech", Page::Speech},
+            {"##nav_cloud", "Cloud", Page::Cloud},
             {"##nav_cleanup", "Cleanup", Page::Cleanup},
             {"##nav_privacy", "Privacy", Page::Privacy},
             {"##nav_about", "About", Page::About},
@@ -666,6 +670,63 @@ void MainWindow::DrawSpeechPage(float scale) {
         if (ToggleRow("Boost quiet speech", boost, "Lifts a soft voice without clipping", scale)) {
             settings_.SetBool("quiet_speech_boost", !boost);
             ApplyAndSave();
+        }
+    }
+    EndCard(scale);
+}
+
+void MainWindow::DrawCloudPage(float scale) {
+    DrawPageChrome("Cloud", "Where your speech is transcribed.", scale);
+    DrawRestartBanner(scale);
+
+    const float width = std::min(ImGui::GetContentRegionAvail().x, metrics::content_max * scale);
+
+    BeginCard("##card_cloud_provider", width, scale);
+    {
+        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::TextUnformatted("Provider");
+        ImGui::SetWindowFontScale(1.0f);
+
+        static const char* kProviderItems[] = {"local", "gnani", "elevenlabs", "muse"};
+        const std::string provider = settings_.GetString("stt_provider");
+        int provider_index = provider == "gnani" ? 1
+                             : provider == "elevenlabs" ? 2
+                             : provider == "muse" ? 3 : 0;
+        if (ImGui::BeginCombo("##stt_provider", kProviderItems[provider_index])) {
+            for (int item = 0; item < 4; ++item) {
+                if (ImGui::Selectable(kProviderItems[item], item == provider_index)) {
+                    settings_.SetString("stt_provider", kProviderItems[item]);
+                    restart_needed_ = true;
+                    ApplyAndSave();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::TextWrapped("Local Whisper keeps every recording on this machine. A cloud "
+                           "provider sends recordings to that provider's servers for "
+                           "transcription.");
+    }
+    EndCard(scale);
+
+    BeginCard("##card_cloud_consent", width, scale);
+    {
+        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::TextUnformatted("Consent");
+        ImGui::SetWindowFontScale(1.0f);
+
+        bool consent = settings_.GetBool("stt_consent_accepted");
+        if (ToggleRow("I understand; enable cloud transcription", consent, nullptr, scale)) {
+            settings_.SetBool("stt_consent_accepted", !consent);
+            restart_needed_ = true;
+            ApplyAndSave();
+        }
+        if (consent && settings_.GetString("stt_provider") != "local") {
+            ImGui::TextColored(Color(kDarkPalette.warn),
+                               "Cloud is active only while the provider API key is present in "
+                               "the environment.");
+            ImGui::TextWrapped("The API key is read from the environment and is never written "
+                               "to config.json, logs, or history. If a cloud request fails, "
+                               "that utterance falls back to local Whisper.");
         }
     }
     EndCard(scale);

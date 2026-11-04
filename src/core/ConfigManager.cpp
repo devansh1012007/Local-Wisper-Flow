@@ -70,3 +70,28 @@ void ConfigManager::SetRemoteEndpoint(const std::string& value) {
 SettingsStore& ConfigManager::Store() {
     return *store_;
 }
+
+std::string ConfigManager::SttProvider() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return store_->GetString("stt_provider");
+}
+
+bool ConfigManager::SttConsentAccepted() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return store_->GetBool("stt_consent_accepted");
+}
+
+std::string ConfigManager::SttLanguage() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return store_->GetString("stt_language");
+}
+
+int ConfigManager::SttTimeoutMs() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return store_->GetInt("stt_timeout_ms");
+}
+
+int ConfigManager::SttMaxClips() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return store_->GetInt("stt_max_clips");
+}

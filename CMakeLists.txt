@@ -42,6 +42,21 @@ set(LWF_CORE_SOURCES
     src/core/CommandModeController.cpp
     src/core/ConfigManager.cpp
     src/core/ConsentGate.cpp
+    src/core/SttRouter.cpp
+    src/stt/cloud/ClipSplitter.cpp
+    src/stt/cloud/WavEncoder.cpp
+    src/stt/cloud/MultipartBuilder.cpp
+    src/stt/cloud/GnaniRequest.cpp
+    src/stt/cloud/GnaniResponse.cpp
+    src/stt/cloud/GnaniProvider.cpp
+    src/stt/cloud/HttpStatus.cpp
+    src/stt/cloud/LanguageMap.cpp
+    src/stt/cloud/ElevenLabsRequest.cpp
+    src/stt/cloud/ElevenLabsResponse.cpp
+    src/stt/cloud/ElevenLabsProvider.cpp
+    src/stt/cloud/MuseRequest.cpp
+    src/stt/cloud/MuseResponse.cpp
+    src/stt/cloud/MuseProvider.cpp
     src/core/DictationCleanup.cpp
     src/core/DictationEngine.cpp
     src/core/CrashReporter.cpp
@@ -93,6 +108,11 @@ add_executable(lwf_tests
     tests/test_config_compat.cpp
     tests/consent_test.cpp
     tests/secrets_redaction_test.cpp
+    tests/gnani_provider_test.cpp
+    tests/stt_router_test.cpp
+    tests/elevenlabs_provider_test.cpp
+    tests/language_map_test.cpp
+    tests/muse_provider_test.cpp
     tests/test_crash.cpp
     tests/test_engine.cpp
     tests/test_worker.cpp

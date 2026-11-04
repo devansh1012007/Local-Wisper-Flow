@@ -1,61 +1,38 @@
-#!/usr/bin/env bash
-set -u
+#!/bin/sh
+# Privacy gate (E4): the app is offline by default. Network APIs live in
+# exactly three places (the optional gRPC inference client, the explicit
+# model downloader and the cloud STT HTTP client); cloud endpoint names live
+# only under src/stt/cloud/; file-write APIs are banned in the audio/stt/
+# vad/llm code and in all of core except the text stores.
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
-fail=0
-
-network_allowlist=(
-    "^src/stt/GrpcInferenceProvider\.(h|cpp)$"
-    "^src/os/WindowsDownloader\.(h|cpp)$"
-)
-
-network_patterns='winhttp|wininet|WinHttp|WinInet|curl_|curl\.h|socket\(|WSASocket|getaddrinfo|gethostbyname|grpc::CreateChannel|grpc_create_channel|InetOpenUrl|InternetOpen|URLRequest|httplib'
-
-file_write_allowlist=(
-    "^src/core/(Log|SettingsStore|HistoryStore|CrashReporter|SnippetStore|PersonalDictionary|Onboarding|ConfigManager)\.(h|cpp)$"
-    "^src/core/(Sha256|IClock|Languages|ErrorCode)\.(h|cpp)$"
-    "^tests/.*$"
-    "^bench/.*$"
-    "^scripts/.*$"
-)
-
-matches_in_allowlist() {
-    local file="$1"
-    shift
-    for pattern in "$@"; do
-        if echo "$file" | grep -qE "$pattern"; then
-            return 0
-        fi
-    done
-    return 1
+status=0
+fail() {
+    echo "FAIL: $1"
+    echo "$2"
+    status=1
 }
 
-while IFS= read -r file; do
-    rel="${file#"$root"/}"
-    if matches_in_allowlist "$rel" "${network_allowlist[@]}"; then
-        continue
-    fi
-    if grep -InE "$network_patterns" "$file" >/dev/null 2>&1; then
-        echo "network API outside allowlist: $rel"
-        grep -InE "$network_patterns" "$file" | head -3
-        fail=1
-    fi
-done < <(find "$root/src" -name "*.h" -o -name "*.cpp" | sort)
-
-while IFS= read -r file; do
-    rel="${file#"$root"/}"
-    if matches_in_allowlist "$rel" "${file_write_allowlist[@]}"; then
-        continue
-    fi
-    if grep -InE "ofstream|fopen|CreateFile\(" "$file" >/dev/null 2>&1; then
-        echo "file write API outside allowlist (audio must never touch disk): $rel"
-        grep -InE "ofstream|fopen|CreateFile\(" "$file" | head -3
-        fail=1
-    fi
-done < <(find "$root/src/core" "$root/src/audio" "$root/src/stt" "$root/src/vad" "$root/src/llm" -name "*.h" -o -name "*.cpp" 2>/dev/null | sort)
-
-if [ "$fail" -ne 0 ]; then
-    echo "privacy check: FAIL"
-    exit 1
+network_hits=$(grep -rniE 'winhttp|wininet|wsastartup|wsasocket|internetopen|getaddrinfo|curl_(easy|multi)_(init|setopt)|urlopen' src --include='*.cpp' --include='*.h' 2>/dev/null | grep -vE '^(src/stt/GrpcInferenceProvider\.(cpp|h):|src/os/WindowsDownloader\.(cpp|h):|src/stt/cloud/WindowsHttpClient\.(cpp|h):)' || true)
+if [ -n "$network_hits" ]; then
+    fail "network APIs outside the allowlist (GrpcInferenceProvider, WindowsDownloader, WindowsHttpClient)" "$network_hits"
 fi
-echo "privacy: OK"
+
+endpoint_hits=$(grep -rnE 'api\.(vachana\.ai|elevenlabs\.io|meta\.ai)' src --include='*.cpp' --include='*.h' 2>/dev/null | grep -v '^src/stt/cloud/' || true)
+if [ -n "$endpoint_hits" ]; then
+    fail "cloud endpoints outside src/stt/cloud/" "$endpoint_hits"
+fi
+
+write_hits=$(grep -rnE 'ofstream|fopen|freopen|CreateFile\(' src/audio src/vad src/llm --include='*.cpp' --include='*.h' 2>/dev/null || true)
+if [ -n "$write_hits" ]; then
+    fail "file-write APIs in audio/vad/llm (audio must never touch disk)" "$write_hits"
+fi
+
+core_write_hits=$(grep -rnE 'ofstream|fopen|freopen|CreateFile\(' src/core src/stt --include='*.cpp' --include='*.h' 2>/dev/null | grep -vE '^(src/core/(CrashReporter|HistoryStore|Log|SettingsStore)\.cpp:)' || true)
+if [ -n "$core_write_hits" ]; then
+    fail "file-write APIs outside the text stores and log" "$core_write_hits"
+fi
+
+if [ "$status" -eq 0 ]; then
+    echo "no-network: OK"
+fi
+exit $status

@@ -121,3 +121,40 @@ R1 notes:
   D0 flagged. Display sizes use SetWindowFontScale until then.
 - Windows build not run on this box (Linux CI here): MANUAL_TEST_WINDOWS.md
   section R is the gate before R2.
+
+## STT cloud providers (S0-S9)
+
+Opt-in cloud transcription behind the consent gate, cut from the rebase report in
+repo-root BASE_DECISION.md. Stage ledger (one commit per stage):
+
+| id | title | status | commit | gates | notes |
+|----|-------|--------|--------|-------|-------|
+| Phase 0 | base decision + rebase report | DONE | a1d927b..8662441 | n/a | decision B, replayed onto 8e4945a+d87fedc |
+| S0 | Gnani contract smoke script | DONE | fd6fe84 | G1-G5 | offline contract tool; live run pending (QUESTIONS #5) |
+| S1 | WAV / multipart / clip primitives | DONE | 5cd6f45 | G1-G5 | in-memory audio only |
+| S2 | Gnani request/parse/error map | DONE | b6c5e0a | G1-G5 | SttErrorCategory taxonomy |
+| S3 | SttRouter + consent gate + fallback | DONE | 91a55ed | G1-G5 | one-way cloud->local |
+| S4 | WinHTTP client + app wiring | DONE | e9ee0b6 (rebased) | G1-G2/G4/G5, G3 pending | Windows build check pending |
+| S5 | ConsentGate, Redact, Settings > Cloud UI | DONE | 98b0829 | G1-G5, G3 pending | consent + secrets_redaction tests |
+| S6 | lwf-cloud-bench | DONE | 8928b0c | G1-G5 | loopback latency + cost model (BENCHMARKS.md) |
+| S7 | ElevenLabs Scribe provider + LanguageMap | DONE | 3df580e | G1-G5 | language_map + cancel tests |
+| S8 | Meta Muse Voice provider | DONE | 16b6f51 | G1-G5 | two-part JSON+audio multipart |
+| S9 | documentation pass + hygiene self-test | DONE | (this commit) | G1-G5 | interface mapping in STT_CLOUD.md |
+
+Note (re-land): the commits above name the ORIGINAL line's SHAs, which ended at
+86624419 and were pruned by the dev-environment reset along with the S0-S4
+base. This repo re-lands S5-S9 from the recovered bundle pack and patch set
+onto the R1 GUI-redesign line; the S0-S4 files the bundle assumed (SttRouter,
+ISttProvider, IHttpTransport, Gnani stack, ClipSplitter, WavEncoder,
+MultipartBuilder) are reconstructions constrained by the recovered providers,
+tests and docs, and the S4/S5 cloud UI was re-homed from the old
+SettingsWindow tab to the R1 Full window's Cloud page. scripts/gnani_smoke.py
+(S0) was lost with the base and is not rebuilt here - see QUESTIONS #5.
+
+Final gate run at S9 (Linux core, gcc 14.2, Release): build -j4 clean, doctest
+suite green (see git log for the exact case/assert counts of this re-land),
+check_hygiene.sh OK (+ --self-test OK), check_no_network.sh OK, config v0
+compat green, local-wisper-flow smoke exits 0. Honest limits: all cloud code
+is unit-tested with fakes; the live-API smoke (Gnani/ElevenLabs/Muse), the
+Windows build/UI checkpoint and the zig type-check await Devansh
+(docs/QUESTIONS.md #1 and #5).
