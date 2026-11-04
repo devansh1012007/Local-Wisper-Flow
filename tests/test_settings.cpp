@@ -178,7 +178,15 @@ TEST_CASE("path resolver prefers data dir then exe dir then as-is") {
 
 TEST_CASE("data dir honors LWF_HOME override") {
     const std::string dir = TempDir("lwfhomedir");
+#ifdef _WIN32
+    _putenv_s("LWF_HOME", dir.c_str());
+#else
     setenv("LWF_HOME", dir.c_str(), 1);
+#endif
     CHECK(GetDataDir() == dir);
+#ifdef _WIN32
+    _putenv_s("LWF_HOME", "");
+#else
     unsetenv("LWF_HOME");
+#endif
 }

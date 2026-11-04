@@ -19,7 +19,7 @@
 #include <GL/gl.h>
 
 #ifdef _WIN32
-#include <shellapi.h>
+#include <windows.h>
 #endif
 
 #include <cfloat>
@@ -841,7 +841,7 @@ void MainWindow::DrawWelcomePage(float scale) {
             if (ImGui::Button("Open microphone settings")) {
 #ifdef _WIN32
                 ShellExecuteA(nullptr, "open", "ms-settings:privacy-microphone", nullptr, nullptr,
-                              SW_SHOWNORMAL);
+                              1);
 #endif
             }
         } else if (welcome_step_ == 2) {

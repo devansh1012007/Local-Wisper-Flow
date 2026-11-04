@@ -130,7 +130,7 @@ bool WindowsDownloader::Download(const std::string& url, const std::string& dest
             Onboarding::PlanResume(existing_bytes, static_cast<std::uint64_t>(remote_size),
                                    expected_sha256, actual);
         if (!plan.valid) {
-            Log::Warning("download restart: " + plan.error);
+            lwf::Log::Warning("download restart: " + plan.error);
             existing_bytes = 0;
             std::filesystem::remove(destination_path, fs_ec);
         } else if (!plan.verify_required && plan.start_offset == 0 && existing_bytes > 0) {
@@ -219,7 +219,7 @@ bool WindowsDownloader::Download(const std::string& url, const std::string& dest
                                      "downloaded file failed verification");
         }
     } else {
-        Log::Warning("downloaded without verification: " + destination_path);
+        lwf::Log::Warning("downloaded without verification: " + destination_path);
     }
     std::filesystem::rename(tmp_path, destination_path, fs_ec);
     if (fs_ec) {

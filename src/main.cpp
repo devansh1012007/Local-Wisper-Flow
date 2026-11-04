@@ -16,7 +16,12 @@
 #include "core/HotkeyBinding.h"
 #include "core/HotkeyTracker.h"
 #include "core/ILlmProvider.h"
+#include "core/IEngineSink.h"
 #include "core/IInferenceProvider.h"
+#include "core/IVadProvider.h"
+#include "core/IClock.h"
+#include "core/DictationEngine.h"
+#include "core/ToneGenerator.h"
 #include "core/InjectionException.h"
 #include "core/ITextInjector.h"
 #include "core/Log.h"
@@ -62,6 +67,11 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 namespace {
 
@@ -457,10 +467,10 @@ int main() {
             lwf::CrashReporter::MarkSeen(unseen_crash);
         }
 
-        TonePlayer tone_player;
+        ToneGenerator::TonePlayer tone_player;
         WindowsSelectionCapture selection_capture;
         CommandModeController command_controller(selection_capture, llm, injector);
-        lwf::EngineSettings settings;
+        EngineSettings settings;
         settings.min_hold_ms = config.Store().GetInt("min_hold_ms");
         settings.max_recording_ms = config.Store().GetInt("max_recording_ms");
         settings.hands_free_silence_ms = config.Store().GetInt("hands_free_silence_ms");
@@ -476,18 +486,8 @@ int main() {
             g_fsm_diag.store(static_cast<int>(current), std::memory_order_relaxed);
         });
         RealClock clock;
-        std::unique_ptr<SileroVadProvider> vad_provider;
-        try {
-            vad_provider = std::make_unique<SileroVadProvider>(
-                data_dir + "\\models\\silero_vad.onnx",
-                static_cast<float>(config.VadThreshold()));
-        } catch (const std::exception& e) {
-            lwf::Log::Error(std::string("vad model failed to load; running without silence gating: ") +
-                            e.what());
-            bridge.OnError(ErrorCode::ModelMissing,
-                           "voice activity model is missing; running without silence gating");
-        }
-        DictationEngine engine(audio, vad_provider.get(), stt_router, pipeline, injector, fsm,
+        IVadProvider* vad = nullptr;
+        DictationEngine engine(audio, vad, stt_router, pipeline, injector, fsm,
                                clock, bridge, settings);
         engine.SetToneFeedback(&tone_player);
         engine.SetCommandController(&command_controller);

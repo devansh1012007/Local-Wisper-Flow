@@ -1,7 +1,11 @@
+#define GLFW_EXPOSE_NATIVE_WIN32
 #include "ui/Overlay.h"
 
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
+
+#include <windows.h>
+#include <GLFW/glfw3native.h>
 
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
