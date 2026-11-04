@@ -125,6 +125,9 @@ add_test(NAME lwf-tests COMMAND lwf_tests WORKING_DIRECTORY "${CMAKE_CURRENT_SOU
 add_executable(lwf-bench bench/lwf_bench.cpp)
 target_link_libraries(lwf-bench PRIVATE lwf_core)
 
+add_executable(lwf-cloud-bench bench/lwf_cloud_bench.cpp)
+target_link_libraries(lwf-cloud-bench PRIVATE lwf_core)
+
 if(LWF_BUILD_FULL)
     set(LLAMA_TAG      b10603)
     set(LLAMA_JOBS     4)
