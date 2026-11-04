@@ -160,6 +160,25 @@ App-specific behavior (paste chord, tone profile) lives in `app_profiles.json` i
 dir; dictionary and snippets in `dictionary.json` / `snippets.json`; history in
 `history.jsonl`.
 
+## Cloud speech-to-text (opt-in)
+
+Dictation stays on-device by default. Three opt-in cloud providers are available behind
+Settings > Cloud, each gated by an explicit consent flag plus an API key that only ever
+comes from the environment - never from config.json, and never written to logs:
+
+| Provider | `stt_provider` | Key environment variable | Contract |
+|---|---|---|---|
+| Gnani Prisma | `gnani` | `GNANI_API_KEY` | `api.vachana.ai` STT v3 |
+| ElevenLabs Scribe | `elevenlabs` | `ELEVENLABS_API_KEY` | `api.elevenlabs.io/v1/speech-to-text` |
+| Meta Muse Voice | `muse` | `META_MODEL_API_KEY` | `api.meta.ai/v1/asr/transcribe` |
+
+When a cloud request fails - auth, rate limit, timeout, network, malformed response -
+that utterance falls back to local Whisper; local is never upgraded to cloud mid-utterance.
+Audio is encoded in memory and never touches disk; logs carry provider, request id,
+status, error category, byte counts and latency only. Before trusting a cloud path, run
+the S0 smoke check on a machine with a real key (docs/STT_CLOUD.md) - the request shapes
+are vendor-verified from documentation but not yet exercised against the live endpoints.
+
 ## Troubleshooting
 
 - **Microphone blocked**: if the level meter stays empty, open

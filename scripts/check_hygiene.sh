@@ -8,6 +8,31 @@ report() {
     status=1
 }
 
+if [ "${1:-}" = "--self-test" ]; then
+    offender="src/core/selftest_offender.h"
+    printf '#pragma once\nstatic const char* kEp = "api.elevenlabs.io";\n' > "$offender"
+    if sh scripts/check_hygiene.sh > /dev/null 2>&1; then
+        echo "self-test FAIL: endpoint offender was not caught"
+        rm -f "$offender"
+        exit 1
+    fi
+    rm -f "$offender"
+    offender="src/core/selftest_offender.cpp"
+    printf '#include <winhttp.h>\n' > "$offender"
+    if sh scripts/check_hygiene.sh > /dev/null 2>&1; then
+        echo "self-test FAIL: network offender was not caught"
+        rm -f "$offender"
+        exit 1
+    fi
+    rm -f "$offender"
+    if ! sh scripts/check_hygiene.sh > /dev/null 2>&1; then
+        echo "self-test FAIL: clean tree did not pass"
+        exit 1
+    fi
+    echo "hygiene self-test: OK"
+    exit 0
+fi
+
 for f in $(grep -rln 'windows\.h' src 2>/dev/null); do
     case "$f" in
         src/os/*) ;;

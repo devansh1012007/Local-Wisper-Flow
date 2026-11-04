@@ -1,0 +1,91 @@
+diff a/docs/STT_CLOUD.md b/docs/STT_CLOUD.md	(rejected hunks)
+@@ -1,16 +1,20 @@
+-# Cloud STT providers (Gnani Prisma)
++# Cloud STT providers (Gnani Prisma, ElevenLabs Scribe, Meta Muse Voice)
+ 
+ Local Wisper Flow keeps Whisper fully on-device by default. This feature adds
+-an **opt-in** cloud path through Gnani Prisma (`api.vachana.ai`, STT v3) with a
+-strict consent gate and a one-way fallback to local transcription.
++an **opt-in** cloud path through three providers - Gnani Prisma
++(`api.vachana.ai`, STT v3), ElevenLabs Scribe (`api.elevenlabs.io`), and Meta
++Muse Voice Transcribe (`api.meta.ai`) - with a strict consent gate and a
++one-way fallback to local transcription.
+ 
+ ## Opt-in model
+ 
+ Cloud STT is used only when **all three** hold:
+ 
+-1. `stt_provider` is `"gnani"` in `config.json` (default `"local"`),
++1. `stt_provider` names a cloud provider in `config.json`
++   (`gnani`, `elevenlabs`, or `muse`; default `local`),
+ 2. `stt_consent_accepted` is `true` (default `false`),
+-3. the `GNANI_API_KEY` environment variable is set.
++3. the provider's key environment variable is set
++   (`GNANI_API_KEY` / `ELEVENLABS_API_KEY` / `META_MODEL_API_KEY`).
+ 
+ Anything else routes to the existing local chain (Whisper, or the gRPC remote
+ when `use_remote=true`). When cloud is selected but fails — auth, rate limit,
+@@ -21,15 +25,19 @@ is never upgraded to cloud mid-utterance. Two results never fall back:
+ - an empty cloud transcript (per the Gnani contract, empty is a success), and
+ - a cancelled cloud transcription (the user asked to stop).
+ 
++The decision logic lives once, in `EvaluateCloudConsent`
++(`src/core/ConsentGate.*`); the router, the main wiring, and the Settings >
++Cloud tab all consume the same verdict.
++
+ ## Configuration
+ 
+ | Key | Default | Meaning |
+ | --- | --- | --- |
+-| `stt_provider` | `local` | `local` or `gnani` (unknown values warn + stay local) |
++| `stt_provider` | `local` | `local`, `gnani`, `elevenlabs`, or `muse` (unknown values warn + stay local) |
+ | `stt_consent_accepted` | `false` | Consent gate; cloud is refused without it |
+-| `stt_language` | `indic-auto` | Gnani language code or comma list (e.g. `kn,hi`) |
++| `stt_language` | `indic-auto` | Provider-neutral language hint: ISO code or comma list (e.g. `kn,hi`); mapped per provider by `LanguageMap` |
+ | `stt_timeout_ms` | `15000` | Per-request timeout (clamped to 1000-60000) |
+-| `stt_max_clips` | `40` | Requests per dictation (clamped 1-200; ~30 s of audio each) |
++| `stt_max_clips` | `40` | Request budget per dictation (clamped 1-200; ~30 s Gnani/ElevenLabs clips, ~10 min Muse clips) |
+ 
+ All keys are additive and type-tolerant like every other optional key: wrong
+ types produce a warning and keep the default; out-of-range values are clamped.
+@@ -183,10 +191,30 @@ Vendor pricing note (used by `lwf-cloud-bench`): Muse Voice Transcribe is
+ documented at $0.18 per audio hour, rounded down to whole seconds; failed and
+ 429-billed requests are not billed.
+ 
++## Interface mapping vs the original task brief
++
++The brief named files that the rebased codebase solved with the existing
++architecture; this is the mapping, so nobody hunts for ghosts:
++
++| Brief | Actual | Where |
++|---|---|---|
++| `SttTypes.h` | `ISttProvider.h` (SttTranscription, SttAttemptStats) + contract headers | `src/core/ISttProvider.h`, `src/stt/cloud/*Contract.h` |
++| `CancelToken.h` | `SttCancelCheck` hook wired to the app quit flag | `src/core/ISttProvider.h`, `SttRouter::SetCancelCheck` |
++| `IHttpClient.h` | `IHttpTransport` (Post returns status/headers/body) | `src/stt/cloud/IHttpTransport.h` |
++| `SttErrorKind` | `SttErrorCategory` (auth/rate_limited/timeout/network/invalid_request/payload_too_large/server/cancelled) | `src/core/ISttProvider.h` |
++| `LanguageMap` | `sttlang::ElevenLabsLanguageCode` / `sttlang::MuseLanguageBias` | `src/stt/cloud/LanguageMap.*` (S7) |
++| consent test | `tests/consent_test.cpp` | S5 |
++| secrets_redaction test | `tests/secrets_redaction_test.cpp` + provider detail-redaction cases | S5 |
++| language_map test | `tests/language_map_test.cpp` | S7 |
++| cancel test | cancel cases in every provider test + `stt_router_test` | S3/S7/S8 |
++| network_allowlist test | `scripts/check_hygiene.sh --self-test` (plants offenders, asserts they are caught) | S9 |
++
+ ## What is intentionally not here yet
+ 
+-- The live-API half of the latency numbers (needs the S0 smoke run on Windows).
+-- S9: final documentation pass (README/AGENTS/PROGRESS refresh).
++- The live-API half of the latency numbers and the first real transcription
++  per provider (needs the Windows checkpoint, docs/QUESTIONS.md #5).
++- Streaming/cloud realtime (Gnani STT v3 and Muse realtime WebSocket) - the
++  current scope is one-shot dictation utterances.
+ 
+ ## Stage ledger
+ 
+@@ -201,5 +229,5 @@ documented at $0.18 per audio hour, rounded down to whole seconds; failed and
+ | S5 | ConsentGate, Redact, in-app consent UI | 98b0829 |
+ | S6 | lwf-cloud-bench latency/cost model | 8928b0c |
+ | S7 | ElevenLabs provider + LanguageMap | 3df580e |
+-| S8 | Meta Muse provider | (this commit) |
+-| S9 | documentation pass | pending |
++| S8 | Meta Muse provider | 16b6f51 |
++| S9 | documentation pass + hygiene self-test | (this commit) |
