@@ -10,8 +10,9 @@ struct CloudProviderInfo {
     const char* api_key_env;
 };
 
-const CloudProviderInfo kCloudProviders[] = {{"gnani", "GNANI_API_KEY"}};
-constexpr std::size_t kCloudProviderCount = 1;
+const CloudProviderInfo kCloudProviders[] = {{"gnani", "GNANI_API_KEY"},
+                                             {"elevenlabs", "ELEVENLABS_API_KEY"}};
+constexpr std::size_t kCloudProviderCount = 2;
 
 const CloudProviderInfo* FindProvider(const std::string& name) {
     for (std::size_t i = 0; i < kCloudProviderCount; ++i) {
