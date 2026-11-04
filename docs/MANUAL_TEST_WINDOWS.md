@@ -24,6 +24,7 @@ until a PASS box is filled. Add one section per task id with exact steps.
 | E | E2 resilience | mic unplug, missing models, corrupt config, disk full |
 | E | E3 crash handling | crash file, one-time notice, About version |
 | F | F4 installer | per-user install, tasks, uninstall data choice |
+| S | S4/S5 cloud STT | consent UI, gating, fallback, secrets, cancellation |
 
 Portable logic (FSM tables, tracker, pipeline, stores, streaming fallback,
 resilience/chaos, privacy) is unit-tested on Linux and covered by ctest; the
