@@ -449,7 +449,6 @@ int main() {
             return key != nullptr ? std::string(key) : std::string();
         };
         auto local_chain = std::make_unique<LocalProviderStack>(local_stack, passthrough_llm);
-        SttRouter stt_router(std::move(local_chain), std::move(cloud_provider), stt_routing);
 
         HistoryStore history(data_dir + "\\history.jsonl",
                              config.Store().GetBool("history_enabled"),
@@ -461,6 +460,12 @@ int main() {
         for (const auto& notice : startup_errors) {
             bridge.OnError(notice.first, notice.second);
         }
+
+        SttRouter stt_router(std::move(local_chain), std::move(cloud_provider), stt_routing,
+            [&bridge](SttErrorCategory category, const std::string& detail) {
+                bridge.OnError(ErrorCode::SttFailed,
+                               "cloud stt (" + std::string(ToString(category)) + "): " + detail);
+            });
         const std::string unseen_crash = lwf::CrashReporter::FindUnseenCrash(data_dir + "\\logs");
         if (!unseen_crash.empty()) {
             bridge.OnError(ErrorCode::Unknown, "The app closed unexpectedly last time - see logs");

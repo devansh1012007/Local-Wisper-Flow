@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <vector>
 
-#include "fakes.h"
+#include "Fakes.h"
 
 TEST_CASE("vad gate feeds exactly 512 sample chunks") {
     ScriptedVad vad({true, false, true});

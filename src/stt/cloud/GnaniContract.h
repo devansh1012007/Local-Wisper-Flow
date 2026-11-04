@@ -5,19 +5,19 @@
 namespace GnaniContract {
 
 constexpr const char* kHost = "api.vachana.ai";
-constexpr const char* kPath = "/v1/asr/recognize";
+constexpr const char* kPath = "/stt/v3";
 constexpr const char* kApiKeyHeader = "X-API-Key-ID";
 constexpr const char* kApiKeyEnv = "GNANI_API_KEY";
 constexpr const char* kDefaultModel = "prisma-v3.0";
 constexpr const char* kDefaultLanguage = "indic-auto";
 constexpr const char* kBoundary = "lwf-gnani-9b21af4c17";
 constexpr const char* kModelField = "model";
-constexpr const char* kLanguageField = "language";
+constexpr const char* kLanguageField = "language_code";
 constexpr const char* kKeytermsField = "keyterms";
 constexpr std::size_t kKeytermsCap = 200;
 constexpr std::size_t kKeytermMaxChars = 50;
 constexpr std::size_t kKeytermMaxWords = 5;
-constexpr const char* kAudioField = "audio";
+constexpr const char* kAudioField = "audio_file";
 constexpr const char* kAudioFilename = "audio.wav";
 constexpr const char* kAudioContentType = "audio/wav";
 constexpr std::size_t kMaxClipMs = 29500;

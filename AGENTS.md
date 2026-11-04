@@ -18,7 +18,7 @@ ctest --test-dir build
   and gRPC and links the real providers. Windows always builds full.
 - Windows-only sources (`src/os/*`, `src/ui/*`, `_WIN32` main) are type-checked with
   `zig c++ -fsyntax-only -target x86_64-windows-gnu -Isrc <file>` where zig exists.
-- Gates beyond the build: `scripts/check_hygiene.sh` (comment/OS-header/TODO lint;
+- Gates beyond the build: `scripts/check_hygiene.sh` (OS-header/TODO lint;
   `--self-test` plants offenders and verifies they are caught) and
   `scripts/check_no_network.sh` (network APIs only in src/stt/GrpcInferenceProvider.*,
   src/os/WindowsDownloader.* and src/os/WindowsHttpClient.*; file-write APIs banned in

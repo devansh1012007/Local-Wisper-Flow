@@ -51,6 +51,7 @@ HttpRequest BuildGnaniRequest(const std::vector<float>& audio_pcm, std::uint32_t
     if (!options.language.empty()) {
         builder.AddField(GnaniContract::kLanguageField, options.language);
     }
+    std::string keyterms_json = "[";
     std::size_t used = 0;
     for (const std::string& term : options.keyterms) {
         if (used >= GnaniContract::kKeytermsCap) {
@@ -59,8 +60,17 @@ HttpRequest BuildGnaniRequest(const std::vector<float>& audio_pcm, std::uint32_t
         if (!SafeKeyterm(term)) {
             continue;
         }
-        builder.AddField(GnaniContract::kKeytermsField, term);
+        if (used > 0) {
+            keyterms_json += ",";
+        }
+        keyterms_json += "\"";
+        keyterms_json += term;
+        keyterms_json += "\"";
         ++used;
+    }
+    keyterms_json += "]";
+    if (used > 0) {
+        builder.AddField(GnaniContract::kKeytermsField, keyterms_json);
     }
     builder.AddFile(GnaniContract::kAudioField, GnaniContract::kAudioFilename,
                     GnaniContract::kAudioContentType, EncodeWav16Mono(audio_pcm, sample_rate));

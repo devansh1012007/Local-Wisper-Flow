@@ -25,10 +25,15 @@ struct SttRoutingConfig {
 // + recorded consent + key present in the environment, core/ConsentGate.h).
 // A cloud failure, cancellation or missing consent falls back to the local
 // provider for that utterance; cleanup (ProcessText) always stays local.
+//
+// `on_cloud_error` is invoked (before falling back) whenever a cloud attempt
+// fails, so the failure is visible to the user rather than silently logged.
 class SttRouter final : public IInferenceProvider {
 public:
+    using CloudErrorCallback = std::function<void(SttErrorCategory, std::string)>;
+
     SttRouter(std::unique_ptr<IInferenceProvider> local, std::unique_ptr<ISttProvider> cloud,
-              SttRoutingConfig config);
+              SttRoutingConfig config, CloudErrorCallback on_cloud_error = {});
     ~SttRouter() override;
 
     std::string Transcribe(const std::vector<float>& audio_pcm) override;
@@ -43,5 +48,6 @@ private:
     std::unique_ptr<IInferenceProvider> local_;
     std::unique_ptr<ISttProvider> cloud_;
     SttRoutingConfig config_;
+    CloudErrorCallback on_cloud_error_;
     std::atomic<bool> cancel_requested_{false};
 };
