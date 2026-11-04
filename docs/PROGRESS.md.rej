@@ -1,0 +1,31 @@
+diff a/docs/PROGRESS.md b/docs/PROGRESS.md	(rejected hunks)
+@@ -97,3 +97,29 @@ docs/MANUAL_TEST_WINDOWS.md — not claimed as verified. models.json urls/sha256
+ await Devansh (docs/QUESTIONS.md #2). History purge is a manual decision
+ (docs/QUESTIONS.md #4).
+ 
++## STT cloud providers (S0-S9)
++
++Opt-in cloud transcription behind the consent gate, cut from the rebase report in
++repo-root BASE_DECISION.md. Stage ledger (one commit per stage):
++
++| id | title | status | commit | gates | notes |
++|----|-------|--------|--------|-------|-------|
++| Phase 0 | base decision + rebase report | DONE | a1d927b..8662441 | n/a | decision B, replayed onto 8e4945a+d87fedc |
++| S0 | Gnani contract smoke script | DONE | fd6fe84 | G1-G5 | offline contract tool; live run pending (QUESTIONS #5) |
++| S1 | WAV / multipart / clip primitives | DONE | 5cd6f45 | G1-G5 | in-memory audio only |
++| S2 | Gnani request/parse/error map | DONE | b6c5e0a | G1-G5 | SttErrorCategory taxonomy |
++| S3 | SttRouter + consent gate + fallback | DONE | 91a55ed | G1-G5 | one-way cloud->local |
++| S4 | WinHTTP client + app wiring | DONE | e9ee0b6 (rebased) | G1-G2/G4/G5, G3 pending | Windows build check pending |
++| S5 | ConsentGate, Redact, Settings > Cloud UI | DONE | 98b0829 | G1-G5, G3 pending | consent + secrets_redaction tests |
++| S6 | lwf-cloud-bench | DONE | 8928b0c | G1-G5 | loopback latency + cost model (BENCHMARKS.md) |
++| S7 | ElevenLabs Scribe provider + LanguageMap | DONE | 3df580e | G1-G5 | language_map + cancel tests |
++| S8 | Meta Muse Voice provider | DONE | 16b6f51 | G1-G5 | two-part JSON+audio multipart |
++| S9 | documentation pass + hygiene self-test | DONE | (this commit) | G1-G5 | interface mapping in STT_CLOUD.md |
++
++Final gate run at S9 (Linux core, gcc, Release): build -j4 clean, 249 doctest
++cases / 10068 assertions green, check_hygiene.sh OK (+ --self-test OK),
++check_no_network.sh OK, config v0 compat green, local-wisper-flow smoke exits 0.
++Honest limits: all cloud code is unit-tested with fakes; the live-API smoke
++(Gnani/ElevenLabs/Muse) and the Windows UI checkpoint await Devansh
++(docs/QUESTIONS.md #5).
++
