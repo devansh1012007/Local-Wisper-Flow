@@ -1,0 +1,13 @@
+diff a/src/core/ConsentGate.cpp b/src/core/ConsentGate.cpp	(rejected hunks)
+@@ -11,8 +11,9 @@ struct CloudProviderInfo {
+ };
+ 
+ const CloudProviderInfo kCloudProviders[] = {{"gnani", "GNANI_API_KEY"},
+-                                             {"elevenlabs", "ELEVENLABS_API_KEY"}};
+-constexpr std::size_t kCloudProviderCount = 2;
++                                             {"elevenlabs", "ELEVENLABS_API_KEY"},
++                                             {"muse", "META_MODEL_API_KEY"}};
++constexpr std::size_t kCloudProviderCount = 3;
+ 
+ const CloudProviderInfo* FindProvider(const std::string& name) {
+     for (std::size_t i = 0; i < kCloudProviderCount; ++i) {

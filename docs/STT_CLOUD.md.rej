@@ -1,0 +1,59 @@
+diff a/docs/STT_CLOUD.md b/docs/STT_CLOUD.md	(rejected hunks)
+@@ -153,10 +153,53 @@ documented 25-language list.
+ 
+ ## Meta Muse Voice Transcribe (S8)
+ 
+-pending - next stage.
++`stt_provider="muse"` routes dictation through Meta's Muse Voice Transcribe on
++the Meta Model API. Contract, verified against dev.meta.ai/docs/speech-to-text
++on 2026-11-04:
++
++- `POST https://api.meta.ai/v1/asr/transcribe`, header `Authorization: Bearer
++  <key>`, key read only from `META_MODEL_API_KEY` (a Model API dashboard key).
++- Multipart body with exactly two parts: `request` (JSON settings part,
++  `Content-Type: application/json`) and `audio` (RIFF/WAV, mono 16-bit PCM at
++  16 kHz). The JSON carries `mode: "PUSH_TO_TALK"` (single-turn dictation,
++  the vendor default), `model: "muse-voice-transcribe-1.0"`,
++  `audioEncoding: "WAV"`, optional `languageBias` (vendor language NAMES) and
++  optional `keywords` (vocabulary biasing, capped at 200 by us).
++- Vendor caps: audio ≤ 10 minutes and body ≤ 32 MB per request (413/400
++  otherwise), so `MuseContract::kMaxClipMs` is 595000 - one clip covers a
++  normal dictation and only extreme sessions split.
++- Success body: `transcript` (complete text in every mode) plus `sessionId`,
++  `audioDurationMs`, `turns`; we use `transcript` and record `sessionId` as
++  the request id. Failures: 413 → payload_too_large, 400 → invalid_request,
++  429 → rate_limited, 5xx → server.
++- Language bias: `sttlang::MuseLanguageBias` maps the shared `stt_language`
++  value - "kn,hi" → ["Kannada","Hindi"], "indic-auto" → the Indic subset of
++  the vendor's documented 25-language list, anything unknown → omitted
++  (auto-detect).
++- Fallback, cancellation, empty-transcript, key redaction, and clip-budget
++  semantics are identical to the other providers.
++
++Vendor pricing note (used by `lwf-cloud-bench`): Muse Voice Transcribe is
++documented at $0.18 per audio hour, rounded down to whole seconds; failed and
++429-billed requests are not billed.
+ 
+ ## What is intentionally not here yet
+ 
+-- S6 leftover: the live-API half of the latency numbers (needs the S0 smoke run).
+-- S8: Meta Muse provider behind the same `ISttProvider`.
+-- S9: full documentation pass.
++- The live-API half of the latency numbers (needs the S0 smoke run on Windows).
++- S9: final documentation pass (README/AGENTS/PROGRESS refresh).
++
++## Stage ledger
++
++| Stage | Deliverable | Commit |
++|---|---|---|
++| Phase 0 | base decision + rebase report | a1d927b..8662441 |
++| S0 | `scripts/gnani_smoke.py` + tests/data guide | fd6fe84 |
++| S1 | WavEncoder / MultipartBuilder / ClipSplitter | 5cd6f45 |
++| S2 | Gnani request/response/contract + error categories | b6c5e0a |
++| S3 | SttRouter with consent gate and cloud-to-local fallback | 91a55ed |
++| S4 | WindowsHttpClient + main wiring | e9ee0b6 |
++| S5 | ConsentGate, Redact, in-app consent UI | 98b0829 |
++| S6 | lwf-cloud-bench latency/cost model | 8928b0c |
++| S7 | ElevenLabs provider + LanguageMap | 3df580e |
++| S8 | Meta Muse provider | (this commit) |
++| S9 | documentation pass | pending |

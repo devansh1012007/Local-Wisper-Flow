@@ -1,0 +1,25 @@
+diff a/src/main.cpp b/src/main.cpp	(rejected hunks)
+@@ -43,6 +43,7 @@
+ #include "stt/cloud/ElevenLabsProvider.h"
+ #include "stt/cloud/GnaniProvider.h"
+ #include "stt/cloud/LanguageMap.h"
++#include "stt/cloud/MuseProvider.h"
+ #include "stt/GrpcInferenceProvider.h"
+ #include "stt/LocalWhisperProvider.h"
+ #include "ui/MainWindow.h"
+@@ -438,6 +439,15 @@ int main() {
+                 cloud_provider =
+                     std::make_unique<ElevenLabsProvider>(http_client, elevenlabs_settings);
+                 lwf::Log::Info("cloud provider elevenlabs enabled");
++            } else if (stt_provider_name == "muse") {
++                MuseProviderSettings muse_settings;
++                muse_settings.api_key = api_key;
++                muse_settings.language_bias = sttlang::MuseLanguageBias(config.SttLanguage());
++                muse_settings.keywords = dictionary.Words();
++                muse_settings.timeout_ms = config.SttTimeoutMs();
++                muse_settings.max_clips = static_cast<std::size_t>(config.SttMaxClips());
++                cloud_provider = std::make_unique<MuseProvider>(http_client, muse_settings);
++                lwf::Log::Info("cloud provider muse enabled");
+             }
+         } else if (stt_provider_name != "local") {
+             lwf::Log::Warning("unknown stt_provider '" + stt_provider_name + "'; using local");
