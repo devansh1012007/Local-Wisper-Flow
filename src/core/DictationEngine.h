@@ -1,129 +1,109 @@
 #pragma once
 
-#include "core/AudioPipe.h"
 #include "core/DictationFSM.h"
-#include "core/EngineEvent.h"
+#include "core/EngineTypes.h"
+#include "core/EventQueue.h"
 #include "core/IAudioCapture.h"
+#include "core/IEngineSink.h"
 #include "core/IInferenceProvider.h"
 #include "core/ITextInjector.h"
 #include "core/IVadProvider.h"
-#include "core/PersonalDictionary.h"
-#include "core/VadGate.h"
 
 #include <atomic>
-#include <chrono>
-#include <cstddef>
-#include <functional>
+#include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 
-enum class EngineErrorCode {
-    None,
-    MicUnavailable,
-    MicLost,
-    SttFailed,
-    InjectFailed,
-};
+class IClock;
+class TextPipeline;
+class CommandModeController;
+class IToneFeedback;
+class StreamingDictator;
 
-class DictationCleanup;
+namespace ToneGenerator {
+struct ToneSpec;
+}
 
-class IEngineSink {
+class DictationEngine final : public IAudioChunkSink {
 public:
-    virtual ~IEngineSink() = default;
+    DictationEngine(IAudioCapture& capture, IVadProvider* vad, IInferenceProvider& stt,
+                    TextPipeline& pipeline, ITextInjector& injector, DictationFSM& fsm,
+                    const IClock& clock, IEngineSink& sink, const EngineSettings& settings);
+    ~DictationEngine() override;
 
-    virtual void OnError(EngineErrorCode code, const std::string& detail) = 0;
-    virtual void OnStatus(const std::string& text) = 0;
-};
+    DictationEngine(const DictationEngine&) = delete;
+    DictationEngine& operator=(const DictationEngine&) = delete;
 
-class EngineStatusSink final : public IEngineSink {
-public:
-    void OnError(EngineErrorCode code, const std::string& detail) override {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            error_ = detail;
-        }
-        last_error_.store(code, std::memory_order_relaxed);
-        error_generation_.fetch_add(1, std::memory_order_relaxed);
-    }
+    void Start();
+    void Stop();
+    void Run();
 
-    void OnStatus(const std::string& text) override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        status_ = text;
-    }
+    bool ProcessOne(int timeout_ms);
+    void Tick();
 
-    std::string ErrorText() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return error_;
-    }
+    void PostEvent(EngineEventType type);
+    void RequestCancel();
 
-    std::string StatusText() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return status_;
-    }
+    void OnAudioChunk(const float* samples, std::size_t frame_count) override;
+    float AudioLevel() const noexcept;
 
-    EngineErrorCode LastError() const noexcept {
-        return last_error_.load(std::memory_order_relaxed);
-    }
-
-    std::uint64_t ErrorGeneration() const noexcept {
-        return error_generation_.load(std::memory_order_relaxed);
-    }
-
-private:
-    mutable std::mutex mutex_;
-    std::string status_;
-    std::string error_;
-    std::atomic<EngineErrorCode> last_error_{EngineErrorCode::None};
-    std::atomic<std::uint64_t> error_generation_{0};
-};
-
-struct EngineSettings {
-    std::uint32_t sample_rate = 16000;
-    std::chrono::milliseconds min_hold{100};
-    int hands_free_silence_ms = 0;
-    std::chrono::milliseconds max_recording{30000};
-    PersonalDictionary* dictionary = nullptr;
-};
-
-class DictationEngine {
-public:
-    using ChunkSink = std::function<void(const float*, std::size_t)>;
-
-    DictationEngine(IAudioCapture& audio, IInferenceProvider& stt, DictationCleanup& cleanup,
-                    ITextInjector& injector, DictationFSM& fsm, IVadProvider* vad,
-                    EngineSettings settings, IEngineSink* sink = nullptr);
-
-    void Run(EngineEventQueue& queue, const std::atomic<bool>& quit);
-
-    ChunkSink Sink();
-
+    void SetHandsFree(bool enabled);
+    void SetCommandController(CommandModeController* controller);
+    void SetToneFeedback(IToneFeedback* tones);
     std::string LastText() const;
+    std::size_t StreamedSegments() const;
 
 private:
-    enum class StopReason {
-        HotkeyRelease,
-        SilenceStop,
-        MaxDuration,
-    };
+    void HandleEvent(const EngineEvent& event);
+    void HandlePress(std::int64_t now_ms);
+    void HandleRelease(std::int64_t now_ms);
+    void HandleToggle(std::int64_t now_ms);
+    void HandleCancel();
+    void BeginCapture(std::int64_t now_ms);
+    void StopAndTranscribe(std::int64_t now_ms, bool timeout_fired);
+    void HandleCommandMode(std::int64_t now_ms);
+    void HandlePasteLast();
+    void EmitError(ErrorCode code, const std::string& detail);
+    void PlayTone(const ToneGenerator::ToneSpec& spec);
+    void DiscardCapture(const char* reason);
+    void ReturnToIdle(const char* status);
+    void HandleMicLost();
+    void MaybeCommitStreamingSegment();
+    std::vector<float> TakeTail();
 
-    void HandleEvent(const EngineEvent& event, const std::atomic<bool>& quit);
-    void PollCapture();
-    void DrainGate();
-    void BeginCapture(const EngineEvent& press);
-    void FinishCapture(StopReason reason, const EngineEvent& release_event);
-    void FailToIdle(EngineErrorCode code, const std::string& detail);
-    void TranscribeAndInject(const EngineEvent& release_event);
-
-    IAudioCapture& audio_;
+    IAudioCapture& capture_;
+    IVadProvider* vad_;
     IInferenceProvider& stt_;
-    DictationCleanup& cleanup_;
+    TextPipeline& pipeline_;
     ITextInjector& injector_;
     DictationFSM& fsm_;
+    const IClock& clock_;
+    IEngineSink& sink_;
     EngineSettings settings_;
-    IEngineSink* sink_;
-    AudioPipe pipe_;
-    VadGate gate_;
-    std::chrono::steady_clock::time_point press_time_;
+
+    EventQueue<EngineEvent> queue_;
+    std::thread worker_;
+    std::atomic<bool> running_{false};
+    std::atomic<bool> cancel_requested_{false};
+    std::atomic<bool> speech_started_{false};
+    std::atomic<bool> hands_free_{false};
+    std::atomic<bool> in_command_mode_{false};
+    std::atomic<float> audio_level_{0.0f};
+    std::atomic<std::int64_t> total_samples_{0};
+    std::atomic<std::int64_t> silence_start_samples_{-1};
+    std::atomic<std::int64_t> committed_samples_{0};
+    std::atomic<bool> speech_seen_{false};
+    std::unique_ptr<StreamingDictator> streamer_;
+    CommandModeController* command_ = nullptr;
+    IToneFeedback* tones_ = nullptr;
+
+    std::int64_t press_ms_ = 0;
+    std::int64_t capture_start_ms_ = 0;
+    std::int64_t last_speech_ms_ = 0;
+    std::size_t chunk_count_ = 0;
+    std::size_t speech_chunk_count_ = 0;
     mutable std::mutex text_mutex_;
     std::string last_text_;
 };

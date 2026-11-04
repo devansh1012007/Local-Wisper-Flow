@@ -24,6 +24,7 @@ enum class Trigger {
     SST_COMPLETE,
     SST_FAILED,
     TIMEOUT,
+    CANCEL,
 };
 
 class DictationFSM {

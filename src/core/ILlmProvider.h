@@ -7,10 +7,5 @@ public:
     virtual ~ILlmProvider() = default;
 
     virtual std::string Process(const std::string& text, const std::string& system_prompt) = 0;
-
-    virtual void RequestCancel() {}
-
-    virtual bool LastGenerationTruncated() const {
-        return false;
-    }
+    virtual void RequestCancel() { (void)this; }
 };

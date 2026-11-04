@@ -1,62 +1,123 @@
-# AGENTS.md
+# AGENTS.md — rules for agents working on Local Wisper Flow
 
-C++17 local voice dictation app (push-to-talk -> Whisper STT -> optional LLM transform -> text injection). Windows-first; builds and self-tests on Linux.
+Local Wisper Flow is local-first voice dictation for Windows (press-to-talk,
+VAD gating, whisper STT, optional local LLM cleanup, text injection) with an
+opt-in cloud STT path behind a consent gate. Reconstructed rule sheet: the
+original was lost with the dev-environment reset; the paragraphs below are
+recovered verbatim from the S9 documentation patch where noted.
 
-## Build & verify
+## Build and gates
 
 ```sh
-# Linux (portable core is covered by the doctest suite; exit code = pass/fail)
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_URL=file://$PWD/_deps-cache/llama-b10603.tar.gz
-cmake --build build -j4          # laptop: never use bare --parallel (12 cores swap-thrash)
-ctest --test-dir build --output-on-failure
-./build/local-wisper-flow
-
-# VAD inference self-test (needs ONNX Runtime + models, see below)
-cmake --build build --target vad-selftest && ./build/vad-selftest
-
-# Windows (MSVC)
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j4
+ctest --test-dir build
 ```
 
-The unit-test framework is doctest (pinned `v2.4.12`, FetchContent). `ctest` runs `lwf-tests` (portable core: FSM table, router, TransformManager, DictationCleanup guard, DictationEngine with fakes, VadGate, ConfigManager). `vad-selftest` (target) is the only model-dependent test. Windows-only sources are type-checked with `zig c++ -target x86_64-windows-gnu -fsyntax-only` (ziglang pip package).
+- `LWF_BUILD_FULL=ON` (forced on Windows) builds whisper/llama/miniaudio
+  and gRPC and links the real providers. Windows always builds full.
+- Windows-only sources (`src/os/*`, `src/ui/*`, `_WIN32` main) are type-checked with
+  `zig c++ -fsyntax-only -target x86_64-windows-gnu -Isrc <file>` where zig exists.
+- Gates beyond the build: `scripts/check_hygiene.sh` (comment/OS-header/TODO lint;
+  `--self-test` plants offenders and verifies they are caught) and
+  `scripts/check_no_network.sh` (network APIs only in src/stt/GrpcInferenceProvider.*,
+  src/os/WindowsDownloader.* and src/os/WindowsHttpClient.*; file-write APIs banned in
+  src/audio|stt|vad|llm and most of core; cloud endpoint names only in src/stt/cloud/*
+  and scripts/gnani_smoke.py). CI (.github/workflows/ci.yml) runs the Linux core job +
+  hygiene + privacy, and the Windows full job with cached tarballs.
+- Gate ledger: G1 build -j4 zero new warnings, G2 ctest green, G3 zig type-check of
+  Windows sources, G4 scripts/check_hygiene.sh, G5 config_v0 backward-compat test.
+  This box has no zig and no Windows: G3 stays "pending" and is recorded per task in
+  docs/QUESTIONS.md.
 
-## Dependencies — non-obvious facts
+## Dependencies (offline recipe)
 
-- FetchContent pins live in `CMakeLists.txt`: miniaudio `0.11.25`, whisper.cpp `v1.9.3`, nlohmann/json `v3.12.0`. `BUILD_SHARED_LIBS=OFF` is force-set globally.
-- **llama.cpp (`b10603`) is NOT FetchContent** — it builds via ExternalProject into its own CMake invocation (install prefix `build/llama-install`, jobs capped by `LLAMA_JOBS=4`). Reason: whisper and llama both vendor conflicting `ggml`s; one shared ggml must win. Source comes from a tag tarball (`LLAMA_URL`, override with `-DLLAMA_URL=file://...` for offline).
-- **Two-phase configure is required**: phase 1 stubs llama as an IMPORTED target while `llama_ext` builds+installs during the build; **re-run cmake configure afterwards** — phase 2 does `find_package(ggml/llama)` from the install tree and sets `WHISPER_USE_SYSTEM_GGML=ON` so whisper links llama's ggml (single copy). Forgetting phase 2 => link errors (undefined ggml symbols or duplicate definitions).
-- **whisper needs a patch**: `patches/whisper-v1.9.3-ggml-alias.patch` guards its unconditional `ggml::ggml` ALIAS so llama's installed package can define that namespace first. Applied by idempotent `patches/apply_vendor_patch.cmake` (-DPATCH_FILE=...); with FETCHCONTENT_SOURCE_DIR overrides the patch step is skipped, so apply it manually to the cached source once.
-- **ONNX Runtime is NOT fetched**. It expects prebuilt binaries at `third_party/onnxruntime/{include,lib}` (override with `-DONNXRUNTIME_DIR=<path>`). Missing dir => configure still succeeds; VAD targets are just skipped with a status message.
-- **gRPC `v1.71.0` is optional** (`-DLWF_BUILD_GRPC=ON`, default OFF — it is a very long build for a feature that is off by default). When OFF, `GrpcInferenceProvider.cpp` is not compiled and `main.cpp` stays local even if `use_remote=true` (warning printed). When ON it builds abseil/protobuf/re2/cares/zlib/boringssl from IN-TREE `third_party/` dirs — the GitHub auto-archive omits those submodules and dies in `cmake/cares.cmake`. Recipe: download tag tarball + inject submodule sources at their pinned SHAs (see `.gitmodules` / git tree API) into `third_party/{cares/cares,boringssl-with-bazel,abseil-cpp,protobuf,re2,zlib}`, re-tar, pass via `-DGRPC_URL=file://...` (`_deps-cache/grpc-v1.71.0-full.tar.gz` is that artifact). Also needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` (CMake 4 vs old dep minimums), `protobuf_INSTALL=OFF`, `utf8_range_ENABLE_INSTALL=OFF`. Stub generation uses in-tree `protoc` + `grpc_cpp_plugin` targets into `build/generated/`, compiled as `lwf_proto`.
-- Config keys (`config.json`): `hotkey_code`, `whisper_model_path`, `vad_threshold` are required; `llm_model_path`, `use_remote` (default false) and `remote_endpoint` (default `localhost:50051`) optional.
+- Offline dependency tarballs are NOT in git anymore (`_deps-cache/` ignored).
+  `scripts/fetch_deps.sh` / `fetch_deps.ps1` rebuild them: llama + grpc tag tarballs,
+  six submodule tarballs at pinned SHAs injected into grpc's third_party/, re-tarred as
+  one artifact, passed via `-DGRPC_URL=file://...` (same pattern for the llama tarball).
+- **whisper needs a patch**: `patches/whisper-v1.9.3-ggml-alias.patch` guards its
+  unconditional `ggml::ggml` ALIAS so llama's installed package can define that
+  namespace first. Applied by idempotent `patches/apply_vendor_patch.cmake`
+  (-DPATCH_FILE=...); with FETCHCONTENT_SOURCE_DIR overrides the patch step is skipped,
+  so apply it manually to the cached source once.
+- **ONNX Runtime is NOT fetched**. It expects prebuilt binaries at
+  `third_party/onnxruntime/{include,lib}` (override with `-DONNXRUNTIME_DIR=<path>`).
+  Missing dir => configure still succeeds; VAD targets are just skipped with a status
+  message.
+- **gRPC `v1.71.0` (FetchContent, hard-required)** builds abseil/protobuf/re2/cares/zlib/
+  boringssl from IN-TREE `third_party/` dirs — the GitHub auto-archive omits those
+  submodules and dies in `cmake/cares.cmake`. Recipe: download tag tarball + inject
+  submodule sources at their pinned SHAs into
+  `third_party/{cares/cares,boringssl-with-bazel,abseil-cpp,protobuf,re2,zlib}`, re-tar,
+  pass via `-DGRPC_URL=file://...`. Also needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`
+  (CMake 4 vs old dep minimums), `protobuf_INSTALL=OFF`, `utf8_range_ENABLE_INSTALL=OFF`.
+  Stub generation uses in-tree `protoc` + `grpc_cpp_plugin` targets into
+  `build/generated/`, compiled as `lwf_proto`.
 
-## Architecture map
+## Config and data
 
-- `src/core/` pure-virtual interfaces only (`I*Provider.h`, `DictationFSM`, `ConfigManager`, `TransformManager`, `ProviderRouter`) plus the portable engine layer (`DictationEngine`, `DictationCleanup`, `VadGate`, `EngineEvent`, `AudioPipe`). Never include OS headers here; `<windows.h>` must stay confined to `src/os/*.cpp` (GLFW's own header is fine inside `src/ui/*`).
-- `DictationEngine` consumes `EngineEvent`s (PttPress/PttRelease/Cancel/Quit) from a queue, drives the FSM, feeds captured chunks through `VadGate` (512-sample chunks, head/tail speech-interval trimming), runs STT, then `DictationCleanup` (LLM with output guard; never throws), then the injector. Mic start/stop failures are caught: the FSM returns to IDLE and the engine reports a typed `EngineErrorCode` through `IEngineSink` — the engine thread never dies on mic errors.
-- `DictationCleanup` runs the LLM on the `TransformManager` single worker and waits with a timeout; on timeout it calls `ILlmProvider::RequestCancel()` (cooperative cancel via `llama_set_abort_callback`). Its output guard rejects answered questions, preambles, translations/script flips, overlong hallucinations, and truncated generations (`ILlmProvider::LastGenerationTruncated`), always falling back to the raw transcript.
-- Layers: `src/audio` (miniaudio capture) -> `src/stt` (whisper.cpp or `GrpcInferenceProvider`) routed by `src/core/ProviderRouter` (remote-first with seamless local fallback; FSM never knows which) -> `src/core/TransformManager` (single worker thread + task queue, joined in destructor) -> `src/os` (hotkey hook + SendInput) -> `src/ui` (ImGui dashboard).
-- `DictationFSM::CurrentState()` / `MiniaudioCapture::AudioLevel()` are lock-free relaxed atomics written by engine/audio threads and polled by the UI render loop. Do not replace with mutexed getters.
-- Main thread owns the GLFW loop (`MainWindow::Run`). Background threads must never touch UI; UI must never call providers directly (future buttons go through a queue consumed by the engine thread).
-- UI targets are built ONLY under `if(WIN32)` (headless Linux has no GL/X11 dev pkgs); imgui is fetched via `FetchContent_Populate` because upstream ships no CMakeLists — expect one deprecation warning.
-- Remote layer: gRPC `InferenceService` (`proto/inference.proto`) -> Python reference server under `server/` (optional faster-whisper; `docker-compose up` from repo root). The server binds 127.0.0.1 by default (`LWF_BIND`/`LWF_PORT` env) and raises gRPC UNAVAILABLE instead of returning placeholder text, so the client's ProviderRouter falls back to local. Both sides accept messages up to 256 MB (float32 PCM at 16 kHz is 64 KB/s, so the old 4 MB default rejected recordings over about 65 s). `server/inference.proto` is a COPY of `proto/inference.proto` — keep them in sync. The C++ client creates its channel lazily and only when `use_remote=true`.
-- `DictationFSM` owns all flow: states IDLE..EMITTING; engine code may only move it via `TriggerEvent`. Mutex is held ONLY for lookup/state swap — side effects run after unlock via `SetTransitionListener`.
-- `src/main.cpp` compiles in two modes: `_WIN32` full app (engine thread + hotkey + GLFW dashboard; the UI loop exits if the engine thread dies so the app can never hang showing CAPTURING); non-Windows = config load + one line (real tests live in `tests/`). Keep both branches working when editing main.
-- `_deps-cache/` tarballs are NOT committed anymore (they were 179 MB of blobs). `scripts/fetch_deps.sh` rebuilds them from the pinned tag/SHA recipe; `scripts/check_hygiene.sh` enforces the no-comments/no-stray-windows.h rules and runs in CI. CI (`.github/workflows/ci.yml`) does a two-phase Linux build + ctest and a Windows MSVC build + ctest; gRPC stays OFF in CI.
-- Config keys (`config.json`): `hotkey_code`, `whisper_model_path`, `vad_threshold` are required; optional keys (`llm_model_path`, `use_remote`, `remote_endpoint`, `cleanup_enabled`, `cleanup_min_words`, `cleanup_timeout_ms`, `min_hold_ms`, `hands_free_silence_ms`, `max_recording_ms`, `llm_context_size`, `llm_max_predict_tokens`, `llm_gpu_layers`, `vad_model_path`) are additive with defaults and type-tolerant (wrong type -> warning + default, never a crash). `transforms.json` is an arbitrary-length array; every prompt must contain `{text}`; a missing file is tolerated with a warning. Phi-4-mini-*reasoning* emits `<think>` blocks — stripped in `LocalLlamaProvider::Process`.
+- Config keys (`config.json`): `hotkey_code`, `whisper_model_path`, `vad_threshold` are
+  required; `llm_model_path`, `use_remote` (default false) and `remote_endpoint`
+  (default `localhost:50051`) optional. The full schema with defaults lives in
+  `SettingsStore::BuildSchema()` (src/core/SettingsStore.cpp); keys are additive-only
+  across releases and unknown keys are preserved on save. Cloud STT is opt-in:
+  `stt_provider` (`local` default; `gnani` | `elevenlabs` | `muse`) needs
+  `stt_consent_accepted=true` plus the provider's key from the environment only
+  (`GNANI_API_KEY` / `ELEVENLABS_API_KEY` / `META_MODEL_API_KEY`, single source in
+  `src/core/ConsentGate.cpp`), never logs transcripts or keys, and only ever falls back
+  cloud -> local (see `docs/STT_CLOUD.md`). The in-app consent surface is Settings >
+  Cloud (S5); failed attempts keep a redacted error `detail` (lwf::RedactSecret/
+  RedactAuthValues, src/core/Redact.h) in the attempt stats. Data files live under
+  `%APPDATA%\LocalWisperFlow` (LWF_HOME overrides): config.json, dictionary.json,
+  snippets.json, app_profiles.json, history.jsonl, models.json, logs/, models/.
+- Streaming STT (E1): the engine commits a committed-samples slice on VAD pauses
+  (>= `streaming_pause_ms` after >= `streaming_min_segment_ms`) into `StreamingDictator`
+  (single worker, strict FIFO, rolling 200-char context passed via the additive
+  `IInferenceProvider::TranscribeWithPrompt`); any segment failure falls back to one-shot
+  full-buffer transcription; cancel discards in-flight work. LocalWhisperProvider merges
+  the dictionary prompt prefix with the rolling context under a 600-char cap and honors
+  `RequestCancel()` via whisper's ggml abort callback (verified against vendored
+  whisper.h v1.9.3).
 
-## Conventions & landmines
+## Cloud STT stack (S0-S8)
 
-- **No comments in code** (project owner's rule). Self-explanatory names only.
-- Error style: throw `std::runtime_error` at C-API boundaries; async completion callbacks receive an empty string instead of throwing.
-- ORT sessions are thread-safe for concurrent Run(), but `SileroVadProvider` keeps recurrent state between calls — it serializes under a mutex; do not remove.
-- Silero v5 scores pure tones ~0.2 (not speech): never gate tests on sine->true; use noise==0 + jfk.wav density >=25% like the existing selftest. The model input is **[1, 576]** = 64-sample left context + the 512-sample chunk (official `utils_vad.py` semantics: `context` starts zeroed and is updated to the last 64 samples of each chunk); `Reset()` zeroes both LSTM state and context and must be called at the start of every capture.
-- ONNX Runtime 1.29 removed `SessionOptions::DisableTelemetryEvents()` — don't re-add.
-- whisper.cpp v1.9.3 API: segment accessors are `whisper_full_n_segments` / `whisper_full_get_segment_text` (no `whisper_n_segments`).
-- `.github/workflows/ci.yml` belongs to an unrelated Python project (`vision_sst`) — stale leftover, safe to ignore/delete.
+`SttRouter` (core) picks cloud vs local via `ConsentGate` and owns the one-way fallback;
+providers live in `src/stt/cloud/` behind `ISttProvider` and share
+WavEncoder/MultipartBuilder/ClipSplitter (`MultipartBuilder::AddJsonField` renders a
+content-typed, filename-less part for Muse's `request` part). Every provider loop aborts
+on first failure, honors the cancel check between clips, and redacts
+`SttAttemptStats::detail`. `stt_language` is provider-neutral:
+`sttlang::ElevenLabsLanguageCode` picks the first valid ISO token,
+`sttlang::MuseLanguageBias` maps codes to the vendor's language names (indic-auto -> the
+Indic subset of Muse's 25 documented languages). `lwf-cloud-bench` benchmarks the offline
+cloud path with a loopback transport (docs/BENCHMARKS.md); contracts were verified from
+vendor docs on 2026-11-04, NOT yet against the live APIs.
 
-## Environment quirks (Linux dev box)
+## Crash handling and resilience
 
-- No sudo; no cmake/mingw preinstalled. A user-space cmake works fine (`python3 -m venv` + `pip install cmake`; `/tmp` gets purged mid-session — keep toolchains under `~/.local/share/` or the repo).
-- First configure clones whisper.cpp+llama.cpp shallowly and can take 10-20 min on slow networks; subsequent reconfigures are fast. Build dirs: `build/`, plus ad-hoc `build-win*` used for llvm-mingw cross-checks of the WIN32 sources.
+- Crash handling (E3): `os/CrashHandler` installs SetUnhandledExceptionFilter and writes
+  `crash-<ts>.txt` through the portable `lwf::CrashReporter` (version from
+  `LWF_APP_VERSION` compile definition set from project VERSION; FSM state mirrored from
+  the FSM transition listener into an atomic; log tail via the Log ring buffer). Next
+  launch surfaces a one-time notice and renames the file to `.seen.txt`.
+- Resilience (E2): model load failures at startup are caught in main (bad_alloc ->
+  ModelLoadFailed with smaller-model advice; other -> ModelMissing + UnavailableStt
+  placeholder, cleanup auto-disabled without an LLM, VAD failure degrades to no gating);
+  notices surface through EngineBridge after wiring. Mic loss is detected via miniaudio's
+  stopCallback (only while capturing) -> `IAudioCapture::DeviceLost()` -> engine discards
+  with MicLost.
+
+## Working rules for agents
+
+- Read docs/PROGRESS.md before starting; record what you did there (one row per task
+  with gates run). Honest limits: Windows-only behavior (hook, tray, overlay, injector,
+  downloader, installer, crash filter) is adapter code with manual checklists in
+  docs/MANUAL_TEST_WINDOWS.md — not claimed as verified.
+- Tests first when touching portable logic; the suite is doctest (tests/), hermetic via
+  tests/V0ConfigFixture.h (seeds the untracked v0 config data).
+- Never invent model URLs, SHA-256 values, vendor prices or API shapes: contracts come
+  from vendor documentation pages and are recorded in src/stt/cloud/*Contract.h and
+  docs/STT_CLOUD.md with the date they were checked.
+- Secrets (API keys) only ever cross the process boundary via the environment; they are
+  redacted from every stored log line (lwf::RedactSecret / RedactAuthValues).

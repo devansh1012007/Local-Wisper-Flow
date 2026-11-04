@@ -2,38 +2,32 @@
 
 #include "core/IInferenceProvider.h"
 
-#include <mutex>
+#include <atomic>
 #include <string>
 #include <vector>
 
 struct whisper_context;
 
-struct WhisperSettings {
-    std::string language = "auto";
-    int threads = 4;
-    int beam_size = 1;
-    bool suppress_non_speech_tokens = true;
-    bool disable_temperature_fallback = false;
-};
-
 class LocalWhisperProvider : public IInferenceProvider {
 public:
-    explicit LocalWhisperProvider(const std::string& model_path, WhisperSettings settings);
+    explicit LocalWhisperProvider(const std::string& model_path);
     ~LocalWhisperProvider() override;
 
     LocalWhisperProvider(const LocalWhisperProvider&) = delete;
     LocalWhisperProvider& operator=(const LocalWhisperProvider&) = delete;
 
     std::string Transcribe(const std::vector<float>& audio_pcm) override;
+    std::string TranscribeWithPrompt(const std::vector<float>& audio_pcm,
+                                     const std::string& prompt) override;
     std::string ProcessText(const std::string& text, const std::string& instruction) override;
+    void RequestCancel() override;
 
-    void SetInitialPrompt(const std::string& prompt);
-
-    void WarmUp();
+    void SetPromptPrefix(std::string prefix);
 
 private:
+    std::string RunWhisper(const std::vector<float>& audio_pcm, const std::string& prompt);
+
     whisper_context* ctx_ = nullptr;
-    WhisperSettings settings_;
-    std::mutex mutex_;
-    std::string initial_prompt_;
+    std::atomic<bool> cancel_requested_{false};
+    std::string prompt_prefix_;
 };

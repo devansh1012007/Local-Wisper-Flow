@@ -1,43 +1,37 @@
 #pragma once
 
 #include "core/ILlmProvider.h"
-#include "core/TransformManager.h"
+#include "core/WorkerQueue.h"
 
-#include <chrono>
-#include <cstddef>
-#include <functional>
+#include <atomic>
+#include <memory>
 #include <string>
-
-struct CleanupSettings {
-    bool enabled = true;
-    std::size_t min_words = 4;
-    std::chrono::milliseconds timeout{4000};
-};
 
 class DictationCleanup {
 public:
-    using Reporter = std::function<void(const std::string& note)>;
+    explicit DictationCleanup(ILlmProvider* llm);
 
-    DictationCleanup(ILlmProvider& llm, CleanupSettings settings, Reporter reporter = nullptr)
-        : llm_(llm), settings_(settings), reporter_(std::move(reporter)), executor_(llm) {}
+    void SetEnabled(bool enabled);
+    bool Enabled() const;
+    void SetMinWords(int min_words);
+    void SetTimeoutMs(int timeout_ms);
+    void SetPromptAddendum(std::string addendum);
+    void SetPreserveSentinels(bool preserve);
 
-    std::string Clean(const std::string& raw);
+    std::string Process(const std::string& raw);
 
-    static const char* SystemPrompt();
-
-    static bool AcceptOutput(const std::string& raw, const std::string& cleaned);
-
-    static std::size_t WordCount(const std::string& text);
+    std::size_t GuardRejections() const;
 
 private:
-    void Note(const std::string& text) const {
-        if (reporter_) {
-            reporter_(text);
-        }
-    }
+    std::string ComposePrompt(const std::string& raw) const;
+    std::string ApplyGuards(const std::string& raw, std::string cleaned) const;
 
-    ILlmProvider& llm_;
-    CleanupSettings settings_;
-    Reporter reporter_;
-    TransformManager executor_;
+    ILlmProvider* llm_;
+    bool enabled_ = true;
+    int min_words_ = 4;
+    int timeout_ms_ = 2000;
+    std::string prompt_addendum_;
+    bool preserve_sentinels_ = false;
+    WorkerQueue worker_;
+    std::shared_ptr<std::atomic<std::size_t>> guard_rejections_;
 };

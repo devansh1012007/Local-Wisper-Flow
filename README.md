@@ -1,149 +1,166 @@
 # Local Wisper Flow
 
-A fully local, Wispr Flow-style push-to-talk dictation app for Windows. Hold a hotkey,
-speak, release — your speech is transcribed with Whisper, optionally cleaned up by a
-local LLM, and pasted into whatever app has focus. Nothing leaves your machine.
+Local-first voice dictation for Windows. Hold a hotkey, speak, and the text
+lands in whatever app you are typing in. Whisper speech-to-text and an
+optional local LLM run on this machine; a cloud STT provider is available
+behind an explicit consent gate (see "Cloud speech-to-text" below).
 
-```
-hold Right Alt -> speak -> release
-      |                |
-   microphone      Silero VAD gate (576-sample streaming input, per-capture reset)
-      |                |
-      v                v
-   Whisper.cpp  ->  LLM cleanup (llama.cpp, guarded output)  ->  clipboard paste
-                                                                      |
-                                                          your previous clipboard
-                                                          contents are restored
-```
-
-## Features
-
-- Push-to-talk dictation with a configurable hotkey (default Right Alt)
-- AltGr-safe hotkey handling: on AltGr layouts (US-International, English India) Right
-  Alt + Ctrl passes through to type characters like `₹` instead of being swallowed
-- Silero VAD speech gating with head/tail trimming, hands-free auto-stop
-  (`hands_free_silence_ms`), and a maximum recording duration
-- Whisper transcription with personal dictionary (initial prompt + post-cleanup
-  replacement enforcement) and hallucination filtering (`[BLANK_AUDIO]`, `(music)`, ...)
-- LLM cleanup through a chat-templated llama.cpp provider with a strict output guard:
-  answered questions, preambles, translations, and truncated generations are rejected
-  and the raw transcript is used instead
-- Clipboard injection that saves and restores **all** clipboard formats (text, images,
-  file lists) and is excluded from clipboard history and cloud sync
-- Warm capture with a 300 ms pre-roll ring: the first words are not clipped
-- Live dashboard window with state, audio level, and error surfacing; the engine
-  survives mic failures and recovers automatically
+- **Press-to-talk dictation** with VAD-gated capture, a mini overlay badge and
+  a full settings window (Dear ImGui).
+- **Text pipeline**: spoken commands, personal dictionary, snippets, optional
+  LLM cleanup, paste-chord handling per app.
+- **Streaming mode**: long dictations commit in segments at pauses with a
+  rolling context prompt (E1).
+- **Resilience and privacy**: model-loss fallbacks, crash reporting, no
+  telemetry, offline by default (E2/E3/E4).
 
 ## Requirements
 
-- Windows 10/11 for the app (builds and runs its test suite on Linux)
-- CMake >= 3.16, a C++17 compiler (MSVC on Windows)
-- Models (not included, see below): Whisper GGML, optional Qwen/Phi GGUF for cleanup,
-  Silero VAD ONNX, ONNX Runtime
+- Windows 10/11 (the GUI app) or any Linux for the core build and tests.
+- CMake >= 3.16, a C++17 toolchain (MSVC 2022 on Windows), network access on
+  the first configure for FetchContent deps (nlohmann/json, doctest, and -
+  with `LWF_BUILD_FULL=ON` - llama.cpp, whisper.cpp, miniaudio, gRPC, GLFW,
+  Dear ImGui).
+- Full build extras: whisper `ggml` model, optional Qwen GGUF for cleanup,
+  optional ONNX Runtime for the Silero VAD gate.
 
 ## Build
 
-```sh
-# Linux (runs the portable test suite)
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j4        # phase 1 builds llama.cpp, link of the app fails - expected
-cmake -S . -B build            # phase 2 picks up the installed llama
-cmake --build build -j4
-ctest --test-dir build --output-on-failure
+Linux core (engine, pipeline, tests, bench - no GUI):
 
-# Windows (MSVC)
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j4
+ctest --test-dir build
+```
+
+Windows full app (two-phase configure: the first configure builds llama.cpp
+via ExternalProject; re-run configure afterwards so the installed llama/ggml
+package is picked up):
+
+```sh
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-Notes:
+## Models
 
-- llama.cpp (`b10603`) builds via ExternalProject during phase 1; the two-phase
-  configure is required so whisper links llama's ggml (single copy). See AGENTS.md.
-- gRPC remote inference is **optional** and off by default (`-DLWF_BUILD_GRPC=ON`).
-  The bundled tarballs are not in git anymore; run `sh scripts/fetch_deps.sh` to
-  rebuild `_deps-cache/` if you need an offline or remote build.
-- ONNX Runtime is expected under `third_party/onnxruntime/{include,lib}`
-  (override with `-DONNXRUNTIME_DIR=<path>`). Without it the app builds but runs
-  without VAD gating.
+| Model | Used for | Where configured |
+|---|---|---|
+| Whisper `ggml` (e.g. ggml-base.en.bin) | speech-to-text | `whisper_model_path` |
+| Qwen2.5 1.5B Instruct GGUF | cleanup LLM | `llm_model_path` |
+| silero_vad.onnx | silence gating | data dir `models/` |
 
-## Model setup
+Model files are never shipped by the installer; the onboarding wizard
+downloads them on first run with a SHA-256 check when the entry carries a
+known hash (unverified entries warn in the UI).
 
-Put models next to the executable or under the data directory
-(`%APPDATA%\LocalWisperFlow`, or the `LWF_HOME` environment variable):
+## First run
 
-- `ggml-base.en.bin` or any whisper.cpp GGML model (`whisper_model_path`)
-- `silero_vad.onnx` (`vad_model_path`)
-- optional LLM GGUF such as `Qwen2.5-1.5B-Instruct Q4_K_M` (`llm_model_path`)
+The wizard walks through the hotkey, the whisper model and the cleanup LLM.
+Everything can be changed later in Settings (rail: Home, Speech, Cloud,
+Cleanup, Privacy, About). Dictation starts immediately with local Whisper;
+cloud STT stays off until you opt in.
 
-Relative paths in `config.json` resolve against the working directory, the
-executable directory, and the data directory (in that order), so launching from a
-shortcut works.
+## Hotkeys (config keys)
 
-## Configuration (`config.json`)
+| Key | Default | Purpose |
+|---|---|---|
+| `hotkey_ptt` | (wizard-set) | press-to-talk |
+| `hotkey_handsfree` | (empty) | toggle hands-free mode |
+| `hotkey_cancel` | `Escape` | cancel the running dictation |
+| `hotkey_command` | (empty) | command mode on selected text |
+| `hotkey_paste_last` | (empty) | paste the last transcript |
+
+## Settings reference
+
+The full schema with defaults lives in `SettingsStore::BuildSchema()`
+(src/core/SettingsStore.cpp); keys are additive-only across releases and
+unknown keys are preserved on save. The important rows:
 
 | Key | Default | Meaning |
-| --- | --- | --- |
-| `hotkey_code` | required | Virtual-key code of the push-to-talk key (165 = Right Alt) |
-| `whisper_model_path` | required | Path to the Whisper GGML model |
-| `vad_threshold` | required | Silero speech threshold (0.01-0.99) |
-| `llm_model_path` | `""` | Optional cleanup LLM (empty disables cleanup) |
-| `use_remote` | `false` | Prefer the gRPC remote server (falls back to local) |
-| `remote_endpoint` | `localhost:50051` | gRPC server address |
-| `cleanup_enabled` | `true` | LLM cleanup toggle |
-| `cleanup_min_words` | `4` | Skip cleanup below this many words |
-| `cleanup_timeout_ms` | `4000` | Cleanup wall-clock budget (falls back to raw) |
-| `min_hold_ms` | `100` | Shorter presses are ignored |
-| `hands_free_silence_ms` | `0` | >0 enables auto-stop after this much silence |
-| `max_recording_ms` | `30000` | Hard recording cap |
-| `llm_context_size` | `2048` | llama context size |
-| `llm_max_predict_tokens` | `1024` | Cleanup generation cap (truncated output is rejected) |
-| `llm_gpu_layers` | `0` | GPU layers to offload (0 = CPU) |
-| `vad_model_path` | `models/silero_vad.onnx` | Silero ONNX model |
-| `inject_restore_delay_ms` | `300` | Clipboard restore delay for slow paste targets |
-| `whisper_language` | `auto` | ISO code or `auto` |
-| `whisper_threads` | `4` | CPU threads |
-| `whisper_beam_size` | `1` | >1 switches to beam search |
-| `whisper_disable_temp_fallback` | `false` | true kills temperature-fallback latency spikes |
-| `avoid_altgr` | `true` | Pass AltGr (Right Alt + Ctrl) through untouched |
-| `dictionary_path` | `dictionary.json` | Personal dictionary (words + replacements) |
+|---|---|---|
+| `hotkey_code` | 165 | default hotkey virtual key |
+| `double_tap_window_ms` | 400 | double-tap detection window |
+| `min_hold_ms` | 250 | shortest hold treated as dictation |
+| `max_recording_ms` | 30000 | hard recording cap |
+| `hands_free_silence_ms` | 1500 | silence that ends a hands-free utterance |
+| `avoid_altgr_conflict` | true | keep shortcuts off AltGr chords |
+| `whisper_model_path` | `ggml-base.en.bin` | local STT model |
+| `whisper_language` | `auto` | local whisper language |
+| `vad_threshold` | 0.6 | Silero VAD speech threshold |
+| `llm_model_path` | (empty) | cleanup LLM model; empty disables cleanup |
+| `cleanup_enabled` | true | LLM cleanup of dictated text |
+| `cleanup_min_words` | 4 | skip cleanup below this word count |
+| `cleanup_timeout_ms` | 2000 | give up on cleanup after this long |
+| `spoken_commands_aggressive` | false | rewrite commands inside sentences |
+| `snippet_mode` | `whole` | snippet expansion mode |
+| `command_timeout_ms` | 8000 | budget for command-mode LLM edits |
+| `use_remote` | false | route STT/cleanup to the gRPC endpoint instead of local |
+| `remote_endpoint` | `localhost:50051` | gRPC target when `use_remote=true` |
+| `stt_provider` | `local` | `local` keeps Whisper on-device; `gnani`, `elevenlabs`, or `muse` route through cloud STT |
+| `stt_consent_accepted` | false | consent gate for cloud STT; cloud stays off until accepted (Settings > Cloud) |
+| `stt_language` | `indic-auto` | provider-neutral language hint: ISO code or comma list; per-provider mapping in docs/STT_CLOUD.md |
+| `stt_timeout_ms` | 15000 | per-request cloud timeout (failures fall back to local) |
+| `stt_max_clips` | 40 | cloud request budget per dictation (30 s clips, Gnani/ElevenLabs; Muse uses one request up to 10 min) |
+| `inject_delay_ms` | 0 | extra delay before paste for slow apps |
+| `streaming_stt` | true | commit long dictations in segments at pauses |
+| `streaming_min_segment_ms` | 3000 | minimum audio before a segment may commit |
+| `streaming_pause_ms` | 700 | pause length that commits a segment |
+| `sound_enabled` | true | tone feedback |
+| `sound_volume` | 0.3 | tone volume |
+| `history_enabled` | true | keep a local history of transcripts |
+| `debug_log_transcripts` | false | WARNING: write dictated text to the local log |
 
-Out-of-range values are clamped with a warning; wrong-typed optional keys fall back
-to their defaults instead of crashing.
+App-specific behavior (paste chord, tone profile) lives in `app_profiles.json` in
+the data dir; dictionary and snippets in `dictionary.json` / `snippets.json`; history in
+`history.jsonl`.
 
-`dictionary.json`:
+## Cloud speech-to-text (opt-in)
 
-```json
-{
-  "words": ["Wispr", "Qwen"],
-  "replacements": [{"from": "teh", "to": "the"}]
-}
-```
+Dictation stays on-device by default. Three opt-in cloud providers are available behind
+Settings > Cloud, each gated by an explicit consent flag plus an API key that only ever
+comes from the environment - never from config.json, and never written to logs:
 
-Words feed Whisper's initial prompt (capped at 600 characters, oldest dropped first);
-replacements are enforced after cleanup as whole-word, case-insensitive substitutions.
-A bare `["word", ...]` array is still accepted.
+| Provider | `stt_provider` | Key environment variable | Contract |
+|---|---|---|---|
+| Gnani Prisma | `gnani` | `GNANI_API_KEY` | `api.vachana.ai` STT v3 |
+| ElevenLabs Scribe | `elevenlabs` | `ELEVENLABS_API_KEY` | `api.elevenlabs.io/v1/speech-to-text` |
+| Meta Muse Voice | `muse` | `META_MODEL_API_KEY` | `api.meta.ai/v1/asr/transcribe` |
+
+When a cloud request fails - auth, rate limit, timeout, network, malformed response -
+that utterance falls back to local Whisper; local is never upgraded to cloud mid-utterance.
+Audio is encoded in memory and never touches disk; logs carry provider, request id,
+status, error category, byte counts and latency only. Before trusting a cloud path, run
+the S0 smoke check on a machine with a real key (docs/STT_CLOUD.md) - the request shapes
+are vendor-verified from documentation but not yet exercised against the live endpoints.
 
 ## Troubleshooting
 
-- **Microphone blocked**: Windows privacy settings can deny mic access; the app
-  reports `MicUnavailable` and retries on the next press.
-- **Hotkey does nothing in elevated apps**: a non-elevated app cannot inject input
-  into elevated windows.
-- **Transcription is slow**: use a smaller Whisper model, more threads, or enable
-  `llm_gpu_layers`; consider `whisper_disable_temp_fallback: true`.
-- **Wrong characters when using Right Alt on non-US layouts**: keep `avoid_altgr`
-  enabled (default) so AltGr combinations reach the app.
-- **Paste happens before the target reads the clipboard**: raise
-  `inject_restore_delay_ms` (Word/Electron/remote desktop can be slow).
+- **Microphone blocked**: if the level meter stays empty, the app may lack mic
+  permission, or the device is exclusive-mode capture. Pick another input in
+  Settings > Speech and restart.
+- **Admin (elevated) apps ignore injection**: UIPI blocks synthetic input into
+  higher-integrity windows. Run the app elevated to dictate into elevated apps.
+- **Slow STT**: pick a smaller whisper model; keep `cleanup` off on weak
+  machines; check `debug_log_transcripts` stays off.
+- **AltGr characters**: enable `avoid_altgr_conflict` so the dictation hotkey
+  never swallows AltGr chords.
+- **Paste chords**: some apps need a custom paste chord - set it per app in
+  `app_profiles.json`.
 
 ## Privacy
 
-Everything runs locally. The remote gRPC mode is opt-in (`use_remote`), off by
-default, and its reference server binds to loopback. No telemetry of any kind. The
-dictated audio is never written to disk.
+No telemetry. No network calls except explicit model downloads and, if and
+only if you enable a cloud provider, that provider's transcription requests
+(consent + API key required). Transcripts stay on disk only if history is
+enabled; `debug_log_transcripts` writes text to the log and the UI warns when
+it is on.
 
-## License notes
+## Model license notes
 
-Model weights are subject to their own licenses (Whisper: MIT; Silero VAD: MIT;
-Qwen/Phi GGUFs: check the model card). The app code follows the repository license.
+whisper.cpp models are distributed under their own licenses (check the model
+page before bundling); Qwen2.5 GGUF follows the Qwen license; silero_vad.onnx
+is MIT. The installer bundles no model weights.

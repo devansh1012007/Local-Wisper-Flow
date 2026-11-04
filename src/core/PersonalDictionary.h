@@ -1,42 +1,28 @@
 #pragma once
 
-#include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
 
 class PersonalDictionary {
 public:
-    struct Replacement {
-        std::string from;
-        std::string to;
-    };
+    bool Load(const std::string& path);
 
-    static constexpr std::size_t kPromptCharCap = 600;
+    void SetWords(std::vector<std::string> words);
+    void SetReplacements(std::vector<std::pair<std::string, std::string>> replacements);
+    void AddWord(std::string word);
 
-    void Load(const std::string& path);
+    const std::vector<std::string>& Words() const;
+    const std::vector<std::pair<std::string, std::string>>& Replacements() const;
+    bool Loaded() const;
 
-    void AddWord(const std::string& word);
-    bool RemoveWord(const std::string& word);
+    std::string InitialPrompt(std::size_t cap_chars = 600) const;
+    std::string Enforce(const std::string& text, bool fuzzy_enabled) const;
 
-    std::string PromptFragment() const;
-
-    std::string Enforce(const std::string& text) const;
-
-    const std::vector<std::string>& Words() const {
-        return words_;
-    }
-
-    const std::vector<Replacement>& Replacements() const {
-        return replacements_;
-    }
-
-    bool TruncatedLastPrompt() const {
-        return truncated_last_prompt_;
-    }
+    static std::size_t EditDistance(const std::string& a, const std::string& b);
 
 private:
     std::vector<std::string> words_;
-    std::vector<Replacement> replacements_;
-    mutable bool truncated_last_prompt_ = false;
+    std::vector<std::pair<std::string, std::string>> replacements_;
+    bool loaded_ = false;
 };

@@ -1,8 +1,13 @@
 #pragma once
 
 #include <cstddef>
-#include <functional>
 #include <vector>
+
+class IAudioChunkSink {
+public:
+    virtual ~IAudioChunkSink() = default;
+    virtual void OnAudioChunk(const float* samples, std::size_t frame_count) = 0;
+};
 
 class IAudioCapture {
 public:
@@ -12,15 +17,8 @@ public:
     virtual void Stop() = 0;
     virtual std::vector<float> GetRecordedAudio() = 0;
 
-    virtual void SetChunkSink(std::function<void(const float*, std::size_t)> sink) {
-        (void)sink;
-    }
-
-    virtual float AudioLevel() const noexcept {
-        return 0.0f;
-    }
-
-    virtual bool DeviceLost() const noexcept {
-        return false;
-    }
+    virtual void SetChunkSink(IAudioChunkSink* sink) { (void)sink; }
+    virtual float AudioLevel() const { return 0.0f; }
+    virtual int SampleRate() const { return 16000; }
+    virtual bool DeviceLost() const { return false; }
 };
