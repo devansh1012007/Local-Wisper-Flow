@@ -252,6 +252,9 @@ void MainWindow::RunOnce(float) {
     glClearColor(clear.x, clear.y, clear.z, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
+    // Re-assert the GL context before ImGui backend calls, since
+    // Overlay::RenderFrame() may have left the overlay's context current.
+    glfwMakeContextCurrent(window_);
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
