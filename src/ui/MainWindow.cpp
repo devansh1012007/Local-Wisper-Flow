@@ -437,7 +437,7 @@ void MainWindow::BeginCard(const char* id, float width, float scale) {
                         ImVec2(metrics::space_m * scale, metrics::space_m * scale));
     ImGui::BeginChild(id, ImVec2(width, 0.0f),
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
 }
 
