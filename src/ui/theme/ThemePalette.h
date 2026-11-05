@@ -44,14 +44,14 @@ struct Palette {
 
 // Dark theme, "Hunter and Brass".
 inline constexpr Palette kDarkPalette{
-    0x0E1714,  // bg
-    0x14221D,  // surface
-    0x29392F,  // border
+    0x1A2A24,  // bg
+    0x455A50,  // surface
+    0x5A7068,  // border
     0xEDE6D6,  // text
     0xA8B3AA,  // muted
     0xC9A96E,  // accent (brass)
     0xC9A96E,  // brass
-    0x0E1714,  // on_accent
+    0x1A2A24,  // on_accent
     0x8FB39A,  // ok
     0xD0A65A,  // warn
     0xD98A8F,  // err
