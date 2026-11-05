@@ -81,4 +81,24 @@ bool LeftMouseButtonDown() {
 #endif
 }
 
+bool PrimaryWorkArea(int& x, int& y, int& width, int& height) {
+#ifdef _WIN32
+    RECT work{};
+    if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0)) {
+        x = work.left;
+        y = work.top;
+        width = work.right - work.left;
+        height = work.bottom - work.top;
+        return true;
+    }
+    return false;
+#else
+    (void)x;
+    (void)y;
+    (void)width;
+    (void)height;
+    return false;
+#endif
+}
+
 }  // namespace WindowStyles

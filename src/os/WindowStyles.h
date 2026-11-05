@@ -18,6 +18,11 @@ bool IsCursorInsideRect(int x, int y, int width, int height, int inflate);
 // Current cursor position in screen pixels. False when unavailable.
 bool CursorScreenPoint(int& x, int& y);
 
+// Desktop work area of the primary monitor in screen pixels (the area not
+// occupied by the taskbar). False when the OS query fails (e.g. non-Windows
+// or SPI failure); callers should treat false or a zero width as "unknown".
+bool PrimaryWorkArea(int& x, int& y, int& width, int& height);
+
 // Physical left-button state, polled from the OS so a drag keeps working
 // while the cursor moves faster than the small overlay window follows it.
 bool LeftMouseButtonDown();

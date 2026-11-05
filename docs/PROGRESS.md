@@ -171,6 +171,37 @@ is unit-tested with fakes; the live-API smoke (Gnani/ElevenLabs/Muse), the
 Windows build/UI checkpoint and the zig type-check await Devansh
 (docs/QUESTIONS.md #1 and #5).
 
+## Windows bring-up + GUI (2026-11-06)
+
+Devansh ran the app on Windows and screenshotted a black client area with a tiny
+rounded pill at the bottom-left. Root-caused and fixed on `main` (MinGW local
+build; Windows CI runner is MSVC):
+
+| id | title | status | commit | gates | manual-check | notes |
+|----|-------|--------|--------|-------|--------------|-------|
+| WB1 | model path: exe-dir parent + cwd fallbacks | DONE | ba46cbf, db4e40a | G1 (MinGW exe build) | no | `ResolveDataPath` order: absolute, data_dir, exe_dir, exe_dir.parent, cwd; fixes "failed to open ggml-base.en.bin" when the exe is run from `build/` |
+| WB2 | GL context re-assert before NewFrame | DONE | b7f677d | G1 (MinGW exe build) | no | defensive; back-to-back windows re-bind their own GL context in one thread |
+| WB3 | Full window collapsed to 140x70 pill (black screen) | DONE | 1a8304f | G1 (MinGW exe build) | partial: both windows render (window capture); clicks untested | root cause: `ImGui::CreateContext()` restores the PREVIOUS context after init; both Init() used `GetCurrentContext()`, so both windows shared ctx_A; the overlay's backend then overwrote `BackendPlatformUserData` (the "already initialized" assert is compiled out in Release); main window rendered with `DisplaySize=140x70`, viewport (0,0,140,70) = bottom-left in GL |
+| WB4 | Earlier dark-theme contrast change reverted | DONE | (in 1a8304f) | n/a | n/a | lighter palette was a misdiagnosis; mockup-exact tokens restored (tests/test_overlay_settings_ui.cpp enforces them) |
+| WB5 | Mini badge + Full window verified by capture | DONE | 1a8304f | G1 | partial | PrintWindow render shows rail/nav items/Welcome page with card and mini badge (mic + Ready) |
+| WB6 | CI repairs (hygiene, whisper patch stderr, lwf_tests) | IN PROGRESS | | | | sub agents launched 2026-11-06; see task log |
+
+Gates: G1 OK (MinGW `-j4` build of the exe). G2 not green this session —
+`lwf_tests` does not compile (stale `ScriptedLlm` call sites in test files;
+fix in flight). G3 zig pending (no zig on this box). G4 hygiene was FAIL
+(`src/ui/Overlay.cpp` windows.h) — fixed via moving `PrimaryWorkArea` into
+`src/os/WindowStyles.cpp` (same session); G5 not run.
+
 ## Task log
+
+- 2026-11-06: Windows bring-up + GUI: model path exe-dir-parent/cwd fallbacks
+  (ba46cbf/db4e40a), GL context re-assert (b7f677d), root-cause fix for the
+  "black screen" — `ImGui::CreateContext()` restores the previous context, both
+  Init() paths shared one context and the Full window rendered clipped to the
+  140x70 Mini size (1a8304f; verified by window capture; theme palette reverted
+  to mockup-exact tokens). CI blockers repaired via sub agents: hygiene
+  windows.h lint (moved PrimaryWorkArea into src/os/WindowStyles), whisper patch
+  step stderr captured (MSBuild MSB8066), stale lwf_tests call sites. See
+  "Windows bring-up + GUI (2026-11-06)" above.
 
 - 2026-11-04: Fixed CI `windows` job failure by pinning the runner to `windows-2022` (the `windows-2025-vs2026` image no longer provides the Visual Studio 2022 generator used by this workflow). Gates for this workflow-only change: G1-G5 not run locally.

@@ -51,7 +51,7 @@ selection, clipboard restored on every branch.
 
 | Thread | Owns | Notes |
 |--------|------|-------|
-| UI (GLFW main) | MainWindow, SettingsWindow, Overlay, wizard | reads StatusSnapshot only; posts UiCommands |
+| UI (GLFW main) | MainWindow, Overlay | reads StatusSnapshot only; posts UiCommands |
 | Engine | DictationEngine, FSM transitions, pipeline, injection calls | consumes EngineEvent queue; Tick() every ~20 ms |
 | Audio capture | miniaudio data callback | feeds chunks + level; never blocks on engine |
 | STT worker | StreamingDictator | one segment at a time, FIFO |
@@ -93,5 +93,9 @@ diagnostic state, last 200 log lines) via the portable `CrashReporter`.
   (ExternalProject, two-phase configure, single shared ggml), gRPC (vendored submodule
   sources via `scripts/fetch_deps.*`), ONNX Runtime (preinstalled under
   `third_party/onnxruntime`, optional), VAD selftest.
-- CI (`.github/workflows/ci.yml`): Linux core job (build + ctest + hygiene + privacy +
-  bench smoke) and Windows full job (cached tarballs, two-phase configure, MSVC, ctest).
+- CI (`.github/workflows/ci.yml`): Linux core job (ubuntu-latest: hygiene first, then
+  two-phase build with `-DLWF_BUILD_GRPC=OFF`, then ctest) and Windows full job
+  (windows-2022: VS2022 generator, two-phase configure, cached FetchContent deps,
+  ctest). Both gate on `lwf_tests` compiling and passing; the whisper vendored patch
+  (`patches/apply_vendor_patch.cmake`) captures git's output so its expected
+  reverse-check errors cannot fail MSBuild's custom-build rule.

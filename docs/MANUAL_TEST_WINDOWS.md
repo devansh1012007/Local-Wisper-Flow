@@ -292,6 +292,14 @@ Expected: v0 keys unchanged, new keys added with defaults, `config.json.bak` cre
 
 ## R: GUI redesign step 1 (theme, mini, full window)
 
+> 2026-11-06 bring-up note: the long-standing "black screen" root cause is fixed
+> (1a8304f - both windows had silently ended up sharing one ImGui context, so the
+> Full window rendered clipped to the 140x70 Mini badge's size at the bottom-left).
+> The model path also now resolves when the exe is in `build/` (exe-dir parent +
+> cwd fallbacks, ba46cbf/db4e40a). Both windows render (verified by window capture).
+> Every item below is still UNVERIFIED until ticked on this machine.
+
+
 Build first, then run through these in order. Mark PASS only on real Windows
 hardware. All of R replaces the old dashboard/settings/wizard windows.
 

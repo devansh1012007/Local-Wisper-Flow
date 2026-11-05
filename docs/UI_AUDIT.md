@@ -1,5 +1,15 @@
 # UI AUDIT — D0
 
+> Addendum (2026-11-06): the "one context per window" fix in the R1 re-land was
+> incomplete — `ImGui::CreateContext()` restores the previous context after
+> initializing the new one, and both Init() paths read `GetCurrentContext()`
+> instead of the returned context, so the windows still shared one context and
+> the overlay's backend overwrote it in Release. The Full window rendered with
+> `DisplaySize` = the 140x70 Mini badge and a (0,0,140,70) GL viewport, i.e. a
+> black screen with a tiny pill bottom-left. Fixed in 1a8304f; see AGENTS.md
+> "UI (GLFW + Dear ImGui, two windows)". The audit's verdict stands; this
+> addendum records the post-R1 state.
+
 Audit of everything under `src/ui/`, plus the UI-adjacent wiring in `src/main.cpp`,
 as the baseline for the GUI redesign (Mini resident dot/pill + Full window).
 

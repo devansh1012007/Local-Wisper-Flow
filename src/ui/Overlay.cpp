@@ -4,7 +4,6 @@
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
 
-#include <windows.h>
 #include <GLFW/glfw3native.h>
 
 #include "imgui.h"
@@ -34,15 +33,7 @@ float Wave01(float t, float period) {
 
 OverlayModel::Rect PrimaryWorkArea() {
     OverlayModel::Rect area;
-#ifdef _WIN32
-    RECT work{};
-    if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0)) {
-        area.x = work.left;
-        area.y = work.top;
-        area.width = work.right - work.left;
-        area.height = work.bottom - work.top;
-    }
-#endif
+    WindowStyles::PrimaryWorkArea(area.x, area.y, area.width, area.height);
     if (area.width == 0) {
         area.width = 1920;
         area.height = 1040;

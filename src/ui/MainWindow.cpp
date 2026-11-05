@@ -473,7 +473,11 @@ bool MainWindow::ToggleRow(const char* label, bool value, const char* helper, fl
         ImGui::TextDisabled("%s", helper);
     }
 
-    ImGui::SetCursorPos(ImVec2(start_x, start_y + row_h + metrics::space_xs * scale));
+    // No trailing SetCursorPos to the next row: the final text item already
+    // auto-advanced the cursor onto it. A trailing move past the item-driven
+    // content boundary without a following item tripped ImGui's SetCursorPos
+    // boundary check at End ("Code uses SetCursorPos() to extend window/
+    // parent boundaries; submit an item e.g. Dummy() afterwards").
     return toggled;
 }
 

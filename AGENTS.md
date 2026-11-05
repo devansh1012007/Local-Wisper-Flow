@@ -25,10 +25,24 @@ ctest --test-dir build
   src/audio|stt|vad|llm and most of core; cloud endpoint names only in src/stt/cloud/*
   and scripts/gnani_smoke.py). CI (.github/workflows/ci.yml) runs the Linux core job +
   hygiene + privacy, and the Windows full job with cached tarballs.
+- CI (ci.yml) — two things that bite:
+  - Hygiene runs before the build; any `windows.h` outside src/os/* and the cloud
+    HTTP client fails the Linux job (it caught src/ui/Overlay.cpp's work-area query;
+    move OS-API use into src/os/WindowStyles).
+  - `ctest` runs the doctest suite; `lwf_tests` must compile against the current
+    tests/Fakes.h. Keep test call sites in sync with the fakes; the suite is the
+    only thing standing between the PR and a red CI.
+  - The whisper FetchContent PATCH_COMMAND runs `patches/apply_vendor_patch.cmake`
+    via `cmake -P`; MSBuild's custom-build rule flags any line matching `error`
+    (even git's expected reverse-check output) and fails with MSB8066. The script
+    captures git output instead of letting it reach the log; do not remove that
+    capture, and do not let other patch/vendor steps print unchecked git stderr.
+  - Windows job uses `windows-2022` (the `windows-2025-vs2026` image no longer ships
+    the VS2022 generator).
 - Gate ledger: G1 build -j4 zero new warnings, G2 ctest green, G3 zig type-check of
   Windows sources, G4 scripts/check_hygiene.sh, G5 config_v0 backward-compat test.
-  This box has no zig and no Windows: G3 stays "pending" and is recorded per task in
-  docs/QUESTIONS.md.
+  The dev box is Windows (MSYS2 MinGW) but has no zig: G3 stays "pending" and is
+  recorded per task in docs/QUESTIONS.md.
 
 ## Dependencies (offline recipe)
 
@@ -71,6 +85,14 @@ ctest --test-dir build
   RedactAuthValues, src/core/Redact.h) in the attempt stats. Data files live under
   `%APPDATA%\LocalWisperFlow` (LWF_HOME overrides): config.json, dictionary.json,
   snippets.json, app_profiles.json, history.jsonl, models.json, logs/, models/.
+- `whisper_model_path` (same for `llm_model_path`) is resolved by `ResolveModelPath`
+  (src/os/DataDir.cpp → `ResolveDataPath`, src/core/PathResolver.cpp): an absolute path
+  is used as-is; otherwise it is probed in order: `%APPDATA%\LocalWisperFlow\<path>`,
+  the exe directory, the exe directory's **parent** (repo root when the exe lives in
+  `build/`), then the current working directory; if all fail, the bare path is handed
+  to the loader (whisper logs a clear "failed to open" and the app continues in
+  ModelMissing mode). Run the exe from the repo root (where ggml-base.en.bin lives) or
+  keep the model next to the exe.
 - Streaming STT (E1): the engine commits a committed-samples slice on VAD pauses
   (>= `streaming_pause_ms` after >= `streaming_min_segment_ms`) into `StreamingDictator`
   (single worker, strict FIFO, rolling 200-char context passed via the additive
@@ -107,6 +129,34 @@ vendor docs on 2026-11-04, NOT yet against the live APIs.
   notices surface through EngineBridge after wiring. Mic loss is detected via miniaudio's
   stopCallback (only while capturing) -> `IAudioCapture::DeviceLost()` -> engine discards
   with MicLost.
+
+## UI (GLFW + Dear ImGui, two windows)
+
+- Two OS windows, each with its own Dear ImGui context AND its own GL context:
+  `MainWindow` (Full window: rail + pages) and `Overlay` (Mini badge, draggable,
+  click-through unless hovered). Never share a context between windows.
+- **`ImGui::CreateContext()` restores the PREVIOUS context after initializing the new
+  one** (vendored v1.92.9b behaviour). Do NOT do
+  `imgui_context_ = ImGui::GetCurrentContext()` after `CreateContext()` — it returns
+  the other window's context. Keep the pointer the function returns and
+  `ImGui::SetCurrentContext()` it. With both windows this way, the Full window
+  rendered with `DisplaySize = 140x70` (the Mini badge's size), its GL viewport
+  anchored at the bottom-left (GL origin) and the GUI appeared as a tiny pill on a
+  black background (the long-standing "black screen"). Fixed in 1a8304f.
+- The main loop (src/main.cpp) calls `full.RunOnce()` then `overlay.RenderFrame()`
+  every tick; both re-assert `glfwMakeContextCurrent()` and `ImGui::SetCurrentContext()`
+  before their backend NewFrame calls because they run back-to-back on one thread.
+- Theme tokens are exact mockup values in src/ui/theme/ThemePalette.h and
+  tests/test_overlay_settings_ui.cpp enforces them (and the 3:1/4.5:1 contrast policy
+  off those exact tokens). Do NOT lighten colors to "fix" perceived contrast —
+  the dark-screen bug was a viewport/context bug, not a color bug; the earlier
+  lightened-palette change was reverted.
+- The Full window is the only visible main window; it hides on close (the tray owns
+  Quit) and opens from the tray (Open Settings…). `first_run` (schema default true)
+  and an empty `whisper_model_path` control whether it appears at startup.
+- `docs/UI_AUDIT.md` section 1 is the audit of this area (D1: cross-cutting shared
+  context); `docs/MANUAL_TEST_WINDOWS.md` section R/E1 lists the real-hardware
+  verification steps.
 
 ## Working rules for agents
 
