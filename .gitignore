@@ -13,3 +13,4 @@ tests/data/
 transforms_test_tmp.json
 ggml-base.en.bin
 imgui.ini
+local-wisper-flow.exe
