@@ -3,6 +3,7 @@
 #include "core/EngineTypes.h"
 #include "core/HotkeyBinding.h"
 #include "core/HotkeyTracker.h"
+#include "core/IHotkeyListener.h"
 
 #include <atomic>
 #include <cstdint>
@@ -31,7 +32,10 @@ public:
     bool TryTakeLearnedBinding(std::string& out);
     bool HookInstalled() const;
 
-private:
+public:
     struct Impl;
+    static Impl* instance();
+
+private:
     std::unique_ptr<Impl> impl_;
 };

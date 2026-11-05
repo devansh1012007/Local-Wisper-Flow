@@ -9,6 +9,7 @@
 #include <optional>
 
 #include <chrono>
+#include <cstring>
 #include <string>
 #include <thread>
 #include <vector>
@@ -24,7 +25,7 @@ struct SavedClipboardFormat {
 
 bool IsDelayedRenderOrHandleFormat(UINT format) {
     if (format == CF_BITMAP || format == CF_PALETTE || format == CF_METAFILEPICT ||
-        format == CF_ENHMETAFILE || format == CF_DSPBITMAP || format == CF_DSPPALETTE ||
+        format == CF_ENHMETAFILE || format == CF_DSPBITMAP ||
         format == CF_DSPMETAFILEPICT || format == CF_DSPENHMETAFILE) {
         return true;
     }
@@ -69,7 +70,7 @@ void RestoreClipboardFormats(const std::vector<SavedClipboardFormat>& saved) {
         return;
     }
     if (!OpenClipboard(nullptr)) {
-        Log::Warning("clipboard restore failed: could not reopen clipboard");
+        lwf::Log::Warning("clipboard restore failed: could not reopen clipboard");
         return;
     }
     EmptyClipboard();
@@ -94,7 +95,7 @@ void RestoreClipboardFormats(const std::vector<SavedClipboardFormat>& saved) {
     }
     CloseClipboard();
     if (restored != saved.size()) {
-        Log::Warning("clipboard restore incomplete: " + std::to_string(restored) + "/" +
+        lwf::Log::Warning("clipboard restore incomplete: " + std::to_string(restored) + "/" +
                      std::to_string(saved.size()));
     }
 }
@@ -273,7 +274,7 @@ void WindowsTextInjector::InjectViaClipboard(const std::string& text,
     const int wide_length =
         MultiByteToWideChar(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), nullptr, 0);
     if (wide_length <= 0) {
-        throw lwf::InjectionException(lwf::ErrorCode::InjectFailed, "utf8 conversion failed");
+        throw InjectionException(ErrorCode::InjectFailed, "utf8 conversion failed");
     }
 
     bool opened = false;
@@ -284,7 +285,7 @@ void WindowsTextInjector::InjectViaClipboard(const std::string& text,
         }
     }
     if (!opened) {
-        throw lwf::InjectionException(lwf::ErrorCode::ClipboardBusy,
+        throw InjectionException(ErrorCode::ClipboardBusy,
                                       "clipboard could not be opened after retries");
     }
 
@@ -295,14 +296,14 @@ void WindowsTextInjector::InjectViaClipboard(const std::string& text,
     if (handle == nullptr) {
         RestoreClipboardFormats(saved);
         CloseClipboard();
-        throw lwf::InjectionException(lwf::ErrorCode::InjectFailed, "clipboard alloc failed");
+        throw InjectionException(ErrorCode::InjectFailed, "clipboard alloc failed");
     }
     void* target = GlobalLock(handle);
     if (target == nullptr) {
         GlobalFree(handle);
         RestoreClipboardFormats(saved);
         CloseClipboard();
-        throw lwf::InjectionException(lwf::ErrorCode::InjectFailed, "clipboard lock failed");
+        throw InjectionException(ErrorCode::InjectFailed, "clipboard lock failed");
     }
     MultiByteToWideChar(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()),
                         static_cast<wchar_t*>(target), wide_length);
@@ -312,7 +313,7 @@ void WindowsTextInjector::InjectViaClipboard(const std::string& text,
         GlobalFree(handle);
         RestoreClipboardFormats(saved);
         CloseClipboard();
-        throw lwf::InjectionException(lwf::ErrorCode::InjectFailed, "clipboard set failed");
+        throw InjectionException(ErrorCode::InjectFailed, "clipboard set failed");
     }
     SetClipboardExclusionFormats();
     CloseClipboard();
@@ -340,7 +341,7 @@ void WindowsTextInjector::InjectText(const std::string& text) {
         return;
     }
     if (ForegroundIsElevated()) {
-        throw lwf::InjectionException(lwf::ErrorCode::InjectBlockedElevated,
+        throw InjectionException(ErrorCode::InjectBlockedElevated,
                                       "target window is elevated; run the app as admin to paste there");
     }
     std::string paste_chord = "ctrl+v";
@@ -350,14 +351,14 @@ void WindowsTextInjector::InjectText(const std::string& text) {
     try {
         InjectViaClipboard(text, paste_chord);
         return;
-    } catch (const lwf::InjectionException& e) {
-        if (e.Code() != lwf::ErrorCode::ClipboardBusy) {
+    } catch (const InjectionException& e) {
+        if (e.Code() != ErrorCode::ClipboardBusy) {
             throw;
         }
-        Log::Warning("clipboard busy, falling back to SendInput typing");
+        lwf::Log::Warning("clipboard busy, falling back to SendInput typing");
     }
     if (!InjectViaTyping(text)) {
-        throw lwf::InjectionException(lwf::ErrorCode::InjectFailed,
+        throw InjectionException(ErrorCode::InjectFailed,
                                       "SendInput typing fallback failed");
     }
 }

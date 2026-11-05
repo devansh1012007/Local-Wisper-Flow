@@ -85,12 +85,15 @@ set(LWF_CORE_SOURCES
     src/core/ToneGenerator.cpp
     src/core/TransformManager.cpp
     src/core/UiBus.cpp
+    src/audio/TonePlayer.cpp
+    src/stt/cloud/WindowsHttpClient.cpp
 )
 
 add_library(lwf_core STATIC ${LWF_CORE_SOURCES})
-target_include_directories(lwf_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(lwf_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}/_deps-src/miniaudio")
 target_compile_definitions(lwf_core PUBLIC LWF_APP_VERSION="${PROJECT_VERSION}")
-target_link_libraries(lwf_core PUBLIC nlohmann_json::nlohmann_json)
+target_link_libraries(lwf_core PUBLIC nlohmann_json::nlohmann_json miniaudio)
 
 add_executable(local-wisper-flow src/main.cpp src/os/ActiveWindow.cpp src/os/CrashHandler.cpp src/os/DataDir.cpp src/os/WindowStyles.cpp)
 target_link_libraries(local-wisper-flow PRIVATE lwf_core)

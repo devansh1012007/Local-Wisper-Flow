@@ -1,5 +1,6 @@
 build/
 _deps-cache/
+_deps-src/
 Testing/
 compile_commands.json
 CMakeCache.txt
@@ -10,3 +11,5 @@ config.json
 transforms.json
 tests/data/
 transforms_test_tmp.json
+ggml-base.en.bin
+imgui.ini
