@@ -170,3 +170,7 @@ compat green, local-wisper-flow smoke exits 0. Honest limits: all cloud code
 is unit-tested with fakes; the live-API smoke (Gnani/ElevenLabs/Muse), the
 Windows build/UI checkpoint and the zig type-check await Devansh
 (docs/QUESTIONS.md #1 and #5).
+
+## Task log
+
+- 2026-11-04: Fixed CI `windows` job failure by pinning the runner to `windows-2022` (the `windows-2025-vs2026` image no longer provides the Visual Studio 2022 generator used by this workflow). Gates for this workflow-only change: G1-G5 not run locally.
