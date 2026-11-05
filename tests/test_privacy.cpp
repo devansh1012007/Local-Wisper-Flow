@@ -9,8 +9,6 @@
 
 namespace {
 
-using namespace lwf_test;
-
 TEST_CASE("audio pcm leaves no file trace in the working directory during dictations") {
     const std::filesystem::path base = std::filesystem::temp_directory_path() / "lwf_no_audio_dump";
     std::filesystem::remove_all(base);
@@ -22,7 +20,6 @@ TEST_CASE("audio pcm leaves no file trace in the working directory during dictat
         Harness h;
         h.settings.streaming_stt = true;
         auto engine = MakeEngine(h);
-        engine->Start();
 
         for (int round = 0; round < 3; ++round) {
             engine->PostEvent(EngineEventType::PttPress);
@@ -30,13 +27,13 @@ TEST_CASE("audio pcm leaves no file trace in the working directory during dictat
             h.vad.SetSpeech(true);
             const std::vector<float> voiced(kChunkSamples, 0.3f);
             for (int i = 0; i < 40; ++i) {
-                h.capture.Append(voiced);
+                h.capture.FeedSamples(voiced);
                 engine->ProcessOne(0);
             }
             h.vad.SetSpeech(false);
             const std::vector<float> silent(kChunkSamples, 0.0f);
             for (int i = 0; i < 4; ++i) {
-                h.capture.Append(silent);
+                h.capture.FeedSamples(silent);
                 engine->ProcessOne(0);
             }
             engine->PostEvent(EngineEventType::PttRelease);
@@ -44,7 +41,6 @@ TEST_CASE("audio pcm leaves no file trace in the working directory during dictat
             engine->PostEvent(EngineEventType::Cancel);
             engine->ProcessOne(0);
         }
-        engine->Stop();
     }
 
     std::error_code ec;

@@ -41,3 +41,11 @@ evidence gathered so far.
    ElevenLabs prices are not modeled; if Devansh wants all three compared in
    docs/BENCHMARKS.md, supply the current per-hour prices from the vendor
    pages.
+
+7. Streaming double-commit race: with the current fakes, two concurrent
+   `DictationEngine::Tick` callers can both pass the pause/commit
+   check-then-act in `MaybeCommitStreamingSegment` and commit the same
+   segment twice. Production calls `Tick` only from the engine's `Run()`
+   worker thread, so this is latent; the streaming tests now drive
+   `ProcessOne` synchronously and pass deterministically. Worth a real
+   atomic-claim fix in src/core before any engine-thread changes.

@@ -10,10 +10,6 @@
 
 namespace {
 
-using namespace lwf_test;
-
-#include "EngineHarness.h"
-
 #ifdef __linux__
 int CountThreads() {
     std::ifstream file("/proc/self/status");
@@ -37,11 +33,11 @@ TEST_CASE("press and release dictates and injects cleaned text") {
     auto engine = MakeEngine(h);
     PressAndSpeak(h, *engine);
 
-    REQUIRE(h.injector.injected.size() == 1);
-    CHECK(h.injector.injected[0] == "hello world");
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(h.injector.Injected()[0] == "hello world");
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
     CHECK(engine->LastText() == "hello world");
-    CHECK(h.stt.transcribe_count == 1);
+    CHECK(h.stt.TranscribeCount() == 1);
     CHECK(HasStatus(h.sink.statuses, "injected"));
 }
 
@@ -56,8 +52,8 @@ TEST_CASE("tap shorter than the minimum hold is ignored") {
     engine->PostEvent(EngineEventType::PttRelease);
     engine->ProcessOne(0);
 
-    CHECK(h.injector.injected.empty());
-    CHECK(h.stt.transcribe_count == 0);
+    CHECK_FALSE(h.injector.HasInjected());
+    CHECK(h.stt.TranscribeCount() == 0);
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
 }
 
@@ -72,8 +68,8 @@ TEST_CASE("silence-only recording is discarded") {
     engine->PostEvent(EngineEventType::PttRelease);
     engine->ProcessOne(0);
 
-    CHECK(h.injector.injected.empty());
-    CHECK(h.stt.transcribe_count == 0);
+    CHECK_FALSE(h.injector.HasInjected());
+    CHECK(h.stt.TranscribeCount() == 0);
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
     CHECK(HasStatus(h.sink.statuses, "discarded"));
 }
@@ -84,7 +80,7 @@ TEST_CASE("stt failure returns fsm to idle and emits an error event") {
     auto engine = MakeEngine(h);
     PressAndSpeak(h, *engine);
 
-    CHECK(h.injector.injected.empty());
+    CHECK_FALSE(h.injector.HasInjected());
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
     REQUIRE(h.sink.errors.size() == 1);
     CHECK(h.sink.errors[0] == ErrorCode::SttFailed);
@@ -92,7 +88,7 @@ TEST_CASE("stt failure returns fsm to idle and emits an error event") {
 
 TEST_CASE("injector failure returns fsm to idle and emits an error event") {
     Harness h;
-    h.injector.fail = true;
+    h.injector.fail_inject = true;
     auto engine = MakeEngine(h);
     PressAndSpeak(h, *engine);
 
@@ -112,8 +108,8 @@ TEST_CASE("hands-free silence auto-stop finishes the dictation") {
     h.clock.Advance(250);
     engine->ProcessOne(0);
 
-    REQUIRE(h.injector.injected.size() == 1);
-    CHECK(h.injector.injected[0] == "hello world");
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(h.injector.Injected()[0] == "hello world");
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
 }
 
@@ -128,7 +124,7 @@ TEST_CASE("max recording timeout stops and transcribes") {
     h.clock.Advance(1500);
     engine->ProcessOne(0);
 
-    REQUIRE(h.injector.injected.size() == 1);
+    REQUIRE(h.injector.InjectionCount() == 1);
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
 }
 
@@ -142,8 +138,8 @@ TEST_CASE("cancel during capturing discards audio and injects nothing") {
     engine->PostEvent(EngineEventType::Cancel);
     engine->ProcessOne(0);
 
-    CHECK(h.injector.injected.empty());
-    CHECK(h.stt.transcribe_count == 0);
+    CHECK_FALSE(h.injector.HasInjected());
+    CHECK(h.stt.TranscribeCount() == 0);
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
 }
 
@@ -158,8 +154,8 @@ TEST_CASE("cancel during transcribing prevents injection even if stt returns lat
     engine->PostEvent(EngineEventType::PttRelease);
     engine->ProcessOne(0);
 
-    CHECK(h.injector.injected.empty());
-    CHECK(h.stt.transcribe_count == 1);
+    CHECK_FALSE(h.injector.HasInjected());
+    CHECK(h.stt.TranscribeCount() == 1);
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
     CHECK(HasStatus(h.sink.statuses, "cancelled"));
 }
@@ -178,13 +174,13 @@ TEST_CASE("two hundred consecutive dictations leave thread count and buffers fla
         h.Speak(4);
         engine->PostEvent(EngineEventType::PttRelease);
         engine->ProcessOne(0);
-        REQUIRE(h.injector.injected.size() == static_cast<std::size_t>(i + 1));
-        CHECK(h.capture.start_count == i + 1);
+        REQUIRE(h.injector.InjectionCount() == static_cast<std::size_t>(i + 1));
+        CHECK(h.capture.start_count.load() == static_cast<std::size_t>(i + 1));
     }
 
     const int threads_after = CountThreads();
     CHECK(threads_after == threads_before);
-    CHECK(h.capture.buffer.size() == static_cast<std::size_t>(4 * kChunkSamples));
+    CHECK(h.capture.GetRecordedAudio().size() == static_cast<std::size_t>(4 * kChunkSamples));
 #else
     CHECK(true);
 #endif
@@ -232,7 +228,7 @@ TEST_CASE("double tap ptt activates hands-free mode through the tracker") {
     h.clock.Advance(250);
     engine->ProcessOne(0);
 
-    REQUIRE(h.injector.injected.size() == 1);
+    REQUIRE(h.injector.InjectionCount() == 1);
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
 }
 
@@ -266,13 +262,13 @@ TEST_CASE("paste last re-injects the last cleaned text") {
     Harness h;
     auto engine = MakeEngine(h);
     PressAndSpeak(h, *engine);
-    REQUIRE(h.injector.injected.size() == 1);
-    const std::string first = h.injector.injected[0];
+    REQUIRE(h.injector.InjectionCount() == 1);
+    const std::string first = h.injector.Injected()[0];
 
     engine->PostEvent(EngineEventType::PasteLast);
     engine->ProcessOne(0);
-    REQUIRE(h.injector.injected.size() == 2);
-    CHECK(h.injector.injected[1] == first);
+    REQUIRE(h.injector.InjectionCount() == 2);
+    CHECK(h.injector.Injected()[1] == first);
     CHECK(HasStatus(h.sink.statuses, "pasted last transcript"));
 }
 
@@ -282,6 +278,6 @@ TEST_CASE("paste last with empty history reports nothing to paste") {
 
     engine->PostEvent(EngineEventType::PasteLast);
     engine->ProcessOne(0);
-    CHECK(h.injector.injected.empty());
+    CHECK_FALSE(h.injector.HasInjected());
     CHECK(HasStatus(h.sink.statuses, "nothing to paste"));
 }

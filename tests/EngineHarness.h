@@ -13,14 +13,14 @@
 #include <string>
 #include <vector>
 
-namespace lwf_test {
-
+// Test-side harness for the engine integration tests. The fakes themselves live
+// in Fakes.h (global namespace); this header wires them together.
 constexpr int kChunkSamples = 512;
 
 struct Harness {
     FakeClock clock;
     FakeAudioCapture capture;
-    ScriptedVad vad{false};
+    ScriptedVad vad{std::vector<bool>{}};
     FakeStt stt;
     PassthroughLlm llm;
     DictationCleanup cleanup{&llm};
@@ -30,12 +30,19 @@ struct Harness {
     RecordingSink sink;
     EngineSettings settings;
 
+    Harness() {
+        // Historical harness default: a two-word transcript exercises the plain
+        // record->transcribe->inject path without tripping the cleanup word
+        // minimum. Tests that want more call MakeEngine with their own settings.
+        stt.transcript = "hello world";
+    }
+
     void Speak(int chunks = 4) {
         vad.SetSpeech(true);
         const std::vector<float> chunk(kChunkSamples, 0.3f);
         for (int i = 0; i < chunks; ++i) {
             clock.Advance(30);
-            capture.Append(chunk);
+            capture.FeedSamples(chunk);
         }
     }
 
@@ -44,14 +51,14 @@ struct Harness {
         const std::vector<float> chunk(kChunkSamples, 0.0f);
         for (int i = 0; i < chunks; ++i) {
             clock.Advance(30);
-            capture.Append(chunk);
+            capture.FeedSamples(chunk);
         }
     }
 };
 
 inline std::unique_ptr<DictationEngine> MakeEngine(Harness& h) {
     return std::make_unique<DictationEngine>(h.capture, &h.vad, h.stt, h.pipeline,
-                                                  h.injector, h.fsm, h.clock, h.sink, h.settings);
+                                             h.injector, h.fsm, h.clock, h.sink, h.settings);
 }
 
 inline void PressAndSpeak(Harness& h, DictationEngine& engine) {
@@ -70,6 +77,3 @@ inline bool HasStatus(const std::vector<std::string>& statuses, const std::strin
     }
     return false;
 }
-
-}
-

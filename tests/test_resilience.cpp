@@ -11,8 +11,6 @@
 
 namespace {
 
-using namespace lwf_test;
-
 class ChaosStt final : public IInferenceProvider {
 public:
     bool fail = false;
@@ -29,15 +27,8 @@ public:
     std::string ProcessText(const std::string& text, const std::string&) override { return text; }
 };
 
-class LostCapture final : public FakeAudioCapture {
-public:
-    bool lost = false;
-    bool DeviceLost() const override { return lost; }
-};
-
 TEST_CASE("mic lost during capturing emits miclost and returns to idle") {
     Harness h;
-    LostCapture capture;
     DictationCleanup cleanup(&h.llm);
     TextPipeline pipeline(cleanup);
     RecordingInjector injector;
@@ -46,26 +37,24 @@ TEST_CASE("mic lost during capturing emits miclost and returns to idle") {
     FakeClock clock;
     EngineSettings settings;
 
-    DictationEngine engine(capture, &h.vad, h.stt, pipeline, injector, fsm, clock, sink, settings);
-    engine.Start();
+    DictationEngine engine(h.capture, &h.vad, h.stt, pipeline, injector, fsm, clock, sink, settings);
     engine.PostEvent(EngineEventType::PttPress);
     engine.ProcessOne(0);
     h.vad.SetSpeech(true);
     const std::vector<float> voiced(kChunkSamples, 0.3f);
     for (int i = 0; i < 6; ++i) {
-        capture.Append(voiced);
+        h.capture.FeedSamples(voiced);
         engine.ProcessOne(0);
     }
     REQUIRE(fsm.GetCurrentState() == State::CAPTURING);
-    capture.lost = true;
+    h.capture.device_lost = true;
     engine.ProcessOne(0);
 
     CHECK(fsm.GetCurrentState() == State::IDLE);
     REQUIRE(sink.errors.size() == 1);
     CHECK(sink.errors[0] == ErrorCode::MicLost);
-    CHECK(injector.injected.empty());
+    CHECK_FALSE(injector.HasInjected());
     CHECK(HasStatus(sink.statuses, "microphone lost"));
-    engine.Stop();
 }
 
 TEST_CASE("history store survives unwritable paths without throwing") {
@@ -109,8 +98,6 @@ TEST_CASE("one thousand dictations with random failures always return to idle") 
     EngineSettings settings;
 
     DictationEngine engine(h.capture, &h.vad, stt, pipeline, injector, fsm, clock, sink, settings);
-    engine.Start();
-
     unsigned seed = 12345;
     auto next = [&seed]() {
         seed = seed * 1103515245u + 12345u;
@@ -121,7 +108,7 @@ TEST_CASE("one thousand dictations with random failures always return to idle") 
     int errors = 0;
     for (int iteration = 0; iteration < 1000; ++iteration) {
         stt.fail = next() < 15;
-        injector.fail = next() < 15;
+        injector.fail_inject = next() < 15;
         const bool cancel_early = next() < 10;
         const bool tap = next() < 10;
         const bool silence_only = next() < 10;
@@ -134,7 +121,7 @@ TEST_CASE("one thousand dictations with random failures always return to idle") 
         } else if (tap) {
             h.vad.SetSpeech(true);
             const std::vector<float> voiced(kChunkSamples, 0.3f);
-            h.capture.Append(voiced);
+            h.capture.FeedSamples(voiced);
             engine.PostEvent(EngineEventType::PttRelease);
             engine.ProcessOne(0);
         } else {
@@ -142,7 +129,7 @@ TEST_CASE("one thousand dictations with random failures always return to idle") 
             const std::vector<float> voiced(kChunkSamples, 0.3f);
             for (int i = 0; i < 6; ++i) {
                 clock.Advance(30);
-                h.capture.Append(voiced);
+                h.capture.FeedSamples(voiced);
             }
             if (cancel_early) {
                 engine.PostEvent(EngineEventType::Cancel);
@@ -156,14 +143,13 @@ TEST_CASE("one thousand dictations with random failures always return to idle") 
             FAIL("fsm stuck in state ", static_cast<int>(fsm.GetCurrentState()), " at iteration ",
                  iteration);
         }
-        injected += static_cast<int>(injector.injected.size());
+        injected += static_cast<int>(injector.InjectionCount());
         errors += static_cast<int>(sink.errors.size());
-        injector.injected.clear();
+        injector.ClearInjected();
         sink.errors.clear();
         sink.statuses.clear();
         clock.Advance(1000);
     }
-    engine.Stop();
     CHECK(injected > 0);
     CHECK(errors > 0);
 }

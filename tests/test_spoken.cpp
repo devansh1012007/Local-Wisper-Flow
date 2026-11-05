@@ -7,12 +7,6 @@
 #include <doctest/doctest.h>
 #include <string>
 
-namespace {
-
-using namespace lwf_test;
-
-}
-
 TEST_CASE("each phrase converts to the right character") {
     SpokenCommandProcessor processor;
     processor.SetAggressive(true);
@@ -64,7 +58,7 @@ TEST_CASE("conservative mode converts isolated segments only") {
 
 TEST_CASE("llm that drops a sentinel falls back to raw with commands") {
     ScriptedLlm llm;
-    llm.reply = "alpha beta";
+    llm.response = "alpha beta";
     DictationCleanup cleanup(&llm);
     TextPipeline pipeline(cleanup);
     SpokenCommandProcessor processor;
@@ -77,7 +71,7 @@ TEST_CASE("llm that drops a sentinel falls back to raw with commands") {
 
 TEST_CASE("llm that keeps sentinels passes them through to expansion") {
     ScriptedLlm llm;
-    llm.reply = "alpha LWF_COMMA beta LWF_DOT";
+    llm.response = "alpha LWF_COMMA beta LWF_DOT";
     DictationCleanup cleanup(&llm);
     TextPipeline pipeline(cleanup);
     SpokenCommandProcessor processor;

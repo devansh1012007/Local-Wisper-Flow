@@ -11,8 +11,6 @@
 
 namespace {
 
-using namespace lwf_test;
-
 void WriteFile(const std::string& path, const std::string& content) {
     std::ofstream file(path, std::ios::trunc);
     file << content;
@@ -95,6 +93,8 @@ TEST_CASE("cleanup prompt passes through profile addendum without title leakage"
     const AppProfile& profile = resolver.Resolve("Code.exe", "SECRETKEYS.TXT - editor");
     cleanup.SetPromptAddendum(AppContextResolver::BuildCleanupPrompt("base", profile).substr(4));
     (void)pipeline.Process("one two three four five");
-    CHECK(llm.last_prompt.find("SECRETKEYS") == std::string::npos);
-    CHECK(llm.last_prompt.find("No auto-capitalization") != std::string::npos);
+    // DictationCleanup passes the composed prompt as ILlmProvider's system_prompt
+    // argument; the fake records what it receives in `prompts`.
+    CHECK(llm.prompts.back().find("SECRETKEYS") == std::string::npos);
+    CHECK(llm.prompts.back().find("No auto-capitalization") != std::string::npos);
 }

@@ -9,8 +9,6 @@
 
 namespace {
 
-using namespace lwf_test;
-
 class QuestionAnswerLlm final : public ILlmProvider {
 public:
     std::string Process(const std::string&, const std::string&) override {
@@ -97,7 +95,7 @@ TEST_CASE("long hallucinations are rejected") {
 
 TEST_CASE("low word overlap with raw is rejected") {
     ScriptedLlm llm;
-    llm.reply = "completely unrelated different words appear here now";
+    llm.response = "completely unrelated different words appear here now";
     DictationCleanup cleanup(&llm);
     const std::string raw = "please remember the meeting tomorrow morning";
     CHECK(cleanup.Process(raw) == raw);
@@ -106,7 +104,7 @@ TEST_CASE("low word overlap with raw is rejected") {
 
 TEST_CASE("wrapping quotes are stripped once") {
     ScriptedLlm llm;
-    llm.reply = "\"hello world today then\"";
+    llm.response = "\"hello world today then\"";
     DictationCleanup cleanup(&llm);
     CHECK(cleanup.Process("hello world today then") == "hello world today then");
 }
@@ -115,10 +113,10 @@ TEST_CASE("hindi and spanish text round trips unchanged") {
     ScriptedLlm llm;
     const std::string hindi = "\xE0\xA4\xAF\xE0\xA4\xB9 \xE0\xA4\x8F\xE0\xA4\x95 \xE0\xA4\xAA\xE0\xA4\xB0\xE0\xA5\x80\xE0\xA4\x95\xE0\xA5\x8D\xE0\xA4\xB7\xE0\xA4\xBE \xE0\xA4\xB5\xE0\xA4\xBE\xE0\xA4\x95\xE0\xA5\x8D\xE0\xA4\xAF \xE0\xA4\xB9\xE0\xA5\x88 \xE0\xA4\x86\xE0\xA4\x9C";
     const std::string spanish = "Esta es una frase de prueba para el dictado";
-    llm.reply = spanish;
+    llm.response = spanish;
     DictationCleanup cleanup(&llm);
     CHECK(cleanup.Process(spanish) == spanish);
-    llm.reply = hindi;
+    llm.response = hindi;
     CHECK(cleanup.Process(hindi) == hindi);
 }
 
@@ -126,7 +124,7 @@ TEST_CASE("short text skips the llm entirely") {
     ScriptedLlm llm;
     DictationCleanup cleanup(&llm);
     CHECK(cleanup.Process("hi there now") == "hi there now");
-    CHECK(llm.call_count == 0);
+    CHECK(llm.CallCount() == 0);
 }
 
 TEST_CASE("cleanup timeout falls back to raw and cancels cooperatively") {
@@ -148,11 +146,11 @@ TEST_CASE("cleanup timeout falls back to raw and cancels cooperatively") {
 
 TEST_CASE("disabled cleanup returns raw") {
     ScriptedLlm llm;
-    llm.reply = "changed words";
+    llm.response = "changed words";
     DictationCleanup cleanup(&llm);
     cleanup.SetEnabled(false);
     CHECK(cleanup.Process("this sentence has enough words") == "this sentence has enough words");
-    CHECK(llm.call_count == 0);
+    CHECK(llm.CallCount() == 0);
 }
 
 TEST_CASE("llm exception falls back to raw") {

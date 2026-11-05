@@ -11,8 +11,6 @@
 
 namespace {
 
-using namespace lwf_test;
-
 class ScriptedSegmentStt final : public IInferenceProvider {
 public:
     std::vector<std::string> replies;
@@ -164,55 +162,51 @@ TEST_CASE("long utterance with a pause commits a segment and joins with the tail
     h.settings.streaming_min_segment_ms = 3000;
     h.settings.streaming_pause_ms = 700;
     auto engine = MakeEngine(h);
-    engine->Start();
 
     engine->PostEvent(EngineEventType::PttPress);
     engine->ProcessOne(0);
     h.vad.SetSpeech(true);
     const std::vector<float> voiced(kChunkSamples, 0.3f);
     for (int i = 0; i < 100; ++i) {
-        h.capture.Append(voiced);
+        h.capture.FeedSamples(voiced);
         engine->ProcessOne(0);
     }
     h.vad.SetSpeech(false);
     const std::vector<float> silent(kChunkSamples, 0.0f);
     for (int i = 0; i < 26; ++i) {
-        h.capture.Append(silent);
+        h.capture.FeedSamples(silent);
         engine->ProcessOne(0);
     }
     CHECK(engine->StreamedSegments() == 1);
     h.vad.SetSpeech(true);
     for (int i = 0; i < 20; ++i) {
-        h.capture.Append(voiced);
+        h.capture.FeedSamples(voiced);
         engine->ProcessOne(0);
     }
     h.vad.SetSpeech(false);
     for (int i = 0; i < 4; ++i) {
-        h.capture.Append(silent);
+        h.capture.FeedSamples(silent);
         engine->ProcessOne(0);
     }
     engine->PostEvent(EngineEventType::PttRelease);
     engine->ProcessOne(0);
 
-    REQUIRE_FALSE(h.injector.injected.empty());
-    CHECK(h.injector.injected.back() == "hello world hello world");
-    CHECK(h.stt.transcribe_count == 2);
+    REQUIRE(h.injector.HasInjected());
+    CHECK(h.injector.Injected().back() == "hello world hello world");
+    CHECK(h.stt.TranscribeCount() == 2);
     CHECK(h.stt.prompts.size() == 2);
     CHECK(h.stt.prompts[0].empty());
     CHECK(h.stt.prompts[1] == "hello world");
-    engine->Stop();
 }
 
 TEST_CASE("short utterance never streams and runs a single one-shot transcription") {
     Harness h;
     h.settings.streaming_stt = true;
     auto engine = MakeEngine(h);
-    engine->Start();
     PressAndSpeak(h, *engine);
     CHECK(engine->StreamedSegments() == 0);
-    CHECK(h.stt.transcribe_count == 1);
-    REQUIRE_FALSE(h.injector.injected.empty());
-    engine->Stop();
+    CHECK(h.stt.TranscribeCount() == 1);
+    REQUIRE(h.injector.HasInjected());
 }
 
 TEST_CASE("pause shorter than the configured threshold does not commit a segment") {
@@ -221,73 +215,69 @@ TEST_CASE("pause shorter than the configured threshold does not commit a segment
     h.settings.streaming_min_segment_ms = 3000;
     h.settings.streaming_pause_ms = 700;
     auto engine = MakeEngine(h);
-    engine->Start();
 
     engine->PostEvent(EngineEventType::PttPress);
     engine->ProcessOne(0);
     h.vad.SetSpeech(true);
     const std::vector<float> voiced(kChunkSamples, 0.3f);
     for (int i = 0; i < 100; ++i) {
-        h.capture.Append(voiced);
+        h.capture.FeedSamples(voiced);
         engine->ProcessOne(0);
     }
     h.vad.SetSpeech(false);
     const std::vector<float> silent(kChunkSamples, 0.0f);
     for (int i = 0; i < 12; ++i) {
-        h.capture.Append(silent);
+        h.capture.FeedSamples(silent);
         engine->ProcessOne(0);
     }
     h.vad.SetSpeech(true);
     for (int i = 0; i < 10; ++i) {
-        h.capture.Append(voiced);
+        h.capture.FeedSamples(voiced);
         engine->ProcessOne(0);
     }
     h.vad.SetSpeech(false);
     for (int i = 0; i < 4; ++i) {
-        h.capture.Append(silent);
+        h.capture.FeedSamples(silent);
         engine->ProcessOne(0);
     }
     engine->PostEvent(EngineEventType::PttRelease);
     engine->ProcessOne(0);
 
     CHECK(engine->StreamedSegments() == 0);
-    CHECK(h.stt.transcribe_count == 1);
-    engine->Stop();
+    CHECK(h.stt.TranscribeCount() == 1);
 }
 
 TEST_CASE("streaming disabled keeps the one-shot path") {
     Harness h;
     h.settings.streaming_stt = false;
     auto engine = MakeEngine(h);
-    engine->Start();
 
     engine->PostEvent(EngineEventType::PttPress);
     engine->ProcessOne(0);
     h.vad.SetSpeech(true);
     const std::vector<float> voiced(kChunkSamples, 0.3f);
     for (int i = 0; i < 100; ++i) {
-        h.capture.Append(voiced);
+        h.capture.FeedSamples(voiced);
         engine->ProcessOne(0);
     }
     h.vad.SetSpeech(false);
     const std::vector<float> silent(kChunkSamples, 0.0f);
     for (int i = 0; i < 26; ++i) {
-        h.capture.Append(silent);
+        h.capture.FeedSamples(silent);
         engine->ProcessOne(0);
     }
     engine->PostEvent(EngineEventType::PttRelease);
     engine->ProcessOne(0);
 
     CHECK(engine->StreamedSegments() == 0);
-    CHECK(h.stt.transcribe_count == 1);
-    REQUIRE_FALSE(h.injector.injected.empty());
-    engine->Stop();
+    CHECK(h.stt.TranscribeCount() == 1);
+    REQUIRE(h.injector.HasInjected());
 }
 
 TEST_CASE("segment failure falls back to one-shot transcription of the full buffer") {
     FakeClock clock;
     FakeAudioCapture capture;
-    ScriptedVad vad{false};
+    ScriptedVad vad{std::vector<bool>{}};
     ScriptedSegmentStt stt;
     stt.replies = {"partial one", "partial two", "one-shot full text"};
     stt.fail_at = 1;
@@ -303,39 +293,38 @@ TEST_CASE("segment failure falls back to one-shot transcription of the full buff
     settings.streaming_pause_ms = 700;
 
     DictationEngine engine(capture, &vad, stt, pipeline, injector, fsm, clock, sink, settings);
-    engine.Start();
     engine.PostEvent(EngineEventType::PttPress);
     engine.ProcessOne(0);
     vad.SetSpeech(true);
     const std::vector<float> voiced(kChunkSamples, 0.3f);
     for (int i = 0; i < 100; ++i) {
-        capture.Append(voiced);
+        capture.FeedSamples(voiced);
         engine.ProcessOne(0);
     }
     vad.SetSpeech(false);
     const std::vector<float> silent(kChunkSamples, 0.0f);
     for (int i = 0; i < 26; ++i) {
-        capture.Append(silent);
+        capture.FeedSamples(silent);
         engine.ProcessOne(0);
     }
     vad.SetSpeech(true);
     for (int i = 0; i < 100; ++i) {
-        capture.Append(voiced);
+        capture.FeedSamples(voiced);
         engine.ProcessOne(0);
     }
     vad.SetSpeech(false);
     for (int i = 0; i < 26; ++i) {
-        capture.Append(silent);
+        capture.FeedSamples(silent);
         engine.ProcessOne(0);
     }
     vad.SetSpeech(true);
     for (int i = 0; i < 20; ++i) {
-        capture.Append(voiced);
+        capture.FeedSamples(voiced);
         engine.ProcessOne(0);
     }
     vad.SetSpeech(false);
     for (int i = 0; i < 4; ++i) {
-        capture.Append(silent);
+        capture.FeedSamples(silent);
         engine.ProcessOne(0);
     }
     engine.PostEvent(EngineEventType::PttRelease);
@@ -343,10 +332,9 @@ TEST_CASE("segment failure falls back to one-shot transcription of the full buff
 
     CHECK(engine.StreamedSegments() == 2);
     CHECK(stt.calls == 3);
-    REQUIRE_FALSE(injector.injected.empty());
-    CHECK(injector.injected.back() == "one-shot full text");
+    REQUIRE(injector.HasInjected());
+    CHECK(injector.Injected().back() == "one-shot full text");
     CHECK(fsm.GetCurrentState() == State::IDLE);
-    engine.Stop();
 }
 
 TEST_CASE("cancel during streaming discards partials and injects nothing") {
@@ -358,20 +346,19 @@ TEST_CASE("cancel during streaming discards partials and injects nothing") {
         std::this_thread::sleep_for(std::chrono::milliseconds(150));
     };
     auto engine = MakeEngine(h);
-    engine->Start();
 
     engine->PostEvent(EngineEventType::PttPress);
     engine->ProcessOne(0);
     h.vad.SetSpeech(true);
     const std::vector<float> voiced(kChunkSamples, 0.3f);
     for (int i = 0; i < 100; ++i) {
-        h.capture.Append(voiced);
+        h.capture.FeedSamples(voiced);
         engine->ProcessOne(0);
     }
     h.vad.SetSpeech(false);
     const std::vector<float> silent(kChunkSamples, 0.0f);
     for (int i = 0; i < 26; ++i) {
-        h.capture.Append(silent);
+        h.capture.FeedSamples(silent);
         engine->ProcessOne(0);
     }
     CHECK(engine->StreamedSegments() == 1);
@@ -380,10 +367,9 @@ TEST_CASE("cancel during streaming discards partials and injects nothing") {
     engine->PostEvent(EngineEventType::PttRelease);
     engine->ProcessOne(0);
 
-    CHECK(h.injector.injected.empty());
+    CHECK_FALSE(h.injector.HasInjected());
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
     CHECK(HasStatus(h.sink.statuses, "cancelled"));
-    engine->Stop();
 }
 
 }

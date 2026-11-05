@@ -12,8 +12,6 @@
 
 namespace {
 
-using namespace lwf_test;
-
 void WriteTransformFile(const char* path) {
     std::ofstream file(path);
     file << R"([

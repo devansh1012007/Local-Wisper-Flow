@@ -16,7 +16,8 @@
 namespace {
 
 std::string TempDir(const char* name) {
-    const std::string dir = (std::filesystem::path("/tmp") / (std::string("lwf_test_") + name)).string();
+    const std::string dir =
+        (std::filesystem::temp_directory_path() / (std::string("lwf_test_") + name)).string();
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
     return dir;
@@ -180,25 +181,37 @@ TEST_CASE("config manager delegates and exposes setters") {
 
 TEST_CASE("path resolver prefers data dir then exe dir then as-is") {
     const std::string dir = TempDir("resolver");
+    const std::string data_dir = (std::filesystem::path(dir) / "data").string();
+    const std::string exe_dir = (std::filesystem::path(dir) / "exe").string();
     std::filesystem::create_directories((std::filesystem::path(dir) / "data" / "models").string());
     std::filesystem::create_directories((std::filesystem::path(dir) / "exe" / "models").string());
-    const std::string in_data = (std::filesystem::path(dir) / "data" / "models" / "m.bin").string();
-    const std::string in_exe = (std::filesystem::path(dir) / "exe" / "models" / "m.bin").string();
+    // ResolveDataPath returns (std::filesystem::path(dir) / candidate).string(),
+    // which mixes separators on Windows; build expectations the same way.
+    const std::string in_data = (std::filesystem::path(data_dir) / "models/m.bin").string();
+    const std::string in_exe = (std::filesystem::path(exe_dir) / "models/m.bin").string();
     WriteFile(in_data, "d");
     WriteFile(in_exe, "e");
 
-    CHECK(ResolveDataPath("/abs/model.bin", dir + "/data", dir + "/exe") == "/abs/model.bin");
-    CHECK(ResolveDataPath("models/m.bin", dir + "/data", dir + "/exe") == in_data);
+    CHECK(ResolveDataPath("/abs/model.bin", data_dir, exe_dir) == "/abs/model.bin");
+    // ResolveDataPath joins with std::filesystem::path, so build expectations the same way.
+    CHECK(ResolveDataPath("models/m.bin", data_dir, exe_dir) == in_data);
     std::filesystem::remove(in_data);
-    CHECK(ResolveDataPath("models/m.bin", dir + "/data", dir + "/exe") == in_exe);
+    CHECK(ResolveDataPath("models/m.bin", data_dir, exe_dir) == in_exe);
     std::filesystem::remove(in_exe);
-    CHECK(ResolveDataPath("models/m.bin", dir + "/data", dir + "/exe") == "models/m.bin");
+    CHECK(ResolveDataPath("models/m.bin", data_dir, exe_dir) == "models/m.bin");
     CHECK(ResolveDataPath("", dir, dir).empty());
 }
 
 TEST_CASE("data dir honors LWF_HOME override") {
     const std::string dir = TempDir("lwfhomedir");
+#if defined(_WIN32)
+    _putenv_s("LWF_HOME", dir.c_str());
+    CHECK(GetDataDir() == dir);
+    // GetDataDir treats an empty LWF_HOME as unset.
+    _putenv_s("LWF_HOME", "");
+#else
     setenv("LWF_HOME", dir.c_str(), 1);
     CHECK(GetDataDir() == dir);
     unsetenv("LWF_HOME");
+#endif
 }

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "core/IAudioCapture.h"
+#include "core/IClock.h"
+#include "core/IEngineSink.h"
 #include "core/IInferenceProvider.h"
 #include "core/ILlmProvider.h"
 #include "core/ITextInjector.h"
@@ -9,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -24,6 +27,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         recording_.clear();
         started = true;
+        start_count.fetch_add(1);
     }
 
     void Stop() override {
@@ -38,8 +42,11 @@ public:
         return recording_;
     }
 
-    void SetChunkSink(std::function<void(const float*, std::size_t)> sink) override {
-        sink_ = std::move(sink);
+    // Current IAudioCapture sink contract: the engine registers itself as an
+    // IAudioChunkSink*; FeedSamples pushes chunks through it.
+    void SetChunkSink(IAudioChunkSink* sink) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        sink_ = sink;
     }
 
     bool DeviceLost() const noexcept override {
@@ -52,7 +59,7 @@ public:
             recording_.insert(recording_.end(), samples.begin(), samples.end());
         }
         if (sink_) {
-            sink_(samples.data(), samples.size());
+            sink_->OnAudioChunk(samples.data(), samples.size());
         }
     }
 
@@ -60,11 +67,12 @@ public:
     bool fail_stop = false;
     std::atomic<bool> device_lost{false};
     std::atomic<bool> started{false};
+    std::atomic<std::size_t> start_count{0};
 
 private:
     std::mutex mutex_;
     std::vector<float> recording_;
-    std::function<void(const float*, std::size_t)> sink_;
+    IAudioChunkSink* sink_ = nullptr;
 };
 
 class ScriptedVad final : public IVadProvider {
@@ -73,6 +81,7 @@ public:
 
     bool IsSpeech(const std::vector<float>& audio_chunk) override {
         const std::size_t index = call_count.fetch_add(1);
+        std::lock_guard<std::mutex> lock(mutex_);
         chunk_sizes.push_back(audio_chunk.size());
         if (index >= script_.size()) {
             return script_.empty() ? false : script_.back();
@@ -80,8 +89,14 @@ public:
         return script_[index];
     }
 
-    void Reset() override {
+    void Reset() {
         reset_count.fetch_add(1);
+    }
+
+    // Pin the VAD to a constant speech/silence answer regardless of the script.
+    void SetSpeech(bool speech) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        script_.assign(1, speech);
     }
 
     std::atomic<std::size_t> reset_count{0};
@@ -89,14 +104,20 @@ public:
     std::vector<std::size_t> chunk_sizes;
 
 private:
+    std::mutex mutex_;
     std::vector<bool> script_;
 };
 
 class FakeStt final : public IInferenceProvider {
 public:
     std::string Transcribe(const std::vector<float>& audio_pcm) override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        transcribed_sizes.push_back(audio_pcm.size());
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            transcribed_sizes.push_back(audio_pcm.size());
+        }
+        if (on_transcribe) {
+            on_transcribe();
+        }
         if (delay_ms > 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
         }
@@ -104,6 +125,17 @@ public:
             throw std::runtime_error("stt failure");
         }
         return transcript;
+    }
+
+    // Records the rolling prompt passed by the streaming path, then delegates to
+    // Transcribe exactly like the default IInferenceProvider implementation.
+    std::string TranscribeWithPrompt(const std::vector<float>& audio_pcm,
+                                     const std::string& prompt) override {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            prompts.push_back(prompt);
+        }
+        return Transcribe(audio_pcm);
     }
 
     std::string ProcessText(const std::string& text, const std::string&) override {
@@ -114,10 +146,18 @@ public:
     bool fail_transcribe = false;
     int delay_ms = 0;
     std::vector<std::size_t> transcribed_sizes;
+    std::vector<std::string> prompts;
+    // Synchronous hook invoked inside Transcribe (used to inject a cancel mid-call).
+    std::function<void()> on_transcribe;
 
     std::size_t LastTranscribedSize() {
         std::lock_guard<std::mutex> lock(mutex_);
         return transcribed_sizes.empty() ? 0 : transcribed_sizes.back();
+    }
+
+    std::size_t TranscribeCount() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return transcribed_sizes.size();
     }
 
 private:
@@ -144,6 +184,22 @@ public:
         return injected.empty() ? std::string() : injected.back();
     }
 
+    std::size_t InjectionCount() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return injected.size();
+    }
+
+    // Returns a copy of every injected string.
+    std::vector<std::string> Injected() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return injected;
+    }
+
+    void ClearInjected() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        injected.clear();
+    }
+
     bool fail_inject = false;
 
 private:
@@ -163,6 +219,9 @@ public:
         if (cancelled_earlier && cancel_count.load() > 0) {
             throw std::runtime_error("cancelled");
         }
+        if (fail) {
+            throw std::runtime_error("llm failure");
+        }
         if (truncated_mode) {
             last_truncated = true;
         }
@@ -173,12 +232,15 @@ public:
         cancel_count.fetch_add(1);
     }
 
-    bool LastGenerationTruncated() const override {
+    // ILlmProvider carries no truncation query today; kept as a plain helper for
+    // tests that script truncated_mode.
+    bool LastGenerationTruncated() const {
         return last_truncated;
     }
 
     std::string response;
     int delay_ms = 0;
+    bool fail = false;
     bool truncated_mode = false;
     bool cancelled_earlier = false;
     std::atomic<int> cancel_count{0};
@@ -190,6 +252,55 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         return calls.size();
     }
+
+private:
+    std::mutex mutex_;
+};
+
+class FakeClock final : public IClock {
+public:
+    std::int64_t NowMs() const override {
+        return now_ms_;
+    }
+
+    void Advance(std::int64_t delta_ms) {
+        now_ms_ += delta_ms;
+    }
+
+private:
+    std::int64_t now_ms_ = 0;
+};
+
+class PassthroughLlm final : public ILlmProvider {
+public:
+    std::string Process(const std::string& text, const std::string&) override {
+        return text;
+    }
+};
+
+class RecordingSink final : public IEngineSink {
+public:
+    void OnStatus(const std::string& message) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        statuses.push_back(message);
+    }
+
+    void OnError(ErrorCode code, const std::string& detail) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        errors.push_back(code);
+        error_details.push_back(detail);
+    }
+
+    void Clear() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        statuses.clear();
+        errors.clear();
+        error_details.clear();
+    }
+
+    std::vector<std::string> statuses;
+    std::vector<ErrorCode> errors;
+    std::vector<std::string> error_details;
 
 private:
     std::mutex mutex_;
