@@ -57,4 +57,28 @@ bool IsCursorInsideRect(int x, int y, int width, int height, int inflate) {
 #endif
 }
 
+bool CursorScreenPoint(int& x, int& y) {
+#ifdef _WIN32
+    POINT cursor{};
+    if (GetCursorPos(&cursor) == 0) {
+        return false;
+    }
+    x = cursor.x;
+    y = cursor.y;
+    return true;
+#else
+    (void)x;
+    (void)y;
+    return false;
+#endif
+}
+
+bool LeftMouseButtonDown() {
+#ifdef _WIN32
+    return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+#else
+    return false;
+#endif
+}
+
 }  // namespace WindowStyles

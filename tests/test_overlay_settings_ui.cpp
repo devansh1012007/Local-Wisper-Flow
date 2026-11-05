@@ -75,6 +75,37 @@ TEST_CASE("pill position is bottom center above the taskbar with dpi scaling") {
     CHECK(moved.y == 1400 - 40 - 16);
 }
 
+TEST_CASE("clamped mini position keeps the badge inside the work area") {
+    const OverlayModel::Rect work_area{0, 0, 1920, 1040};
+
+    // A position inside the area passes through unchanged.
+    const OverlayModel::Rect inside = OverlayModel::ClampPosition(work_area, 100, 200, 140, 70);
+    CHECK(inside.x == 100);
+    CHECK(inside.y == 200);
+
+    // Negative and past-edge positions are pulled back so the badge stays
+    // reachable after a drag on any monitor layout.
+    const OverlayModel::Rect negative = OverlayModel::ClampPosition(work_area, -500, -8, 140, 70);
+    CHECK(negative.x == 0);
+    CHECK(negative.y == 0);
+
+    const OverlayModel::Rect past = OverlayModel::ClampPosition(work_area, 3000, 1500, 140, 70);
+    CHECK(past.x == 1920 - 140);
+    CHECK(past.y == 1040 - 70);
+
+    // A window wider than the work area pins to the work area origin.
+    const OverlayModel::Rect tiny_area{100, 100, 80, 60};
+    const OverlayModel::Rect huge = OverlayModel::ClampPosition(tiny_area, 0, 0, 140, 70);
+    CHECK(huge.x == 100);
+    CHECK(huge.y == 100);
+
+    // A second monitor to the left with negative coordinates.
+    const OverlayModel::Rect left_monitor{-2560, 0, 2560, 1400};
+    const OverlayModel::Rect left = OverlayModel::ClampPosition(left_monitor, -3000, 500, 140, 70);
+    CHECK(left.x == -2560);
+    CHECK(left.y == 500);
+}
+
 TEST_CASE("settings diff classifies hot apply versus restart required") {
     const std::string path = "/tmp/lwf_diff_settings.json";
     {

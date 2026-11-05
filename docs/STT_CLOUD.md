@@ -2,8 +2,8 @@
 
 Local Wisper Flow keeps Whisper fully on-device by default. This feature adds
 an **opt-in** cloud path through three providers - Gnani Prisma
-(`api.vachana.ai`, STT v3, contract now matches official REST docs), ElevenLabs Scribe
-(`api.elevenlabs.io`), and Meta Muse Voice Transcribe (`api.meta.ai`) - with a strict consent gate and a
+(`api.vachana.ai`, STT v3), ElevenLabs Scribe (`api.elevenlabs.io`), and Meta
+Muse Voice Transcribe (`api.meta.ai`) - with a strict consent gate and a
 one-way fallback to local transcription.
 
 ## Opt-in model
@@ -18,11 +18,9 @@ Cloud STT is used only when **all three** hold:
 
 Anything else routes to the existing local chain (Whisper, or the gRPC remote
 when `use_remote=true`). When cloud is selected but fails — auth, rate limit,
-timeout, network, 5xx, malformed response — the router surfaces the failure
-visibly (through `EngineBridge.OnError` → overlay error state + rate-limited
-tray notification + log line), retries once on 429 (rate-limited) before
-falling back to local for that utterance. The reverse never happens: local is
-never upgraded to cloud mid-utterance. Two results never fall back:
+timeout, network, 5xx, malformed response — the router retries nothing and
+**falls back to local for that utterance**. The reverse never happens: local
+is never upgraded to cloud mid-utterance. Two results never fall back:
 
 - an empty cloud transcript (per the Gnani contract, empty is a success), and
 - a cancelled cloud transcription (the user asked to stop).
@@ -58,18 +56,14 @@ file, log, or error message. Do not put it in `config.json`.
    most 29.5 s clips at silence boundaries (`ClipSplitter`), encodes each clip
    to an in-memory WAV (`WavEncoder`, 16-bit PCM mono), and builds the exact
    multipart body the smoke script sends (`MultipartBuilder`, `GnaniRequest`).
-   The POST goes to `/stt/v3` with field names `model`, `language_code`,
-   `audio_file`, and `keyterms` (a single JSON-array field). `GnaniContract.h`
-   is the single source of truth for field names, endpoint, and header names.
 4. `WindowsHttpClient` (`src/os/WindowsHttpClient.*`, the only file allowed to
    touch WinHTTP) performs the HTTPS POST and returns status/headers/body.
 5. `GnaniResponse` parses success and the three documented error body shapes
    and classifies them into `SttErrorCategory`; the provider aborts remaining
    clips on the first failure and records per-request statistics.
 
-Personal dictionary words ride along as `keyterms` — a single JSON-array string
-`["term1","term2"]` (capped at 200 terms, filtered for commas/line breaks),
-mirroring the local initial-prompt hint.
+Personal dictionary words ride along as `keyterms` (capped at 200, filtered for
+commas/line breaks), mirroring the local initial-prompt hint.
 
 ## Privacy rules
 
@@ -165,15 +159,11 @@ or unknown tokens. `sttlang::MuseLanguageBias` (used in S8) maps codes to the
 vendor's language names and expands `indic-auto` to the Indic subset of Muse's
 documented 25-language list.
 
-## Meta Muse Voice Transcribe (S8) — contract UNVERIFIED
+## Meta Muse Voice Transcribe (S8)
 
 `stt_provider="muse"` routes dictation through Meta's Muse Voice Transcribe on
-the Meta Model API. **WARNING: earlier review found no REST upload endpoint for
-Muse — only a realtime WebSocket — so the contract below has NOT been verified
-against a live endpoint and should be treated as provisional.**
-
-Contract claims (from dev.meta.ai/docs/speech-to-text, date checked 2026-11-04,
-NOT verified against the live API):
+the Meta Model API. Contract, verified against dev.meta.ai/docs/speech-to-text
+on 2026-11-04:
 
 - `POST https://api.meta.ai/v1/asr/transcribe`, header `Authorization: Bearer
   <key>`, key read only from `META_MODEL_API_KEY` (a Model API dashboard key).

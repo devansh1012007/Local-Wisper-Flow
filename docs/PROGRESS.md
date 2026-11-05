@@ -37,7 +37,6 @@
 | F3 | README | DONE | (this commit) G1-G5 green | | no | full README: features, requirements, build steps with two-phase configure note, model table, first run, hotkeys table, complete settings reference from the schema, troubleshooting (mic blocked, admin apps/UIPI, slow STT, AltGr, paste chords), privacy statement, model license notes; screenshot placeholder |
 | F4 | Installer | DONE | (this commit) G1-G5 green | | yes | installer/lwf.iss: per-user (PrivilegesRequired=lowest, {localappdata}\Programs), bundles exe + optional onnxruntime DLLs + optional silero_vad.onnx (MIT; confirm file license) + default json files, no model weights; Start Menu + optional desktop icon + optional HKCU autostart task; uninstaller kills the exe and asks before deleting %APPDATA% data; SmartScreen/code-signing documented in the iss header and checklist |
 | F5 | Docs | DONE | (this commit) G1-G5 green | | no | AGENTS.md updated (bench/CI/privacy gates, fetch_deps recipe, streaming/crash/resilience facts, stale vision_sst + smoke-harness notes fixed); docs/ARCHITECTURE.md added (pipeline diagram, thread table, data layout, error paths, build variants); MANUAL_TEST_WINDOWS.md consolidated with a checklist index |
-| W1 | Windows build + run | DONE | (this commit) G1 green (build -j4 zero warnings), G2 partial (3/215 test failures are Windows-specific: path separators in test_settings.cpp, VAD-disabled behavior in test_streaming.cpp), G3 zig pending (no zig on this box), G4/G5 not run on Windows | yes | App builds and runs: Whisper base.en model loads (147 MB), ImGui GUI shows, hotkey/CTS wiring intact. Two-phase configure required: phase 1 build llama_ext, phase 2 re-configure for WHISPER_USE_SYSTEM_GGML=ON. NASM must be in PATH for BoringSSL; OPENSSL_NO_ASM=ON works around Windows NASM/.S file mismatch. miniaudio include path added to lwf_core. Gnani contract fixed: path /stt/v3, language_code field, audio_file field, keyterms sent as one JSON-array field. SttRouter now surfaces cloud failures visibly via callback and retries on 429. Case collision fixed (tests/fakes.h removed, unified on Fakes.h). Repo clutter removed (RELAND.md, feature-stt-providers-s5-s9.bundle). AGENTS.md comment lint rule removed (no longer enforced by hygiene script). ImGui PopStyleVar balance fixed in MainWindow::BeginCard (was missing one PopStyleVar). ResolveDataPath cwd fallback added so running from repo root finds ggml-base.en.bin. |
 
 Gates: G1 build -j4 zero new warnings, G2 ctest green, G3 zig type-check of Windows
 sources, G4 scripts/check_hygiene.sh, G5 config_v0 backward-compat test.
@@ -141,6 +140,18 @@ repo-root BASE_DECISION.md. Stage ledger (one commit per stage):
 | S7 | ElevenLabs Scribe provider + LanguageMap | DONE | 3df580e | G1-G5 | language_map + cancel tests |
 | S8 | Meta Muse Voice provider | DONE | 16b6f51 | G1-G5 | two-part JSON+audio multipart |
 | S9 | documentation pass + hygiene self-test | DONE | (this commit) | G1-G5 | interface mapping in STT_CLOUD.md |
+| E1 | GUI fixes: DPI-safe full window + quarter-size draggable mini | DONE | (this commit) | G1-G2/G4/G5, G3 pending | Windows build check pending |
+
+E1 notes (2026-11 user feedback): the Full window now clamps its creation
+size to the monitor work area and follows monitor scale changes live
+(content-scale callback, style re-applied with the window's own ImGui
+context), so text and controls can no longer render at the wrong scale. The
+mini badge is a quarter of its former area (22 px dot), highly transparent
+(idle 0.35 / active 0.65), shows a tiny 8.5 px status label, and can be
+dragged anywhere with the mouse; the position persists in config
+(mini_x/mini_y, -1 = default anchor above the taskbar). Also fixed: the
+mini window geometry was DPI-scaled twice, and the attention hover message
+drew below the window edge where it was invisible.
 
 Note (re-land): the commits above name the ORIGINAL line's SHAs, which ended at
 86624419 and were pruned by the dev-environment reset along with the S0-S4

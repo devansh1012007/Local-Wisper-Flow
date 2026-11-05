@@ -59,6 +59,26 @@ TEST_CASE("settings round trip preserves known and unknown keys") {
     CHECK(saved.find("hotkey_code") != std::string::npos);
 }
 
+TEST_CASE("mini badge position persists and defaults to auto placement") {
+    const std::string dir = TempDir("minipos");
+    const std::string cfg = (std::filesystem::path(dir) / "config.json").string();
+
+    // No stored position: the sentinel default means "use the default anchor".
+    {
+        SettingsStore store(cfg);
+        CHECK(store.GetInt("mini_x") == -1);
+        CHECK(store.GetInt("mini_y") == -1);
+        store.SetInt("mini_x", 1712);
+        store.SetInt("mini_y", 880);
+        store.Save();
+    }
+    {
+        SettingsStore store(cfg);
+        CHECK(store.GetInt("mini_x") == 1712);
+        CHECK(store.GetInt("mini_y") == 880);
+    }
+}
+
 TEST_CASE("v0 config loads with defaults for new keys") {
     SeedV0Config();
     SettingsStore store("tests/data/config_v0.json");
@@ -178,15 +198,7 @@ TEST_CASE("path resolver prefers data dir then exe dir then as-is") {
 
 TEST_CASE("data dir honors LWF_HOME override") {
     const std::string dir = TempDir("lwfhomedir");
-#ifdef _WIN32
-    _putenv_s("LWF_HOME", dir.c_str());
-#else
     setenv("LWF_HOME", dir.c_str(), 1);
-#endif
     CHECK(GetDataDir() == dir);
-#ifdef _WIN32
-    _putenv_s("LWF_HOME", "");
-#else
     unsetenv("LWF_HOME");
-#endif
 }

@@ -1,11 +1,7 @@
-#define GLFW_EXPOSE_NATIVE_WIN32
 #include "ui/Overlay.h"
 
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
-
-#include <windows.h>
-#include <GLFW/glfw3native.h>
 
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
@@ -17,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace {
 
@@ -25,6 +22,7 @@ using lwf::ui::kDarkPalette;
 using lwf::ui::Pack;
 
 constexpr float kPi = 3.14159265358979323846f;
+constexpr int kDragClickThresholdPx = 4;  // below this a press stays a click
 
 float Wave01(float t, float period) {
     return 0.5f + 0.5f * std::sin(2.0f * kPi * t / period);
@@ -96,6 +94,17 @@ bool Overlay::Init() {
     io.ConfigWindowsMoveFromTitleBarOnly = true;
     io.IniFilename = nullptr;
 
+    // Tiny status-label font for this window only. SizePixels is the design
+    // size; style.FontScaleMain (set below) applies the DPI factor on top:
+    // GetFontSize() == SizePixels * FontScaleMain.
+    ImFontConfig label_font;
+    label_font.SizePixels = metrics::mini_text_px;
+    io.Fonts->AddFontDefaultBitmap(&label_font);
+
+    // Track monitor scale changes so the badge follows DPI moves live.
+    glfwSetWindowUserPointer(window_, this);
+    glfwSetWindowContentScaleCallback(window_, &Overlay::OnContentScale);
+
     ApplyWindowGeometry();
 
     glfwMakeContextCurrent(window_);
@@ -145,8 +154,30 @@ void Overlay::SetReduceMotion(bool reduce) {
 void Overlay::SetWorkArea(const OverlayModel::Rect& area, double dpi_scale) {
     work_area_ = area;
     dpi_scale_ = dpi_scale;
+    pending_dpi_scale_ = 0.0f;
     if (window_ != nullptr) {
         ApplyWindowGeometry();
+    }
+}
+
+void Overlay::SetSavedPosition(int x, int y) {
+    if (x < 0 && y < 0) {
+        return;  // sentinel: no saved position, keep the default anchor
+    }
+    has_saved_position_ = true;
+    saved_x_ = x;
+    saved_y_ = y;
+}
+
+void Overlay::SetPositionPersistHandler(std::function<void(int, int)> handler) {
+    on_position_persist_ = std::move(handler);
+}
+
+void Overlay::OnContentScale(GLFWwindow* window, float scale_x, float) {
+    if (Overlay* self = static_cast<Overlay*>(glfwGetWindowUserPointer(window))) {
+        if (scale_x > 0.0f) {
+            self->pending_dpi_scale_ = scale_x;
+        }
     }
 }
 
@@ -165,11 +196,19 @@ void Overlay::ApplyWindowGeometry() {
     const int window_w = static_cast<int>(metrics::mini_message_w * dpi_scale_);
     const int window_h =
         static_cast<int>((metrics::mini_dot + metrics::mini_message_h) * dpi_scale_);
-    const OverlayModel::Rect position =
-        OverlayModel::PillPosition(work_area_, window_w, window_h,
-                                   static_cast<int>(metrics::mini_margin), dpi_scale_);
+    OverlayModel::Rect position;
+    if (has_saved_position_) {
+        position =
+            OverlayModel::ClampPosition(work_area_, saved_x_, saved_y_, window_w, window_h);
+    } else {
+        // Design pixels in, scaled once inside PillPosition (the old call
+        // passed pre-scaled pixels and scaled them a second time).
+        position = OverlayModel::PillPosition(work_area_, metrics::mini_message_w,
+                                              metrics::mini_dot + metrics::mini_message_h,
+                                              metrics::mini_margin, dpi_scale_);
+    }
     glfwSetWindowPos(window_, position.x, position.y);
-    glfwSetWindowSize(window_, position.width, position.height);
+    glfwSetWindowSize(window_, window_w, window_h);
 }
 
 void Overlay::RenderFrame(float delta_seconds) {
@@ -202,6 +241,15 @@ void Overlay::RenderFrame(float delta_seconds) {
 
     ImGui::SetCurrentContext(imgui_context_);
     glfwMakeContextCurrent(window_);
+
+    // A monitor scale change lands here, where this window's ImGui context
+    // is current: re-apply the style and re-anchor the geometry.
+    if (pending_dpi_scale_ > 0.0f) {
+        dpi_scale_ = pending_dpi_scale_;
+        pending_dpi_scale_ = 0.0f;
+        lwf::ui::ApplyImGuiStyle(kDarkPalette, static_cast<float>(dpi_scale_));
+        ApplyWindowGeometry();
+    }
 
     int fb_width = 0;
     int fb_height = 0;
@@ -239,20 +287,28 @@ void Overlay::DrawBadge() {
     ImGui::PopStyleVar(2);
 
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    const ImVec2 dot_min((display.x - dot) * 0.5f, display.y - dot);
-    const ImVec2 dot_max(dot_min.x + dot, display.y);
+    // The dot sits at the top of the window; the space below it carries the
+    // tiny status label and the attention hover message.
+    const ImVec2 dot_min((display.x - dot) * 0.5f, 0.0f);
+    const ImVec2 dot_max(dot_min.x + dot, dot);
     const ImVec2 center((dot_min.x + dot_max.x) * 0.5f, (dot_min.y + dot_max.y) * 0.5f);
     const float radius = dot * 0.5f;
 
     // Hit test in window coordinates. The window is click-through unless the
-    // cursor is near the dot; the OS-level switch happens below.
+    // cursor is near the dot or a drag is moving it; the OS-level switch
+    // happens below.
     int win_x = 0;
     int win_y = 0;
     glfwGetWindowPos(window_, &win_x, &win_y);
     const bool near_dot = WindowStyles::IsCursorInsideRect(
         win_x + static_cast<int>(dot_min.x), win_y + static_cast<int>(dot_min.y),
         static_cast<int>(dot), static_cast<int>(dot), static_cast<int>(metrics::mini_hover_inflate * scale));
-    if (near_dot != !pass_through_) {
+    if (dragging_) {
+        if (pass_through_) {
+            pass_through_ = false;
+            WindowStyles::SetOverlayPassThrough(glfwGetWin32Window(window_), false);
+        }
+    } else if (near_dot != !pass_through_) {
         pass_through_ = !near_dot;
         WindowStyles::SetOverlayPassThrough(glfwGetWin32Window(window_), pass_through_);
     }
@@ -260,18 +316,18 @@ void Overlay::DrawBadge() {
     // Input region over the dot. Events only arrive while pass-through is off.
     ImGui::SetCursorScreenPos(dot_min);
     ImGui::InvisibleButton("##dot", ImVec2(dot, dot));
-    hovered_ = ImGui::IsItemHovered();
-    const bool clicked = ImGui::IsItemClicked();
-    if (clicked && state_ == OverlayModel::PillState::Paused && on_activate_) {
-        on_activate_();
-    }
+    hovered_ = ImGui::IsItemHovered() || dragging_;
+    UpdateDrag(near_dot);
 
     ImDrawList& draw = *ImGui::GetWindowDrawList();
 
-    // Badge base: surface at theme opacity with a hairline border.
+    // Badge base: surface at a deliberately low opacity so it never blocks
+    // the desktop; it rises while hovered, dragged or busy.
     float badge_alpha = fade_alpha_;
     if (state_ == OverlayModel::PillState::Ready && !hovered_) {
-        badge_alpha *= 0.55f;
+        badge_alpha *= metrics::mini_idle_alpha;
+    } else {
+        badge_alpha *= metrics::mini_active_alpha;
     }
     const float breathe = reduce_motion_ ? 0.75f : 0.6f + 0.4f * Wave01(animation_time_, metrics::ring_breathe);
 
@@ -359,7 +415,78 @@ void Overlay::DrawBadge() {
             break;
     }
 
+    // Tiny status word under the dot, hidden while the attention message is
+    // showing (the message takes the space below the dot instead).
+    if (state_ != OverlayModel::PillState::Attention) {
+        const char* status_word = "";
+        switch (state_) {
+            case OverlayModel::PillState::Ready: status_word = "Ready"; break;
+            case OverlayModel::PillState::Listening: status_word = "Listening"; break;
+            case OverlayModel::PillState::Thinking: status_word = "Thinking"; break;
+            case OverlayModel::PillState::Paused: status_word = "Paused"; break;
+            default: break;
+        }
+        if (status_word[0] != '\0') {
+            const ImVec2 text_size = ImGui::CalcTextSize(status_word);
+            draw.AddText(ImVec2(center.x - text_size.x * 0.5f, dot_max.y + 2.0f * scale),
+                         Pack(kDarkPalette.muted, 0.75f * badge_alpha), status_word);
+        }
+    }
+
     ImGui::End();
+}
+
+void Overlay::UpdateDrag(bool near_dot) {
+    // Start: a press our window actually received while the cursor was on the
+    // dot (pass-through is already off there). Any press that moves more than
+    // a few pixels becomes a drag instead of a click.
+    if (!dragging_) {
+        if (near_dot && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            dragging_ = true;
+            drag_travel_px_ = 0;
+            WindowStyles::CursorScreenPoint(drag_cursor_origin_x_, drag_cursor_origin_y_);
+            glfwGetWindowPos(window_, &drag_win_origin_x_, &drag_win_origin_y_);
+        }
+        return;
+    }
+
+    // Move: track the physical cursor in screen pixels so the badge keeps up
+    // even when the cursor outruns the small window.
+    int cursor_x = drag_cursor_origin_x_;
+    int cursor_y = drag_cursor_origin_y_;
+    WindowStyles::CursorScreenPoint(cursor_x, cursor_y);
+    drag_travel_px_ = std::max(drag_travel_px_,
+                               std::abs(cursor_x - drag_cursor_origin_x_) +
+                                   std::abs(cursor_y - drag_cursor_origin_y_));
+    if (drag_travel_px_ > kDragClickThresholdPx) {
+        const int window_w = static_cast<int>(metrics::mini_message_w * dpi_scale_);
+        const int window_h =
+            static_cast<int>((metrics::mini_dot + metrics::mini_message_h) * dpi_scale_);
+        const OverlayModel::Rect position = OverlayModel::ClampPosition(
+            work_area_, drag_win_origin_x_ + cursor_x - drag_cursor_origin_x_,
+            drag_win_origin_y_ + cursor_y - drag_cursor_origin_y_, window_w, window_h);
+        glfwSetWindowPos(window_, position.x, position.y);
+    }
+
+    // Release: persist a drag, or treat an in-place press on Paused as the
+    // resume click. Polled from the OS so the release is never missed when
+    // the cursor is outside the window.
+    if (!WindowStyles::LeftMouseButtonDown()) {
+        if (drag_travel_px_ > kDragClickThresholdPx) {
+            if (on_position_persist_) {
+                const int window_w = static_cast<int>(metrics::mini_message_w * dpi_scale_);
+                const int window_h =
+                    static_cast<int>((metrics::mini_dot + metrics::mini_message_h) * dpi_scale_);
+                const OverlayModel::Rect position = OverlayModel::ClampPosition(
+                    work_area_, drag_win_origin_x_ + cursor_x - drag_cursor_origin_x_,
+                    drag_win_origin_y_ + cursor_y - drag_cursor_origin_y_, window_w, window_h);
+                on_position_persist_(position.x, position.y);
+            }
+        } else if (state_ == OverlayModel::PillState::Paused && on_activate_) {
+            on_activate_();
+        }
+        dragging_ = false;
+    }
 }
 
 void Overlay::DrawMic(ImDrawList& draw, const ImVec2& center, float scale, ImU32 color,

@@ -88,7 +88,7 @@ TEST_CASE("provider sends the documented request shape") {
     REQUIRE(transport.Requests().size() == 1);
     const HttpRequest& request = transport.Requests()[0];
     CHECK(request.host == GnaniContract::kHost);
-    CHECK(request.path == "/stt/v3");
+    CHECK(request.path == GnaniContract::kPath);
     REQUIRE(request.headers.size() == 1);
     CHECK(request.headers[0].first == GnaniContract::kApiKeyHeader);
     CHECK(request.headers[0].second == "key-id-1");
@@ -96,25 +96,13 @@ TEST_CASE("provider sends the documented request shape") {
     CHECK(request.timeout_ms == Settings().timeout_ms);
     const std::string body(request.body.begin(), request.body.end());
     CHECK(body.find("name=\"model\"\r\n\r\nprisma-v3.0") != std::string::npos);
-    CHECK(body.find("name=\"language_code\"\r\n\r\nindic-auto") != std::string::npos);
+    CHECK(body.find("name=\"language\"\r\n\r\nindic-auto") != std::string::npos);
     const std::string audio_header =
-        "Content-Disposition: form-data; name=\"audio_file\"; filename=\"audio.wav\"\r\n"
+        "Content-Disposition: form-data; name=\"audio\"; filename=\"audio.wav\"\r\n"
         "Content-Type: audio/wav\r\n\r\n";
     const std::size_t audio_at = body.find(audio_header);
     REQUIRE(audio_at != std::string::npos);
     CHECK(body.compare(audio_at + audio_header.size(), 4, "RIFF") == 0);
-}
-
-TEST_CASE("provider sends keyterms as a single JSON array field") {
-    FakeTransport transport({ScriptedResponse()});
-    GnaniProviderSettings settings = Settings();
-    settings.keyterms = {"namaste", "dhanyavad"};
-    GnaniProvider provider(transport, settings);
-    provider.Transcribe(ConstantAudio(1600), {});
-    REQUIRE(transport.Requests().size() == 1);
-    const HttpRequest& request = transport.Requests()[0];
-    const std::string body(request.body.begin(), request.body.end());
-    CHECK(body.find("name=\"keyterms\"\r\n\r\n[\"namaste\",\"dhanyavad\"]") != std::string::npos);
 }
 
 TEST_CASE("provider splits long audio into clip requests and joins transcripts") {

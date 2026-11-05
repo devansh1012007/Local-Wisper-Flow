@@ -81,7 +81,6 @@ struct WindowsHotkeyListener::Impl {
     static LRESULT CALLBACK HookProc(int code, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam,
                                        LPARAM lParam);
-    static Impl* instance();
     void PumpMessages();
     bool HandleLearnMode(const KBDLLHOOKSTRUCT* info, bool is_down);
     LRESULT DispatchKey(bool is_down, const KBDLLHOOKSTRUCT* info);

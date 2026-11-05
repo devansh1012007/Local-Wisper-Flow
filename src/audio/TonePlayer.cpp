@@ -12,6 +12,13 @@ constexpr int kToneSampleRate = 16000;
 
 }
 
+struct DeviceState {
+    std::mutex mutex;
+    std::condition_variable done_cv;
+    std::vector<float> active;
+    std::size_t position = 0;
+};
+
 static void ToneDataCallback(ma_device* device, void* output, const void*, std::uint32_t frames) {
     auto* state = static_cast<DeviceState*>(device->pUserData);
     if (state == nullptr) {
@@ -133,4 +140,5 @@ void TonePlayer::WorkerLoop() {
         }
     }
 }
+
 }

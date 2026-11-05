@@ -46,6 +46,10 @@ public:
     bool FirstRunNeeded() const;
 
 private:
+    // GLFW trampoline: stores the new monitor scale; it is applied on the
+    // next RunOnce with this window's ImGui context current.
+    static void OnContentScale(GLFWwindow* window, float scale_x, float scale_y);
+
     void RenderPages(float scale);
 
     void DrawRail(float scale);
@@ -83,6 +87,7 @@ private:
     bool restart_needed_ = false;
     float saved_until_ = -1.0f;
     double dpi_scale_ = 1.0;
+    float pending_dpi_scale_ = 0.0f;  // deferred content-scale callback value
 
     std::string last_transcript_;
     std::string detected_hotkey_;

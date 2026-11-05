@@ -55,4 +55,9 @@ struct Rect {
 Rect PillPosition(const Rect& work_area, int pill_width, int pill_height, int margin,
                   double dpi_scale);
 
+// Keeps a user-dragged window top-left inside the work area so the badge can
+// never be dragged off-screen and lost. Windows larger than the work area
+// are pinned to the work area origin.
+Rect ClampPosition(const Rect& work_area, int x, int y, int width, int height);
+
 }  // namespace OverlayModel

@@ -53,6 +53,8 @@ const std::vector<SettingsStore::SchemaEntry>& BuildSchema() {
         {"sound_enabled", SettingsStore::Type::Bool, 1, "", 0, 0, true},
         {"sound_volume", SettingsStore::Type::Double, 0.3, "", 0.0, 1.0, true},
         {"reduce_motion", SettingsStore::Type::Bool, 0, "", 0, 0, true},
+        {"mini_x", SettingsStore::Type::Int, -1, "", -1000000, 1000000, false},
+        {"mini_y", SettingsStore::Type::Int, -1, "", -1000000, 1000000, false},
         {"history_enabled", SettingsStore::Type::Bool, 1, "", 0, 0, true},
         {"keep_raw_in_history", SettingsStore::Type::Bool, 0, "", 0, 0, true},
         {"history_max_entries", SettingsStore::Type::Int, 1000, "", 10, 100000, true},

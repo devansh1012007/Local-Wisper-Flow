@@ -19,9 +19,10 @@
 #include <GL/gl.h>
 
 #ifdef _WIN32
-#include <windows.h>
+#include <shellapi.h>
 #endif
 
+#include <algorithm>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
@@ -101,9 +102,20 @@ bool MainWindow::Init() {
     }
     dpi_scale_ = scale_x > 0.0f ? scale_x : 1.0;
 
+    // Work area first, so the created window never exceeds the screen: an
+    // oversized window gets clamped by the OS and the layout shrinks with it.
+    int area_x = 0;
+    int area_y = 0;
+    int area_w = 1280;
+    int area_h = 720;
+    if (primary != nullptr) {
+        glfwGetMonitorWorkarea(primary, &area_x, &area_y, &area_w, &area_h);
+    }
+    const int want_w = static_cast<int>(metrics::full_default_w * dpi_scale_);
+    const int want_h = static_cast<int>(metrics::full_default_h * dpi_scale_);
+
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-    window_ = glfwCreateWindow(static_cast<int>(metrics::full_default_w * dpi_scale_),
-                               static_cast<int>(metrics::full_default_h * dpi_scale_),
+    window_ = glfwCreateWindow(std::min(want_w, area_w), std::min(want_h, area_h),
                                "Local Wisper Flow", nullptr, nullptr);
     if (window_ == nullptr) {
         return false;
@@ -113,17 +125,14 @@ bool MainWindow::Init() {
                             GLFW_DONT_CARE);
 
     // Center on the primary work area so the first open feels deliberate.
-    int area_x = 0;
-    int area_y = 0;
-    int area_w = 1280;
-    int area_h = 720;
-    if (primary != nullptr) {
-        glfwGetMonitorWorkarea(primary, &area_x, &area_y, &area_w, &area_h);
-    }
     int win_w = 0;
     int win_h = 0;
     glfwGetWindowSize(window_, &win_w, &win_h);
     glfwSetWindowPos(window_, area_x + (area_w - win_w) / 2, area_y + (area_h - win_h) / 2);
+
+    // Follow monitor scale changes live (docking, display settings).
+    glfwSetWindowUserPointer(window_, this);
+    glfwSetWindowContentScaleCallback(window_, &MainWindow::OnContentScale);
 
     glfwMakeContextCurrent(window_);
     glfwSwapInterval(1);
@@ -199,6 +208,14 @@ bool MainWindow::FirstRunNeeded() const {
     return settings_.GetBool("first_run") || settings_.GetString("whisper_model_path").empty();
 }
 
+void MainWindow::OnContentScale(GLFWwindow* window, float scale_x, float) {
+    if (MainWindow* self = static_cast<MainWindow*>(glfwGetWindowUserPointer(window))) {
+        if (scale_x > 0.0f) {
+            self->pending_dpi_scale_ = scale_x;
+        }
+    }
+}
+
 void MainWindow::RunOnce(float) {
     if (window_ == nullptr || imgui_context_ == nullptr) {
         return;
@@ -216,6 +233,16 @@ void MainWindow::RunOnce(float) {
 
     ImGui::SetCurrentContext(imgui_context_);
     glfwMakeContextCurrent(window_);
+
+    // A monitor scale change lands here, where this window's ImGui context
+    // is current. The style (and, through FontScaleMain, the dynamic font)
+    // re-apply so text and controls keep filling the window instead of
+    // rendering at the old scale.
+    if (pending_dpi_scale_ > 0.0f) {
+        dpi_scale_ = pending_dpi_scale_;
+        pending_dpi_scale_ = 0.0f;
+        lwf::ui::ApplyImGuiStyle(kDarkPalette, static_cast<float>(dpi_scale_));
+    }
 
     int fb_width = 0;
     int fb_height = 0;
@@ -410,7 +437,7 @@ void MainWindow::BeginCard(const char* id, float width, float scale) {
                         ImVec2(metrics::space_m * scale, metrics::space_m * scale));
     ImGui::BeginChild(id, ImVec2(width, 0.0f),
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
     ImGui::PopStyleColor();
 }
 
@@ -841,7 +868,7 @@ void MainWindow::DrawWelcomePage(float scale) {
             if (ImGui::Button("Open microphone settings")) {
 #ifdef _WIN32
                 ShellExecuteA(nullptr, "open", "ms-settings:privacy-microphone", nullptr, nullptr,
-                              1);
+                              SW_SHOWNORMAL);
 #endif
             }
         } else if (welcome_step_ == 2) {

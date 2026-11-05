@@ -13,7 +13,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <cstring>
 #include <stdexcept>
 #include <thread>
 #include <vector>

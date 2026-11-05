@@ -18,24 +18,7 @@ ctest --test-dir build
   and gRPC and links the real providers. Windows always builds full.
 - Windows-only sources (`src/os/*`, `src/ui/*`, `_WIN32` main) are type-checked with
   `zig c++ -fsyntax-only -target x86_64-windows-gnu -Isrc <file>` where zig exists.
-- **Windows build is two-phase** (needed on this CMake 4.4 box):
-  1. `cmake --build build --config Release --parallel 4 --target llama_ext`
-     (installs ggml into `build/llama-install/`).
-  2. Re-run `cmake -S . -B build ...` (same configure flags) so
-     `WHISPER_USE_SYSTEM_GGML=ON` resolves `ggml_rope_set_offset`.
-  3. `cmake --build build --config Release --parallel 4 --target local-wisper-flow lwf_tests`.
-- On Windows, NASM must be in PATH during configure for BoringSSL assembly
-  detection; `-DOPENSSL_NO_ASM=ON` works around the x86_64 Windows NASM/`.S`
-  file mismatch (`fiat_p256_adx_mul`/`fiat_p256_adx_sqr`).
-- `miniaudio.h` is at `_deps-src/miniaudio/miniaudio.h`; add that dir to
-  `lwf_core` include dirs for `src/audio/TonePlayer.cpp`.
-- ImGui style-var balance: every `PushStyleVar`/`PushStyleColor` pair must be
-  matched by `PopStyleVar(2)`/`PopStyleColor()` in the same scope (see
-  `src/ui/MainWindow.cpp::BeginCard` and `src/ui/Overlay.cpp::DrawBadge`).
-- `ResolveModelPath()` → `ResolveDataPath()` now falls back to the current
-  working directory if the asset is not in `data_dir` or `exe_dir`, so running
-  from the repo root finds `ggml-base.en.bin` next to `config.json`.
-- Gates beyond the build: `scripts/check_hygiene.sh` (OS-header/TODO lint;
+- Gates beyond the build: `scripts/check_hygiene.sh` (comment/OS-header/TODO lint;
   `--self-test` plants offenders and verifies they are caught) and
   `scripts/check_no_network.sh` (network APIs only in src/stt/GrpcInferenceProvider.*,
   src/os/WindowsDownloader.* and src/os/WindowsHttpClient.*; file-write APIs banned in

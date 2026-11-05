@@ -148,7 +148,7 @@ bool SetEnabled(bool enabled) {
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_SET_VALUE, &key) != ERROR_SUCCESS) {
         return false;
     }
-    LRESULT result = enabled
+    const LRESULT result = enabled
                                ? RegSetValueExW(key, kRunValue, 0, REG_SZ,
                                                 reinterpret_cast<const BYTE*>(L"\""),
                                                 0)
@@ -194,7 +194,8 @@ void WindowsTray::Start() {
         data.uID = kIconId;
         data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
         data.uCallbackMessage = kWmTrayIcon;
-        data.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));
+        LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1));
+        data.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
         wcscpy_s(data.szTip, L"Local Wisper Flow");
         Shell_NotifyIconW(NIM_ADD, &data);
 

@@ -15,4 +15,11 @@ void SetOverlayPassThrough(void* hwnd, bool pass_through);
 // work-area coordinates) inflated by inflate pixels on every side.
 bool IsCursorInsideRect(int x, int y, int width, int height, int inflate);
 
+// Current cursor position in screen pixels. False when unavailable.
+bool CursorScreenPoint(int& x, int& y);
+
+// Physical left-button state, polled from the OS so a drag keeps working
+// while the cursor moves faster than the small overlay window follows it.
+bool LeftMouseButtonDown();
+
 }  // namespace WindowStyles

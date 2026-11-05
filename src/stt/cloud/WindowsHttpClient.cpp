@@ -9,7 +9,7 @@
 namespace {
 
 std::string LastMessage(const char* context) {
-    return std::string(context) + " failed (WinHttp error " +
+    return std::string(context) + " failed (WinHTTP error " +
            std::to_string(GetLastError()) + ")";
 }
 
@@ -72,36 +72,36 @@ HttpResponse WindowsHttpClient::Post(const HttpRequest& request) {
 
     auto fail = [&](HttpTransportErrorKind kind, const char* context) {
         if (handle != nullptr) {
-            WinHttpCloseHandle(handle);
+            WinHTTPCloseHandle(handle);
         }
         if (connection != nullptr) {
-            WinHttpCloseHandle(connection);
+            WinHTTPCloseHandle(connection);
         }
         if (session != nullptr) {
-            WinHttpCloseHandle(session);
+            WinHTTPCloseHandle(session);
         }
         throw HttpTransportError(kind, LastMessage(context));
     };
 
-    session = WinHttpOpen(L"LocalWisperFlow", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+    session = WinHTTPOpen(L"LocalWisperFlow", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                           WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) {
-        fail(HttpTransportErrorKind::Network, "WinHttpOpen");
+        fail(HttpTransportErrorKind::Network, "WinHTTPOpen");
     }
-    connection = WinHttpConnect(session, Utf8ToWide(request.host).c_str(),
+    connection = WinHTTPConnect(session, Utf8ToWide(request.host).c_str(),
                                 INTERNET_DEFAULT_HTTPS_PORT, 0);
     if (connection == nullptr) {
-        fail(HttpTransportErrorKind::Network, "WinHttpConnect");
+        fail(HttpTransportErrorKind::Network, "WinHTTPConnect");
     }
-    handle = WinHttpOpenRequest(connection, L"POST", Utf8ToWide(request.path).c_str(), nullptr,
+    handle = WinHTTPOpenRequest(connection, L"POST", Utf8ToWide(request.path).c_str(), nullptr,
                                 WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
                                 WINHTTP_FLAG_SECURE);
     if (handle == nullptr) {
-        fail(HttpTransportErrorKind::Network, "WinHttpOpenRequest");
+        fail(HttpTransportErrorKind::Network, "WinHTTPOpenRequest");
     }
 
     const int ms = timeout_ms;
-    WinHttpSetTimeouts(handle, ms, ms, ms, ms);
+    WinHTTPSetTimeouts(handle, ms, ms, ms, ms);
 
     std::wstring extra_headers;
     for (const auto& header : request.headers) {
@@ -112,31 +112,31 @@ HttpResponse WindowsHttpClient::Post(const HttpRequest& request) {
     }
 
     const DWORD total = static_cast<DWORD>(request.body.size());
-    if (!WinHttpSendRequest(handle, extra_headers.c_str(),
+    if (!WinHTTPSendRequest(handle, extra_headers.c_str(),
                             static_cast<DWORD>(extra_headers.size()),
                             request.body.empty() ? WINHTTP_NO_REQUEST_DATA
                                                  : const_cast<LPBYTE>(request.body.data()),
                             total, total, 0)) {
-        fail(HttpTransportErrorKind::Network, "WinHttpSendRequest");
+        fail(HttpTransportErrorKind::Network, "WinHTTPSendRequest");
     }
-    if (!WinHttpReceiveResponse(handle, 0)) {
-        fail(HttpTransportErrorKind::Network, "WinHttpReceiveResponse");
+    if (!WinHTTPReceiveResponse(handle, 0)) {
+        fail(HttpTransportErrorKind::Network, "WinHTTPReceiveResponse");
     }
 
     HttpResponse response;
     DWORD status_code = 0;
     DWORD status_size = sizeof(status_code);
-    WinHttpQueryHeaders(handle, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+    WinHTTPQueryHeaders(handle, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                         WINHTTP_HEADER_NAME_BY_INDEX, &status_code, &status_size,
                         WINHTTP_NO_HEADER_INDEX);
     response.status = static_cast<int>(status_code);
 
     DWORD raw_size = 0;
-    WinHttpQueryHeaders(handle, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX,
+    WinHTTPQueryHeaders(handle, WINHTTP_QUERY_RAW_HEADERS_CRLF, WINHTTP_HEADER_NAME_BY_INDEX,
                         WINHTTP_NO_OUTPUT_BUFFER, &raw_size, WINHTTP_NO_HEADER_INDEX);
     if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
         std::wstring raw(static_cast<std::size_t>(raw_size / sizeof(wchar_t)), L'\0');
-        if (WinHttpQueryHeaders(handle, WINHTTP_QUERY_RAW_HEADERS_CRLF,
+        if (WinHTTPQueryHeaders(handle, WINHTTP_QUERY_RAW_HEADERS_CRLF,
                                 WINHTTP_HEADER_NAME_BY_INDEX, raw.data(), &raw_size,
                                 WINHTTP_NO_HEADER_INDEX)) {
             response.headers = ParseResponseHeaders(raw);
@@ -145,23 +145,23 @@ HttpResponse WindowsHttpClient::Post(const HttpRequest& request) {
 
     for (;;) {
         DWORD available = 0;
-        if (!WinHttpQueryDataAvailable(handle, &available)) {
-            fail(HttpTransportErrorKind::Network, "WinHttpQueryDataAvailable");
+        if (!WinHTTPQueryDataAvailable(handle, &available)) {
+            fail(HttpTransportErrorKind::Network, "WinHTTPQueryDataAvailable");
         }
         if (available == 0) {
             break;
         }
         std::vector<std::uint8_t> chunk(available, 0);
         DWORD read = 0;
-        if (!WinHttpReadData(handle, chunk.data(), available, &read)) {
-            fail(HttpTransportErrorKind::Network, "WinHttpReadData");
+        if (!WinHTTPReadData(handle, chunk.data(), available, &read)) {
+            fail(HttpTransportErrorKind::Network, "WinHTTPReadData");
         }
         chunk.resize(read);
         response.body.insert(response.body.end(), chunk.begin(), chunk.end());
     }
 
-    WinHttpCloseHandle(handle);
-    WinHttpCloseHandle(connection);
-    WinHttpCloseHandle(session);
+    WinHTTPCloseHandle(handle);
+    WinHTTPCloseHandle(connection);
+    WinHTTPCloseHandle(session);
     return response;
 }

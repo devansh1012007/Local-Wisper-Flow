@@ -102,13 +102,17 @@ inline constexpr float full_default_h = 640.0f;
 inline constexpr float full_min_w = 760.0f;
 inline constexpr float full_min_h = 520.0f;
 
-// Mini badge. The dot is the default style; the window reserves room below
-// the dot for the attention hover message.
-inline constexpr float mini_dot = 44.0f;
-inline constexpr float mini_message_w = 250.0f;
-inline constexpr float mini_message_h = 96.0f;
+// Mini badge. Quarter-size dot with a tiny status label under it; the window
+// still reserves room below the dot for the attention hover message. The
+// badge stays highly transparent so it never blocks the desktop behind it.
+inline constexpr float mini_dot = 22.0f;             // was 44: 1/4 of the area
+inline constexpr float mini_message_w = 140.0f;      // was 250
+inline constexpr float mini_message_h = 48.0f;       // was 96
 inline constexpr float mini_margin = 16.0f;  // above the taskbar
-inline constexpr float mini_hover_inflate = 12.0f;  // hit zone around the dot
+inline constexpr float mini_hover_inflate = 10.0f;  // hit zone around the dot
+inline constexpr float mini_text_px = 8.5f;         // tiny status label font
+inline constexpr float mini_idle_alpha = 0.35f;     // badge opacity when idle
+inline constexpr float mini_active_alpha = 0.65f;   // badge opacity when hovered, dragged or busy
 
 // Motion (seconds). All animations stop at a static pose when
 // reduce_motion is on.

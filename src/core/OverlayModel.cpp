@@ -69,4 +69,15 @@ Rect PillPosition(const Rect& work_area, int pill_width, int pill_height, int ma
     return position;
 }
 
+Rect ClampPosition(const Rect& work_area, int x, int y, int width, int height) {
+    Rect position;
+    position.width = width;
+    position.height = height;
+    const int max_x = std::max(work_area.x, work_area.x + work_area.width - width);
+    const int max_y = std::max(work_area.y, work_area.y + work_area.height - height);
+    position.x = std::clamp(x, work_area.x, max_x);
+    position.y = std::clamp(y, work_area.y, max_y);
+    return position;
+}
+
 }  // namespace OverlayModel

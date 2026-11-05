@@ -16,12 +16,7 @@
 #include "core/HotkeyBinding.h"
 #include "core/HotkeyTracker.h"
 #include "core/ILlmProvider.h"
-#include "core/IEngineSink.h"
 #include "core/IInferenceProvider.h"
-#include "core/IVadProvider.h"
-#include "core/IClock.h"
-#include "core/DictationEngine.h"
-#include "core/ToneGenerator.h"
 #include "core/InjectionException.h"
 #include "core/ITextInjector.h"
 #include "core/Log.h"
@@ -67,11 +62,6 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
-#ifdef _WIN32
-#include <windows.h>
-#include <shellapi.h>
-#endif
 
 namespace {
 
@@ -449,6 +439,7 @@ int main() {
             return key != nullptr ? std::string(key) : std::string();
         };
         auto local_chain = std::make_unique<LocalProviderStack>(local_stack, passthrough_llm);
+        SttRouter stt_router(std::move(local_chain), std::move(cloud_provider), stt_routing);
 
         HistoryStore history(data_dir + "\\history.jsonl",
                              config.Store().GetBool("history_enabled"),
@@ -460,22 +451,16 @@ int main() {
         for (const auto& notice : startup_errors) {
             bridge.OnError(notice.first, notice.second);
         }
-
-        SttRouter stt_router(std::move(local_chain), std::move(cloud_provider), stt_routing,
-            [&bridge](SttErrorCategory category, const std::string& detail) {
-                bridge.OnError(ErrorCode::SttFailed,
-                               "cloud stt (" + std::string(ToString(category)) + "): " + detail);
-            });
         const std::string unseen_crash = lwf::CrashReporter::FindUnseenCrash(data_dir + "\\logs");
         if (!unseen_crash.empty()) {
             bridge.OnError(ErrorCode::Unknown, "The app closed unexpectedly last time - see logs");
             lwf::CrashReporter::MarkSeen(unseen_crash);
         }
 
-        ToneGenerator::TonePlayer tone_player;
+        TonePlayer tone_player;
         WindowsSelectionCapture selection_capture;
         CommandModeController command_controller(selection_capture, llm, injector);
-        EngineSettings settings;
+        lwf::EngineSettings settings;
         settings.min_hold_ms = config.Store().GetInt("min_hold_ms");
         settings.max_recording_ms = config.Store().GetInt("max_recording_ms");
         settings.hands_free_silence_ms = config.Store().GetInt("hands_free_silence_ms");
@@ -491,8 +476,18 @@ int main() {
             g_fsm_diag.store(static_cast<int>(current), std::memory_order_relaxed);
         });
         RealClock clock;
-        IVadProvider* vad = nullptr;
-        DictationEngine engine(audio, vad, stt_router, pipeline, injector, fsm,
+        std::unique_ptr<SileroVadProvider> vad_provider;
+        try {
+            vad_provider = std::make_unique<SileroVadProvider>(
+                data_dir + "\\models\\silero_vad.onnx",
+                static_cast<float>(config.VadThreshold()));
+        } catch (const std::exception& e) {
+            lwf::Log::Error(std::string("vad model failed to load; running without silence gating: ") +
+                            e.what());
+            bridge.OnError(ErrorCode::ModelMissing,
+                           "voice activity model is missing; running without silence gating");
+        }
+        DictationEngine engine(audio, vad_provider.get(), stt_router, pipeline, injector, fsm,
                                clock, bridge, settings);
         engine.SetToneFeedback(&tone_player);
         engine.SetCommandController(&command_controller);
@@ -515,6 +510,15 @@ int main() {
         }
 
         lwf::Log::Info("ready: hold the hotkey and speak");
+        // Restore the mini badge position the user last dragged it to
+        // (negative sentinel = never moved: default anchor above the tray).
+        overlay.SetSavedPosition(config.Store().GetInt("mini_x"),
+                                 config.Store().GetInt("mini_y"));
+        overlay.SetPositionPersistHandler([&config](int x, int y) {
+            config.Store().SetInt("mini_x", x);
+            config.Store().SetInt("mini_y", y);
+            config.Save();
+        });
         if (overlay.Init()) {
             overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
             overlay.SetActivateHandler([&ui_bus] {
