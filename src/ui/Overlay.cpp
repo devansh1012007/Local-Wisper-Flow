@@ -92,8 +92,11 @@ bool Overlay::Init() {
 
     // This window's own Dear ImGui context. Never share a context between
     // OS windows: the backends keep a single platform handle per context.
-    ImGui::CreateContext();
-    imgui_context_ = ImGui::GetCurrentContext();
+    // NOTE: ImGui::CreateContext() restores the previous context after
+    // initializing the new one, so GetCurrentContext() would return another
+    // window's context here. Use the returned context and make it current.
+    imgui_context_ = ImGui::CreateContext();
+    ImGui::SetCurrentContext(imgui_context_);
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigWindowsMoveFromTitleBarOnly = true;
     io.IniFilename = nullptr;

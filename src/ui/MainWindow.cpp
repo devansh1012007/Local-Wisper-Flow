@@ -137,8 +137,11 @@ bool MainWindow::Init() {
     glfwMakeContextCurrent(window_);
     glfwSwapInterval(1);
 
-    ImGui::CreateContext();
-    imgui_context_ = ImGui::GetCurrentContext();
+    // NOTE: ImGui::CreateContext() restores the previous context after
+    // initializing the new one, so GetCurrentContext() would return another
+    // window's context here. Use the returned context and make it current.
+    imgui_context_ = ImGui::CreateContext();
+    ImGui::SetCurrentContext(imgui_context_);
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.ConfigWindowsMoveFromTitleBarOnly = true;
