@@ -238,6 +238,14 @@ TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete s
     // must not reappear anywhere under src/ui, and display typography must stay
     // wired through the scoped design-px PushFont mechanism. lwf_tests does not
     // link ImGui, so the mechanism is guarded at the source/token level here.
+    // Fail-before for the ApplyImGuiStyle gate (leftover R-W1-003-001): the e0a3882
+    // delta added the last-applied (ImGuiContext*, float) gate plus design-px
+    // reassignment before ScaleAllSizes. The markers below are asserted here so
+    // this test FAILS against the pre-delta ThemePalette.cpp (no gate, old
+    // `if (scale != 1.0f)` skip at scale 1.0) and PASSES post-delta.
+    // Verified fail-before by comparing each marker string against
+    // `git show e0a3882^:src/ui/theme/ThemePalette.cpp` (absent) and the
+    // post-delta content (present) — see W1-IMPR-A2-T-001 follow-up section.
     const std::vector<std::string> font_sources = {
         "src/ui/MainWindow.cpp",
         "src/ui/MainWindow.h",
@@ -262,4 +270,35 @@ TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete s
     const std::string main_content((std::istreambuf_iterator<char>(main_window)),
                                    std::istreambuf_iterator<char>());
     CHECK(main_content.find("PushFont(nullptr, metrics::font_") != std::string::npos);
+
+    // Gate markers (R-W1-003-001): ApplyImGuiStyle gates on the last-applied
+    // (ImGuiContext*, scale) pair so ScaleAllSizes (cumulative / lossy) runs
+    // only on an actual change, at every scale including 1.0.
+    std::ifstream palette_cpp("src/ui/theme/ThemePalette.cpp");
+    REQUIRE(static_cast<bool>(palette_cpp));
+    const std::string palette_content((std::istreambuf_iterator<char>(palette_cpp)),
+                                      std::istreambuf_iterator<char>());
+    CHECK(palette_content.find("g_last_applied_context") != std::string::npos);
+    CHECK(palette_content.find("g_last_applied_scale") != std::string::npos);
+    CHECK(palette_content.find("const bool applies =") != std::string::npos);
+    CHECK(palette_content.find("if (applies)") != std::string::npos);
+    CHECK(palette_content.find("g_last_applied_scale = scale;") != std::string::npos);
+    CHECK(palette_content.find("style.ScaleAllSizes(scale);") != std::string::npos);
+    // The pre-delta `if (scale != 1.0f)` guard skipped the apply when moving
+    // back to 100% (metrics stuck scaled). It must not return.
+    CHECK(palette_content.find("if (scale != 1.0f)") == std::string::npos);
+    // Design-px geometry must be reassigned before the scale call so every
+    // apply starts from the design base (this is what makes a re-apply
+    // idempotent despite ScaleAllSizes being cumulative).
+    CHECK(palette_content.find("style.WindowRounding = metrics::radius_card;") !=
+          std::string::npos);
+    CHECK(palette_content.find("style.WindowRounding = metrics::radius_card;") <
+          palette_content.find("style.ScaleAllSizes(scale);"));
+
+    // Header documents the once-per-change contract (absent pre-delta).
+    std::ifstream palette_h("src/ui/theme/ThemePalette.h");
+    REQUIRE(static_cast<bool>(palette_h));
+    const std::string palette_header((std::istreambuf_iterator<char>(palette_h)),
+                                     std::istreambuf_iterator<char>());
+    CHECK(palette_header.find("once per actual change") != std::string::npos);
 }
