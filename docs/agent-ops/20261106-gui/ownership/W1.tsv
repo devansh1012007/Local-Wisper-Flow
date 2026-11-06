@@ -1,0 +1,17 @@
+W1-INV-01	src/ui/**
+W1-INV-02	tests/**
+W1-IMPL-A2	src/ui/MainWindow.cpp
+W1-IMPL-A2	src/ui/Overlay.cpp
+W1-IMPL-A2	src/ui/theme/ThemePalette.h
+W1-IMPL-A2	src/ui/theme/ThemePalette.cpp
+W1-IMPL-A2	tests/test_overlay_settings_ui.cpp
+W1-REV-A2	src/ui/MainWindow.cpp
+W1-REV-A2	src/ui/Overlay.cpp
+W1-REV-A2	src/ui/theme/ThemePalette.h
+W1-REV-A2	src/ui/theme/ThemePalette.cpp
+W1-REV-A2T	tests/test_overlay_settings_ui.cpp
+W1-IMPR-A2	src/ui/MainWindow.cpp
+W1-IMPR-A2	src/ui/Overlay.cpp
+W1-IMPR-A2	src/ui/theme/ThemePalette.h
+W1-IMPR-A2	src/ui/theme/ThemePalette.cpp
+W1-IMPR-A2	tests/test_overlay_settings_ui.cpp
