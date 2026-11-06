@@ -1,6 +1,6 @@
 <!-- ORCH-DIGEST:START -->
 agent: W2-IMPL-A5A6 | task: T-005/T-006 | status: DONE
-code_commits: d9e86dd | report_commit: pending
+code_commits: d9e86dd | report_commit: 1694076
 files_changed: 6 (src/ui/Overlay.h, src/ui/Overlay.cpp, src/ui/theme/ThemePalette.h, src/core/OverlayModel.h, src/core/OverlayModel.cpp, tests/test_overlay_settings_ui.cpp)
 contracts_changed: none
 tests: added 3, changed 0; scoped run: pass
@@ -122,4 +122,4 @@ Existing contrast tests kept green ([RAN ./build/lwf_tests.exe --test-case="*con
 - [x] Conventions from AGENTS.md followed (no TODO/headers; tests-first kept; doc comments with DECISION/INVARIANT)
 
 ## 17. Commits
-code: d9e86dd | report: pending
+code: d9e86dd | report: 1694076
