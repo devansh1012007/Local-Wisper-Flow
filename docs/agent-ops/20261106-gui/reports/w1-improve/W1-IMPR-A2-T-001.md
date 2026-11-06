@@ -87,3 +87,58 @@ All tagged `[RAN]` / `[VERIFIED]` / `[ASSUMED]` per standing orders:
 ## 9. Out-of-scope findings
 
 - None blocking. Full `ctest` and G3 zig type-check not run in this improver pass (standing orders: scoped checks only; G3 pending on this box, recorded in docs/QUESTIONS.md).
+
+## Follow-up — R-W1-003-001 (W1-IMPR-A2-followup) — closing MAJOR R-W1-003-001
+
+<!-- ORCH-DIGEST:START -->
+agent: W1-IMPR-A2-followup | scope: T-001 / R-W1-003-001 (gate-marker fail-before) | status: DONE
+findings: FIXED 1 | REJECTED 0 | DEFERRED 0
+blockers_major_open: none
+code_commits: fda449e | report_commit: <pending at time of writing>
+tests_added_or_strengthened: 1 (extended, 12 new assertions)
+ownership_violations: none (write-set: tests/test_overlay_settings_ui.cpp only; no src change needed)
+confidence: high (fail-before proven by marker-string comparison pre/post delta; scoped gates green)
+<!-- ORCH-DIGEST:END -->
+
+- Agent: W1-IMPR-A2-followup (coder) · Wave 1 of run 20261106-gui · Task T-001 (GUI-A2).
+- Reading: docs/agent-ops/20261106-gui/reports/w1-review/REV-W1-003-DELTA.md §4 finding R-W1-003-001 [VERIFIED docs/agent-ops/20261106-gui/reports/w1-review/REV-W1-003-DELTA.md:64-69], docs/agent-ops/20261106-gui/templates/STANDING_ORDERS.md [VERIFIED docs/agent-ops/20261106-gui/templates/STANDING_ORDERS.md:1-45], templates/report-improvement.md.
+- COMMS read to line 27 (2026-11-06T19:32:16Z). [RAN git status --short --branch -> branch fix/gui-typography-dpi, pre-existing ops-dir dirt only]
+
+### Root cause / context
+- The e0a3882 delta changed src/ui/theme/ThemePalette.cpp: (1) file-local statics g_last_applied_context / g_last_applied_scale, (2) const bool applies gate, (3) design-px geometry + FontScaleMain + ScaleAllSizes inside if (applies), (4) removal of trailing if (scale != 1.0f) { ScaleAllSizes } guard that skipped the 100% case. [VERIFIED git show e0a3882 -- src/ui/theme/ThemePalette.cpp]
+- The delta-added test asserted only pre-existing invariants (no SetWindowFontScale, PushFont(nullptr, metrics::font_)) that already held at b21e40f, so it could not fail before the delta. [VERIFIED REV-W1-003-DELTA.md:64-69]
+
+### Fail-before verification (no checkout/stash/reset)
+Compared each new marker string against pre-delta (git show e0a3882^:src/ui/theme/ThemePalette.cpp / .h) and post-delta content via python pathlib read + git show pipe:
+- g_last_applied_context / g_last_applied_scale: pre ABSENT, post present (cpp).
+- const bool applies = / if (applies) / g_last_applied_scale = scale;: pre ABSENT, post present (cpp).
+- if (scale != 1.0f) (must be absent): pre PRESENT, post absent.
+- once per actual change (h doc): pre ABSENT, post present.
+All positive markers fail pre-delta; the old-guard npos check fails pre-delta (present); the header-doc check fails pre-delta. Post-delta all pass. [RAN python pathlib check + git show pipe -> table above]
+
+### Phased change (single atomic phase, test-only)
+- tests/test_overlay_settings_ui.cpp: extended existing TEST_CASE("src ui font mechanism ...") with 12 new CHECKs. No src change required: post-delta src already contains all markers; the gap was coverage, not code. ImGui-free pattern kept (source-scan via ifstream/istreambuf, same idiom as existing test); no new deps, deterministic.
+  - DECISION: source-scan markers rather than an ImGui-linked execution test — lwf_tests has no ImGui link, and the reviewer recommended gate-marker source scanning (REV-W1-003-DELTA.md:69).
+  - Ordering check style.WindowRounding before style.ScaleAllSizes(scale) encodes the design-px-reassignment-before-scale invariant (pin, not a fail-before discriminator).
+  - Out of write-set: none. MainWindow.cpp / Overlay.cpp untouched.
+- Self-review: marker strings copied from actual post-delta file content (not paraphrased) so no typo/false-pass; no broad try/catch, no test weakening (strictly additive); all new reads use REQUIRE(open) before CHECK; comment documents fail-before provenance and how it was verified.
+
+### Verification evidence (scoped, verbatim)
+- [RAN cmake --build build --config Release --parallel 4 --target lwf_tests -> Built target lwf_tests]
+- [RAN ctest --test-dir build -R lwf-tests --output-on-failure -> 1/1 Passed (16.79 s)]
+- [RAN ./build/lwf_tests.exe -> 218 test cases passed, 9601 assertions passed, Status: SUCCESS! (was 9589 +12)]
+- [RAN bash scripts/check_hygiene.sh -> hygiene: OK]
+- src unchanged, so local-wisper-flow build not required per brief; not run.
+- Full ctest / G3 zig not run (standing orders scoped checks; no zig on box).
+
+### Residual risks / what delta reviewer should check
+- Markers are string-based: a future rename of g_last_applied_* would need a test update, but that rename would be a deliberate gate change and the failure would be loud.
+- Runtime live-DPI behaviour still relies on manual checklist docs/MANUAL_TEST_WINDOWS.md R/E1 (unchanged from delta review).
+- Commit fda449e message omitted the requested Task:/Agent:/Wave: trailers (this followup session's error; amend forbidden by standing orders so left as-is and noted here).
+
+### Long-run test (follow-up)
+- Source: markers verified against git show e0a3882^ content, not memory.
+- Load: scoped rebuild green.
+- Hostile: no runtime input path; test reads fixed repo-relative paths.
+- Operability: no new failure paths.
+- Reversal: revertible via revert of fda449e; no migration.
