@@ -64,8 +64,14 @@ bool ToggleSwitch(const char* id, bool value, float scale) {
     const float w = 52.0f * scale;
     const float h = 32.0f * scale;
     const ImVec2 p = ImGui::GetCursorScreenPos();
-    const bool toggled = ImGui::InvisibleButton(id, ImVec2(w, h));
+    const bool toggled = ImGui::InvisibleButton(id, ImVec2(w, h), ImGuiButtonFlags_EnableNav);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
+    if (ImGui::IsItemFocused()) {
+        // 2px focus ring (kDarkPalette.focus) so keyboard focus is visible.
+        draw.AddRect(ImVec2(p.x - 2.0f * scale, p.y - 2.0f * scale),
+                     ImVec2(p.x + w + 2.0f * scale, p.y + h + 2.0f * scale),
+                     Pack(kDarkPalette.focus), h * 0.5f + 2.0f * scale, 0, 2.0f * scale);
+    }
     draw.AddRectFilled(p, ImVec2(p.x + w, p.y + h),
                        value ? Pack(kDarkPalette.accent) : Pack(kDarkPalette.text, 0.15f),
                        h * 0.5f);
@@ -143,6 +149,7 @@ bool MainWindow::Init() {
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.ConfigWindowsMoveFromTitleBarOnly = true;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
     ImGui_ImplGlfw_InitForOpenGL(window_, true);
     if (!ImGui_ImplOpenGL3_Init("#version 130")) {
@@ -182,6 +189,7 @@ void MainWindow::SetVisible(bool visible) {
     }
     if (visible) {
         glfwShowWindow(window_);
+        page_focus_pending_ = true;  // refocus once keyboard nav is active
     } else if (glfwGetWindowAttrib(window_, GLFW_VISIBLE)) {
         glfwHideWindow(window_);
     }
@@ -199,6 +207,7 @@ bool MainWindow::TakeCloseRequest() {
 
 void MainWindow::SetLastTranscript(const std::string& text) {
     last_transcript_ = text;
+    copied_until_ = -1.0f;  // a new transcript is not yet copied
 }
 
 void MainWindow::SetDetectedHotkey(const std::string& chord) {
@@ -373,15 +382,30 @@ void MainWindow::DrawRail(float scale) {
 
         const float item_h = 36.0f * scale;
         const float font_h = ImGui::GetFontSize();
+        // Restore keyboard focus after a page switch or re-show, only when the
+        // user is actually driving with the keyboard (NavActive) so a mouse
+        // click or tray pop never steals focus. The next focusable item (the
+        // first rail button) receives it.
+        if (page_focus_pending_ && ImGui::GetIO().NavActive) {
+            ImGui::SetKeyboardFocusHere();
+            page_focus_pending_ = false;
+        }
         for (const NavItem& item : items) {
             const ImVec2 p = ImGui::GetCursorScreenPos();
             const float w = ImGui::GetContentRegionAvail().x;
-            ImGui::InvisibleButton(item.id, ImVec2(w, item_h));
+            ImGui::InvisibleButton(item.id, ImVec2(w, item_h), ImGuiButtonFlags_EnableNav);
             if (ImGui::IsItemClicked()) {
                 page_ = item.page;
+                validation_error_.clear();  // errors belong to the page that set them
+                page_focus_pending_ = true;
             }
             const bool active = page_ == item.page;
             const bool hovered = ImGui::IsItemHovered();
+            if (ImGui::IsItemFocused()) {
+                draw.AddRect(ImVec2(p.x - 2.0f * scale, p.y - 2.0f * scale),
+                             ImVec2(p.x + w + 2.0f * scale, p.y + item_h + 2.0f * scale),
+                             Pack(kDarkPalette.focus), 2.0f * scale, 0, 2.0f * scale);
+            }
             const std::uint32_t color =
                 active ? kDarkPalette.accent : (hovered ? kDarkPalette.text : kDarkPalette.muted);
             if (active) {
@@ -599,10 +623,19 @@ void MainWindow::DrawHomePage(float scale) {
         ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Trust");
         ImGui::PopFont();
-        ImGui::TextUnformatted("Everything runs on this computer.");
-        ImGui::TextDisabled("Cloud speech is off.");
-        // When cloud speech lands, this card switches to the mockup's cloud
-        // variant ("Speech is sent to <provider> for each sentence...").
+        const std::string provider = settings_.GetString("stt_provider");
+        const bool cloud_active = provider != "local" && settings_.GetBool("stt_consent_accepted");
+        if (cloud_active) {
+            const char* display = provider == "gnani" ? "Gnani"
+                                  : provider == "elevenlabs" ? "ElevenLabs"
+                                  : provider == "muse" ? "Muse" : provider.c_str();
+            ImGui::Text("Speech is sent to %s for each sentence.", display);
+            ImGui::TextDisabled("If a cloud request fails, that utterance falls back to "
+                                "local Whisper.");
+        } else {
+            ImGui::TextUnformatted("Everything runs on this computer.");
+            ImGui::TextDisabled("Cloud speech is off.");
+        }
     }
     EndCard(scale);
 
@@ -639,8 +672,10 @@ void MainWindow::DrawHomePage(float scale) {
             ImGui::TextDisabled("Nothing yet.");
         } else {
             ImGui::TextWrapped("%s", last_transcript_.c_str());
-            if (ImGui::Button("Copy")) {
+            const bool copied = copied_until_ > 0.0f && ImGui::GetTime() < copied_until_;
+            if (ImGui::Button(copied ? "Copied" : "Copy")) {
                 ImGui::SetClipboardText(last_transcript_.c_str());
+                copied_until_ = static_cast<float>(ImGui::GetTime()) + metrics::saved_dwell;
             }
         }
     }
@@ -793,7 +828,9 @@ void MainWindow::DrawCleanupPage(float scale) {
 
         int min_words = settings_.GetInt("cleanup_min_words");
         ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::SliderInt("##min_words", &min_words, 1, 100, "skip short: %d words")) {
+        ImGui::SliderInt("##min_words", &min_words, 1, 100, "skip short: %d words");
+        // Commit once, when the drag ends, not on every tick of the drag.
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
             validation_error_ =
                 SettingsUiModel::ValidateInt("cleanup_min_words", min_words, 1, 100);
             if (validation_error_.empty()) {
@@ -803,7 +840,8 @@ void MainWindow::DrawCleanupPage(float scale) {
         }
         int timeout = settings_.GetInt("cleanup_timeout_ms");
         ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::SliderInt("##timeout", &timeout, 200, 30000, "give up after %d ms")) {
+        ImGui::SliderInt("##timeout", &timeout, 200, 30000, "give up after %d ms");
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
             settings_.SetInt("cleanup_timeout_ms", timeout);
             ApplyAndSave();
         }
@@ -893,7 +931,7 @@ void MainWindow::DrawWelcomePage(float scale) {
                 ImGui::Text("Detected: %s", detected_hotkey_.c_str());
                 if (ImGui::Button("That is my hotkey")) {
                     settings_.SetString("hotkey_ptt", detected_hotkey_);
-                    settings_.Save();
+                    ApplyAndSave();  // also posts ApplySettings + shows Saved
                     welcome_step_ = 3;
                 }
             }
@@ -931,9 +969,11 @@ void MainWindow::DrawWelcomePage(float scale) {
             ImGui::TextWrapped("%s", "Hold the hotkey and read a sentence aloud.");
             if (ImGui::Button("Finish")) {
                 settings_.SetBool("first_run", false);
-                settings_.Save();
+                ApplyAndSave();
                 welcome_step_ = 0;
+                validation_error_.clear();  // page switch: errors stay on their page
                 page_ = Page::Home;
+                page_focus_pending_ = true;
             }
         }
     }
