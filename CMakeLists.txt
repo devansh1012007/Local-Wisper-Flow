@@ -258,6 +258,17 @@ if(LWF_BUILD_FULL)
     set(protobuf_INSTALL         OFF CACHE BOOL "" FORCE)
     set(utf8_range_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 
+    # MinGW + GCC cannot drive BoringSSL's vendored GNU-asm field-element
+    # backends (the fiat_*.S files are ELF/Apple-gated, and BoringSSL's generated
+    # NASM sources do not include them), which leaves bssl.exe with undefined
+    # fiat_p256_adx_mul/sqr references. Fall back to the portable C field-element
+    # arithmetic via OPENSSL_NO_ASM (the same fallback gRPC's Bazel config uses).
+    # Reaching the subproject through CMAKE_C_FLAGS/CMAKE_CXX_FLAGS (rather than
+    # only the subproject's own compiler-ID checks) keeps the flag visible to the
+    # BoringSSL add_subdirectory scope.
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -DOPENSSL_NO_ASM")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DOPENSSL_NO_ASM")
+
     FetchContent_Declare(
         grpc
         URL              ${GRPC_URL}

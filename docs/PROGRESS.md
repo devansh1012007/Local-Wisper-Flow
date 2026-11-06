@@ -205,3 +205,9 @@ fix in flight). G3 zig pending (no zig on this box). G4 hygiene was FAIL
   "Windows bring-up + GUI (2026-11-06)" above.
 
 - 2026-11-04: Fixed CI `windows` job failure by pinning the runner to `windows-2022` (the `windows-2025-vs2026` image no longer provides the Visual Studio 2022 generator used by this workflow). Gates for this workflow-only change: G1-G5 not run locally.
+
+- 2026-11-06: Full Windows/MinGW rebuild green again after dependency install + dep fixes.
+  - BoringSSL bssl.exe link failure (undefined `fiat_p256_adx_mul`/`fiat_p256_adx_sqr`) root-caused: BoringSSL on WIN32+x86_64 enables the NASM backend whose source list omits the GNU-asm fiat field-element implementations, while the C++ still emits calls to those symbols. Fixed two ways: (1) vendored `third_party/boringssl-with-bazel/src/CMakeLists.txt` now sets `OPENSSL_NO_ASM ON` for MinGW+GNU (portable C fallback, same as gRPC's Bazel CPPFLAGS); (2) repo `CMakeLists.txt` propagates `-DOPENSSL_NO_ASM` via `CMAKE_C_FLAGS`/`CMAKE_CXX_FLAGS` into the gRPC add_subdirectory scope (subproject-internal compiler-ID checks alone did not take effect). Vendored `re2/util/pcre.h` keeps the GCC-15-needed `#include <cstdint>`.
+  - Build: clean `cmake --build build --parallel 2` (user cap) — `local-wisper-flow.exe` (32 MB), `bssl.exe`, full gRPC stack, whisper, llama_ext all built; `lwf_tests`/`lwf-bench`/`lwf-cloud-bench` compiled.
+  - Gates: G1 (MinGW full build) OK, G2 ctest 23/23 green (lwf-tests 16.5s; re2 suites green; config_v0 compat inside suite), G4 check_hygiene.sh OK, check_no_network.sh OK, G5 config_v0 backward-compat via suite; G3 zig pending (no zig on this box).
+  - Phase-2 llama install-closure reconfigure re-run; whisper picked up installed llama (WHISPER_USE_SYSTEM_GGML).
