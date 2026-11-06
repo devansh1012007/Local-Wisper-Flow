@@ -4,6 +4,11 @@ project(LocalWisperFlow VERSION 0.1.0 LANGUAGES C CXX)
 
 if(WIN32)
     add_compile_definitions(_USE_MATH_DEFINES)
+    # windows.h defines global min/max macros unless NOMINMAX is defined,
+    # which breaks std::min/std::max in any translation unit that pulls in
+    # windows.h (e.g. glfw3native.h -> windows.h). Define it project-wide,
+    # the same guard already used per-file in src/os/*.cpp.
+    add_compile_definitions(NOMINMAX)
 endif()
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING
