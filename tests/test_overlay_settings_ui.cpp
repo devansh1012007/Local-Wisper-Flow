@@ -7,7 +7,9 @@
 #include <doctest/doctest.h>
 #include <cmath>
 #include <fstream>
+#include <iterator>
 #include <string>
+#include <vector>
 
 TEST_CASE("waveform ring keeps the last N samples in order") {
     OverlayModel::WaveformRing ring(64);
@@ -220,9 +222,44 @@ TEST_CASE("contrast math matches the WCAG formula") {
 
 TEST_CASE("design px font tokens follow the mockup type scale") {
     namespace metrics = lwf::ui::metrics;
+    // Approved T-001 design mapping: mockup type scale s1=28 (page title),
+    // s2=18 (wordmark), s3=15 (card title), s4=14 (body) / s5=13 (helper) ->
+    // the design-px tokens below, with body and helper text sharing the
+    // font_body_px token per the approved design decision.
     CHECK(metrics::font_wordmark_px == 18.0f);
     CHECK(metrics::font_page_title_px == 28.0f);
     CHECK(metrics::font_card_title_px == 15.0f);
     CHECK(metrics::font_body_px == 13.0f);
     CHECK(metrics::font_mini_text_px == 8.5f);
+}
+
+TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete scale api") {
+    // Regression guard for T-001 (AC1/AC2): the obsolete ImGui::SetWindowFontScale
+    // must not reappear anywhere under src/ui, and display typography must stay
+    // wired through the scoped design-px PushFont mechanism. lwf_tests does not
+    // link ImGui, so the mechanism is guarded at the source/token level here.
+    const std::vector<std::string> font_sources = {
+        "src/ui/MainWindow.cpp",
+        "src/ui/MainWindow.h",
+        "src/ui/Overlay.cpp",
+        "src/ui/Overlay.h",
+        "src/ui/theme/ThemePalette.h",
+        "src/ui/theme/ThemePalette.cpp",
+        "src/ui/theme/ThemeStyle.h",
+    };
+    for (const std::string& path : font_sources) {
+        std::ifstream file(path);
+        REQUIRE(static_cast<bool>(file));
+        INFO(path);
+        const std::string content((std::istreambuf_iterator<char>(file)),
+                                  std::istreambuf_iterator<char>());
+        CHECK(content.find("SetWindowFontScale") == std::string::npos);
+    }
+
+    // The Full window pushes the design-px token family through scoped fonts.
+    std::ifstream main_window("src/ui/MainWindow.cpp");
+    REQUIRE(static_cast<bool>(main_window));
+    const std::string main_content((std::istreambuf_iterator<char>(main_window)),
+                                   std::istreambuf_iterator<char>());
+    CHECK(main_content.find("PushFont(nullptr, metrics::font_") != std::string::npos);
 }

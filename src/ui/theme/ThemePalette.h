@@ -162,7 +162,9 @@ inline double ContrastRatio(std::uint32_t a, std::uint32_t b) {
 // style. Scale is the window DPI scale (1.0 = 100%). Display typography is not
 // part of the style: it is scoped per call site with ImGui::PushFont(nullptr,
 // design_px) + ImGui::PopFont using the metrics::font_*_px design tokens, so
-// the DPI factor (style.FontScaleMain) applies exactly once. Real fonts land
+// the DPI factor (style.FontScaleMain) applies exactly once. The scale is
+// applied once per actual change (init or live content-scale move); re-applying
+// an unchanged scale does not re-run the metrics scaling. Real fonts land
 // with the font-approval change.
 void ApplyImGuiStyle(const Palette& palette, float scale);
 
