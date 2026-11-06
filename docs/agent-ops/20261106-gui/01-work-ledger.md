@@ -17,7 +17,7 @@
 
 | Task | Plan items | Domain | Class | Root cause (1 line) | Write-set | Contract-set | Env-set | Depends on | Conflicts (C#) | Wave | Agent | Status | Code commits | Report |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| T-001 | GUI-A2 | ui | SURFACE | Obsolete global-per-window font scale via SetWindowFontScale; design-px sizes expressed as ratios to built-in font | src/ui/MainWindow.cpp, src/ui/Overlay.cpp, src/ui/theme/ThemePalette.{h,cpp}, tests/… | none (internal) | lwf_tests (may need ImGui wiring) | — | — | 1 | W1-IMPL-A2 | IN_PROGRESS | | |
+| T-001 | GUI-A2 | ui | SURFACE | Obsolete global-per-window font scale via SetWindowFontScale; design-px sizes expressed as ratios to built-in font | src/ui/MainWindow.cpp, src/ui/Overlay.cpp, src/ui/theme/ThemePalette.{h,cpp}, tests/test_overlay_settings_ui.cpp | none (internal) | lwf_tests | — | — | 1 | W1-IMPL-A2 / W1-IMPR-A2 / W1-IMPR-A2-followup | DONE (2 review cycles) | b21e40f, e0a3882, fda449e | reports/w1-impl/W1-IMPL-A2-T-001.md |
 
 ## Waves
 
@@ -26,7 +26,7 @@
 - Agents: W1-INV-01 (done), W1-IMPL-A2 (dispatched), W1-REV-A2 (code), W1-REV-A2T (tests), W1-IMPR-A2
 - Ownership file: ownership/W1.tsv
 - Pre-mortem: font mechanism swap could double-scale at DPI; mitigated by using design-px unscaled base + FontScaleMain for DPI.
-- Status: planning → wave execution.
+- Status: WAVE-1 DONE. Review: APPROVE-WITH-CHANGES x2 (2+1 MAJOR) + delta APPROVE-WITH-CHANGES (1 MAJOR R-W1-003-001 CLOSED by fda449e/c9a28fb). Gate re-run green. Cycle 2/2 used.
 
 ## Deep dives
 (none yet)
