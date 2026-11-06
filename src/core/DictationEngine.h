@@ -41,10 +41,15 @@ public:
     void Run();
 
     bool ProcessOne(int timeout_ms);
-    // Tick is safe to call from more than one thread: the streaming-segment
-    // commit inside it is serialized by commit_mutex_ (see
-    // MaybeCommitStreamingSegment). Production calls Tick only from the
-    // single Run() worker, but the class does not rely on that.
+    // Tick's streaming-segment commit is serialized by commit_mutex_ and is
+    // safe under concurrent Tick callers (see
+    // MaybeCommitStreamingSegment): each [committed, silence_start) segment
+    // commits exactly once. The remainder of Tick is NOT thread-safe: the
+    // HandleMicLost, hands-free/max-recording timeout, and ARMED-timeout
+    // paths (StopAndTranscribe, FSM triggers) are single-caller-only, as in
+    // production, which calls Tick only from the single Run() worker.
+    // TakeTail() likewise reads committed_samples_ without commit_mutex_,
+    // so a concurrent commit can still race StopAndTranscribe's tail read.
     void Tick();
 
     void PostEvent(EngineEventType type);

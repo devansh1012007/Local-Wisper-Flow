@@ -227,7 +227,9 @@ void DictationEngine::MaybeCommitStreamingSegment() {
     // enqueue (StreamingDictator guards its own queue), so the lock is held
     // only briefly and is never held across Finish()/StopAndTranscribe().
     // Lock order is commit_mutex_ -> StreamingDictator::mutex_; nothing
-    // takes those in the opposite order.
+    // takes those in the opposite order. Scope: this serializes only the
+    // commit. Tick's timeout/HandleMicLost paths and TakeTail() do NOT take
+    // commit_mutex_ and remain single-caller-only (see Tick contract).
     std::lock_guard<std::mutex> lock(commit_mutex_);
     const std::int64_t silence_start = silence_start_samples_.load();
     if (silence_start < 0) {
