@@ -103,10 +103,15 @@ set(LWF_CORE_SOURCES
     src/core/TransformManager.cpp
     src/core/UiBus.cpp
     src/audio/TonePlayer.cpp
-    src/stt/cloud/WindowsHttpClient.cpp
 )
 
 add_library(lwf_core STATIC ${LWF_CORE_SOURCES})
+# WindowsHttpClient.cpp unconditionally #includes <windows.h>/<winhttp.h>; like
+# the src/os/* adapters it must stay out of the non-Windows build. Its only
+# consumer (main.cpp) is inside #ifdef _WIN32, so gating here is behavior-neutral.
+if(WIN32)
+    target_sources(lwf_core PRIVATE src/stt/cloud/WindowsHttpClient.cpp)
+endif()
 target_include_directories(lwf_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_definitions(lwf_core PUBLIC LWF_APP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(lwf_core PUBLIC nlohmann_json::nlohmann_json miniaudio)
