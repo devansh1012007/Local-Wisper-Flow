@@ -1,6 +1,6 @@
 <!-- ORCH-DIGEST:START -->
 agent: W2-IMPL-A1A3 | task: T-002/T-003 | status: DONE
-code_commits: 3aa4329 | report_commit: pending
+code_commits: 3aa4329 | report_commit: 7398274
 files_changed: 2 (src/ui/MainWindow.cpp, src/ui/MainWindow.h)
 contracts_changed: none
 tests: added 0, changed 0; scoped run: build + hygiene green, ctest not run (out of scope per brief)
@@ -124,4 +124,4 @@ Commands run: see section 11. ctest NOT RUN (per brief: scoped verification only
 - [x] Conventions from AGENTS.md followed (ImGui context discipline preserved, build + hygiene green, no full ctest)
 
 ## 17. Commits
-code: 3aa4329 | report: pending
+code: 3aa4329 | report: 7398274 (pinned next commit)
