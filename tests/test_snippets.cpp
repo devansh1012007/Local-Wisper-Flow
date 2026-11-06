@@ -33,7 +33,8 @@ TEST_CASE("contains mode replaces inline whole words") {
 }
 
 TEST_CASE("duplicate triggers last wins with a warning") {
-    const std::string path = "/tmp/lwf_snippets_dup.json";
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_snippets_dup.json").string();
     WriteFile(path,
               R"([{"trigger": "sig", "expansion": "first"},
                   {"trigger": "sig", "expansion": "second"}])");
@@ -45,7 +46,8 @@ TEST_CASE("duplicate triggers last wins with a warning") {
 }
 
 TEST_CASE("overlong expansion is rejected") {
-    const std::string path = "/tmp/lwf_snippets_long.json";
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_snippets_long.json").string();
     WriteFile(path, R"json([{"trigger": "big", "expansion": "x)json" +
                         std::string(4100, 'y') + R"json("}])json");
     SnippetStore snippets;
@@ -58,8 +60,12 @@ TEST_CASE("overlong expansion is rejected") {
 
 TEST_CASE("missing or broken file leaves store unloaded") {
     SnippetStore snippets;
-    CHECK_FALSE(snippets.Load("/tmp/lwf_snippets_missing.json"));
-    WriteFile("/tmp/lwf_snippets_bad.json", "not json");
-    CHECK_FALSE(snippets.Load("/tmp/lwf_snippets_bad.json"));
+    const std::string missing =
+        (std::filesystem::temp_directory_path() / "lwf_snippets_missing.json").string();
+    CHECK_FALSE(snippets.Load(missing));
+    const std::string bad =
+        (std::filesystem::temp_directory_path() / "lwf_snippets_bad.json").string();
+    WriteFile(bad, "not json");
+    CHECK_FALSE(snippets.Load(bad));
     CHECK(snippets.Expand("anything") == "anything");
 }

@@ -6,6 +6,7 @@
 
 #include <doctest/doctest.h>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
@@ -110,7 +111,8 @@ TEST_CASE("clamped mini position keeps the badge inside the work area") {
 }
 
 TEST_CASE("settings diff classifies hot apply versus restart required") {
-    const std::string path = "/tmp/lwf_diff_settings.json";
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_diff_settings.json").string();
     {
         std::ofstream file(path, std::ios::trunc);
         file << "{}";

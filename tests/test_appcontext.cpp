@@ -32,7 +32,8 @@ TEST_CASE("built-in profiles resolve by precedence") {
 }
 
 TEST_CASE("custom rules take precedence over later ones and invalid regex disables") {
-    const std::string path = "/tmp/lwf_app_profiles.json";
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_app_profiles.json").string();
     WriteFile(path, R"json({
         "rules": [
             {"match": {"process": "code\\.exe", "title_contains": "REVIEW"}, "profile": "notes"},
