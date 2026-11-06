@@ -66,7 +66,7 @@ jobs:
       - name: Configure (phase 1)
         run: |
           $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DGRPC_URL=file:///$ws/_deps-cache/grpc-v1.71.0-full.tar.gz" "-DLLAMA_URL=file:///$ws/_deps-cache/llama-b10603.tar.gz"
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DGRPC_URL=file://$ws/_deps-cache/grpc-v1.71.0-full.tar.gz" "-DLLAMA_URL=file://$ws/_deps-cache/llama-b10603.tar.gz"
 
       - name: Build (phase 1, builds llama)
         run: cmake --build build --config Release -j 4
@@ -74,7 +74,7 @@ jobs:
       - name: Configure (phase 2)
         run: |
           $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DGRPC_URL=file:///$ws/_deps-cache/grpc-v1.71.0-full.tar.gz" "-DLLAMA_URL=file:///$ws/_deps-cache/llama-b10603.tar.gz"
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DGRPC_URL=file://$ws/_deps-cache/grpc-v1.71.0-full.tar.gz" "-DLLAMA_URL=file://$ws/_deps-cache/llama-b10603.tar.gz"
 
       - name: Build (phase 2)
         run: cmake --build build --config Release -j 4
