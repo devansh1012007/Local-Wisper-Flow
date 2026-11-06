@@ -194,6 +194,13 @@ fix in flight). G3 zig pending (no zig on this box). G4 hygiene was FAIL
 
 ## Task log
 
+- 2026-11-06: GUI-A2 (T-001) scoped fonts + design-px typography tokens: obsolete
+  ImGui::SetWindowFontScale replaced with scoped ImGui::PushFont(nullptr, design_px)
+  + ImGui::PopFont using new metrics::font_*_px design tokens (wordmark 18, page title
+  28, card title 15, body 13, mini 8.5); FontScaleMain applies DPI once; token
+  regression test added. Scoped gates: build green, lwf-tests 1/1 Passed, check_hygiene
+  OK. Report: docs/agent-ops/20261106-gui/reports/w1-impl/W1-IMPL-A2-T-001.md.
+
 - 2026-11-06: Windows bring-up + GUI: model path exe-dir-parent/cwd fallbacks
   (ba46cbf/db4e40a), GL context re-assert (b7f677d), root-cause fix for the
   "black screen" — `ImGui::CreateContext()` restores the previous context, both
