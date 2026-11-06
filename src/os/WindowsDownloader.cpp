@@ -6,6 +6,7 @@
 #include "core/Onboarding.h"
 #include "core/Sha256.h"
 
+#include <cstdint>
 #include <windows.h>
 #include <winhttp.h>
 #include <bcrypt.h>

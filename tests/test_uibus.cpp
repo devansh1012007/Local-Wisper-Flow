@@ -30,7 +30,7 @@ TEST_CASE("concurrent producers never lose commands") {
     std::atomic<bool> stop{false};
     std::vector<std::thread> producers;
     for (int p = 0; p < kProducers; ++p) {
-        producers.emplace_back([&bus, p] {
+        producers.emplace_back([&bus, p, kPerProducer] {
             for (int i = 0; i < kPerProducer; ++i) {
                 bus.PostCommand(UiCommandType::SetEnabled,
                                 std::to_string(p) + ":" + std::to_string(i));
