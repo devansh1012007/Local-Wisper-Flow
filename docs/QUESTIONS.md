@@ -42,10 +42,13 @@ evidence gathered so far.
    docs/BENCHMARKS.md, supply the current per-hour prices from the vendor
    pages.
 
-7. Streaming double-commit race: with the current fakes, two concurrent
-   `DictationEngine::Tick` callers can both pass the pause/commit
-   check-then-act in `MaybeCommitStreamingSegment` and commit the same
-   segment twice. Production calls `Tick` only from the engine's `Run()`
-   worker thread, so this is latent; the streaming tests now drive
-   `ProcessOne` synchronously and pass deterministically. Worth a real
-   atomic-claim fix in src/core before any engine-thread changes.
+7. Streaming double-commit race: FIXED 2026-11-06/07 on `fix/gui-typography-dpi`.
+   `DictationEngine::MaybeCommitStreamingSegment` now holds `commit_mutex_` for
+   the whole check-slice-advance-commit sequence, so two concurrent `Tick`
+   callers cannot commit the same segment twice (commit 8223834). Verified by a
+   deterministic 8-thread barrier regression test (fail-before verified: 4/4 runs
+   produced 8 duplicate commits; pass-after 5/5). The `Tick` header comment was
+   narrowed to the actual guarantee (serialized commit only; concurrent
+   `StopAndTranscribe` double-run still possible and now documented, b0cfe38).
+   Remaining follow-up: a Tick-serialization task if the engine ever calls Tick
+   from more than one thread.

@@ -184,7 +184,7 @@ build; Windows CI runner is MSVC):
 | WB3 | Full window collapsed to 140x70 pill (black screen) | DONE | 1a8304f | G1 (MinGW exe build) | partial: both windows render (window capture); clicks untested | root cause: `ImGui::CreateContext()` restores the PREVIOUS context after init; both Init() used `GetCurrentContext()`, so both windows shared ctx_A; the overlay's backend then overwrote `BackendPlatformUserData` (the "already initialized" assert is compiled out in Release); main window rendered with `DisplaySize=140x70`, viewport (0,0,140,70) = bottom-left in GL |
 | WB4 | Earlier dark-theme contrast change reverted | DONE | (in 1a8304f) | n/a | n/a | lighter palette was a misdiagnosis; mockup-exact tokens restored (tests/test_overlay_settings_ui.cpp enforces them) |
 | WB5 | Mini badge + Full window verified by capture | DONE | 1a8304f | G1 | partial | PrintWindow render shows rail/nav items/Welcome page with card and mini badge (mic + Ready) |
-| WB6 | CI repairs (hygiene, whisper patch stderr, lwf_tests) | IN PROGRESS | | | | sub agents launched 2026-11-06; see task log |
+| WB6 | CI repairs (hygiene, whisper patch stderr, lwf_tests) | DONE | d643c4e..f9c3431 | see task log | partial | sub agents launched 2026-11-06; dep provision + Linux green; windows compile reached; NOMINMAX fix f9c3431 pending CI |
 
 Gates: G1 OK (MinGW `-j4` build of the exe). G2 not green this session —
 `lwf_tests` does not compile (stale `ScriptedLlm` call sites in test files;
@@ -193,6 +193,32 @@ fix in flight). G3 zig pending (no zig on this box). G4 hygiene was FAIL
 `src/os/WindowStyles.cpp` (same session); G5 not run.
 
 ## Task log
+
+- 2026-11-07: GUI fix/improvement wave run 20261106-gui CLOSED (branch
+  `fix/gui-typography-dpi`; see `docs/agent-ops/20261106-gui/SUMMARY.md`).
+  - GUI-A2 (T-001): scoped PushFont + design-px typography tokens replace
+    obsolete SetWindowFontScale (b21e40f; ApplyImGuiStyle per-context scale
+    gate e0a3882).
+  - GUI-A1/A3 (T-002/T-003): rail/toggle keyboard nav (NavEnableKeyboard,
+    EnableNav, 2 px focus ring, NavActive-gated restore), Copied feedback,
+    slider deactivation commit, Welcome save path (3aa4329; review fixes
+    07cc957).
+  - GUI-A5/A6 (T-005/T-006): mini idle early-out + alloc-free waveform,
+    contrast uplift to mockup alphas (0.55 idle / 1.0 active, box 250 px,
+    13 px message font) (d9e86dd; review fixes 07cc957).
+  - ENG-B1 (T-007): streaming double-commit race serialized via
+    commit_mutex_ (8223834; Tick contract narrowed b0cfe38).
+  - Independent code+test review per wave; final integration review
+    APPROVE-WITH-CHANGES (0 BLOCKER/0 MAJOR). Gates at close: build green,
+    lwf-tests 1/1 Passed, check_hygiene OK, check_no_network OK.
+  - CI pre-existing dependency-provision failures repaired (miniaudio
+    FetchContent hoisted out of FULL; Windows CI fetches deps via
+    scripts/fetch_deps.ps1 + file:/// tarball URLs; WindowsHttpClient gated
+    to WIN32) in d643c4e/94901cc/081d90d; MSVC-only glfw3native.h→windows.h
+    min/max macro collision fixed by project-wide NOMINMAX on WIN32 (f9c3431).
+    Linux CI job: success (run 42262321737). Windows CI: past configure and
+    dependency provision; reached app compile; f9c3431 run pending. NOT
+    claimed green yet — will record on completion. G3 zig pending (no zig).
 
 - 2026-11-06: T-001 improvement pass (W1-IMPR-A2): F1 MAJOR (ApplyImGuiStyle re-apply
   path) FIXED via per-(context, scale) apply-on-change tracking in src/ui/theme/ThemePalette.{h,cpp};

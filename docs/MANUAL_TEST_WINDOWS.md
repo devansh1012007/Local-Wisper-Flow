@@ -354,3 +354,30 @@ hardware. All of R replaces the old dashboard/settings/wizard windows.
 2. Cancel one dictation with the cancel hotkey: badge returns to Ready, no
    attention dot.
 3. Second instance: launching the exe again just opens the full window.
+
+## R2: 2026-11 wave-run UI changes (branch fix/gui-typography-dpi)
+These landed in the 20261106-gui wave run and are NOT claimed as verified.
+Do them on a Windows machine at 100%, 125% and 150% DPI.
+
+### R2-a: keyboard navigation (GUI-A1)
+1. Focus the Full window; verify Tab / Shift+Tab reaches rail items and toggles
+   in a sane order, and Arrow keys move within the rail.
+2. Focused rail item / toggle shows a 2 px focus ring (kDarkPalette.focus).
+3. Pressing Enter or Space on a focused rail item switches page.
+4. Mouse click still works, and clicking does not steal focus from keyboard
+   navigation mid-edit (NavActive gating).
+
+### R2-b: copy / state feedback (GUI-A3)
+1. Tap Copy in history: label switches to 'Copied' for ~1.5 s and reverts.
+2. Save on the Welcome page flashes the 'Saved' state exactly as Settings-page saves do.
+3. Dragging a slider commits once on release (deactivation), not continuously.
+
+### R2-c: mini badge (GUI-A5 / A6)
+1. Idle badge: after the attention dwell, the frame cost drops to nothing
+   (no swap until hover/drag/state change); hovering wakes it.
+2. Idle alphas readable on a dark desktop (0.55 idle / 1.0 active); attention
+   message text legible at 13 px; badge 250 px wide.
+
+### R2-d: DPI scaling
+1. Repeat R and R2 at 100%, 125%, 150% DPI. No double-scaled text, no
+   layout drift after moving the window between monitors with different DPI.
