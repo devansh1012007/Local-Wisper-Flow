@@ -6,9 +6,11 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 #include <GLFW/glfw3.h>
 
+struct ImFont;
 struct ImGuiContext;
 
 // The Mini badge: a quarter-size, highly transparent resident dot with a
@@ -21,7 +23,7 @@ struct ImGuiContext;
 //
 // Visual spec: docs/design/mockup.html section 2 (states, motion, hover),
 // resized per the 2026-11 mini-window feedback: dot 22 px (a quarter of the
-// old area), tiny text, strong transparency. The badge is click-through
+// old area), tiny text, semi-transparent. The badge is click-through
 // except while the cursor is over it, when it can be hovered or dragged
 // (Ready rises from idle transparency, Attention shows its message, Paused
 // can be clicked to re-enable dictation).
@@ -69,6 +71,24 @@ private:
 
     GLFWwindow* window_ = nullptr;
     ImGuiContext* imgui_context_ = nullptr;
+    // DECISION: idle early-out. RenderFrame skips the full GL/ImGui pass for
+    // non-animated states (Ready/Paused) while dirty_ is clear, draining only
+    // the dwell/fade bookkeeping and a cheap OS hover poll. Any SetState/
+    // PushLevel/OnContentScale/UpdateDrag input sets dirty_ again.
+    bool dirty_ = true;
+    // INVARIANT: poll_near_dot_ is the last hover-poll verdict; a change
+    // means the pass-through state flips, so the badge must repaint.
+    bool poll_near_dot_ = false;
+    // INVARIANT: levels_scratch_ is reused across Listening frames so the
+    // per-frame render performs zero heap allocations.
+    std::vector<float> levels_scratch_;
+    // INVARIANT: 1-entry cache for the status-word CalcTextSize, keyed by
+    // word content. Cleared whenever the DPI scale re-applies the style.
+    std::string cached_status_word_;
+    ImVec2 cached_status_size_{0.0f, 0.0f};
+    bool cached_status_valid_ = false;
+    // Second 13px bitmap font for the attention message; nullptr until Init.
+    ImFont* message_font_ = nullptr;
     OverlayModel::PillState state_ = OverlayModel::PillState::Ready;
     std::string message_;
     OverlayModel::WaveformRing waveform_{64};

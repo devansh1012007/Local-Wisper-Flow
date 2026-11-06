@@ -114,14 +114,14 @@ inline constexpr float full_min_h = 520.0f;
 
 // Mini badge. Quarter-size dot with a tiny status label under it; the window
 // still reserves room below the dot for the attention hover message. The
-// badge stays highly transparent so it never blocks the desktop behind it.
+// badge stays semi-transparent so it never blocks the desktop behind it.
 inline constexpr float mini_dot = 22.0f;             // was 44: 1/4 of the area
-inline constexpr float mini_message_w = 140.0f;      // was 250
+inline constexpr float mini_message_w = 250.0f;      // was 140
 inline constexpr float mini_message_h = 48.0f;       // was 96
 inline constexpr float mini_margin = 16.0f;  // above the taskbar
 inline constexpr float mini_hover_inflate = 10.0f;  // hit zone around the dot
-inline constexpr float mini_idle_alpha = 0.35f;     // badge opacity when idle
-inline constexpr float mini_active_alpha = 0.65f;   // badge opacity when hovered, dragged or busy
+inline constexpr float mini_idle_alpha = 0.55f;     // badge opacity when idle (mockup: 55%)
+inline constexpr float mini_active_alpha = 1.0f;    // badge opacity when hovered, dragged or busy (mockup: 100%)
 
 // Motion (seconds). All animations stop at a static pose when
 // reduce_motion is on.
@@ -132,7 +132,7 @@ inline constexpr float think_dot_cycle = 0.9f; // thinking dots period
 inline constexpr float think_dot_offset = 0.3f;
 inline constexpr float done_dwell = 0.6f;      // Done check before Ready
 inline constexpr float attention_dwell = 6.0f; // attention auto-clear
-inline constexpr float saved_dwell = 1.6f;     // "Saved" indicator on pages
+inline constexpr float saved_dwell = 1.5f;     // "Saved" indicator on pages (mockup motion table: 1.5 s)
 
 }  // namespace metrics
 

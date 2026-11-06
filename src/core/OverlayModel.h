@@ -35,6 +35,13 @@ public:
     explicit WaveformRing(std::size_t capacity = 64);
 
     void Push(float level);
+    // Allocation-free accessor for per-frame rendering (GUI-A5): copies the
+    // samples oldest-first into the caller-owned buffer, reusing its capacity
+    // instead of allocating a fresh vector each frame.
+    void SnapshotInto(std::vector<float>& out) const;
+    // Bounds-checked random access for hot indexed reads (oldest-first).
+    // Throws std::out_of_range when index is past the newest sample.
+    float At(std::size_t index) const;
     std::vector<float> Snapshot() const;
     std::size_t Size() const;
 

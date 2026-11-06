@@ -8,6 +8,7 @@
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -301,4 +302,59 @@ TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete s
     const std::string palette_header((std::istreambuf_iterator<char>(palette_h)),
                                      std::istreambuf_iterator<char>());
     CHECK(palette_header.find("once per actual change") != std::string::npos);
+}
+
+TEST_CASE("mini badge alphas meet the mockup contrast floors") {
+    namespace metrics = lwf::ui::metrics;
+    // GUI-A6: mockup section 2 note pins the Ready badge at "55 percent
+    // opacity, 100 on hover". The tokens must carry those values so the idle
+    // badge and the status word stay legible over the desktop.
+    CHECK(metrics::mini_idle_alpha >= 0.55f);
+    CHECK(metrics::mini_active_alpha >= 1.0f);
+    CHECK(metrics::mini_active_alpha <= 1.0f);
+    // The window reserves room for the attention message at the wider width.
+    CHECK(metrics::mini_message_w >= 250.0f);
+    // "Saved" dwell (mockup motion table: 1.5 s).
+    CHECK(metrics::saved_dwell == 1.5f);
+}
+
+TEST_CASE("waveform ring SnapshotInto and At match Snapshot ordering") {
+    OverlayModel::WaveformRing ring(64);
+    for (int i = 0; i < 70; ++i) {
+        ring.Push(static_cast<float>(i));
+    }
+    std::vector<float> scratch;
+    ring.SnapshotInto(scratch);
+    REQUIRE(scratch.size() == 64);
+    CHECK(scratch.front() == 6.0f);
+    CHECK(scratch.back() == 69.0f);
+    // Snapshot must agree with SnapshotInto, sample for sample.
+    CHECK(ring.Snapshot() == scratch);
+    // At() reads oldest-first and throws past the newest sample.
+    CHECK(ring.At(0) == 6.0f);
+    CHECK(ring.At(63) == 69.0f);
+    CHECK_THROWS_AS(ring.At(64), std::out_of_range);
+    // Reuse: the same buffer stays order-stable after more pushes.
+    ring.Push(100.0f);
+    ring.SnapshotInto(scratch);
+    REQUIRE(scratch.size() == 64);
+    CHECK(scratch.front() == 7.0f);
+    CHECK(scratch.back() == 100.0f);
+}
+
+TEST_CASE("mini status word is drawn at badge alpha without a discount") {
+    // GUI-A6 regression guard (source-scan: lwf_tests does not link ImGui).
+    // Before the fix the status word was Pack(muted, 0.75f * badge_alpha),
+    // compounding the sub-1.0 token alphas. Require the badge-alpha draw
+    // and forbid any sub-1.0 multiplier on the status word.
+    std::ifstream overlay("src/ui/Overlay.cpp");
+    REQUIRE(static_cast<bool>(overlay));
+    const std::string content((std::istreambuf_iterator<char>(overlay)),
+                              std::istreambuf_iterator<char>());
+    CHECK(content.find("Pack(kDarkPalette.muted, badge_alpha)") != std::string::npos);
+    CHECK(content.find("0.75f * badge_alpha") == std::string::npos);
+    // The attention message must render through the scoped 13px font.
+    CHECK(content.find("ImGui::PushFont(message_font_, metrics::font_body_px)") !=
+          std::string::npos);
+    CHECK(content.find("ImGui::PopFont()") != std::string::npos);
 }
