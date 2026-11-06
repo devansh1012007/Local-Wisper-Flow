@@ -264,6 +264,19 @@ void Overlay::RenderFrame(float delta_seconds) {
     // the dwell/fade bookkeeping above (done), then poll hover cheaply at the
     // OS level so mouse entry still wakes the badge. A pending DPI scale or
     // an active drag forces a full frame. Other states keep rendering.
+    //
+    // The poll watches three verdicts, not one (R-W2-002): the inflated
+    // pass-through zone (near_dot, as DrawBadge computes it), the EXACT dot
+    // rect (hovered_/badge alpha), and the physical left-button state. The
+    // old poll watched only the inflated zone, so moving from the ring onto
+    // the dot changed nothing in the verdict: hovered_ stayed false (badge
+    // stuck at idle alpha, IsMouseClicked never observed) and a click while
+    // the cursor was parked over the dot never woke the frame. The exact-dot
+    // poll uses the same center geometry as DrawBadge's dot_min (window
+    // width centered, top-anchored); a fractional-DPI ±1px difference from
+    // ImGui DisplaySize can cause at most one extra frame per crossing and
+    // self-corrects on the next tick, since the verdict is re-polled every
+    // frame while idle (cf. R-W2-005).
     const bool fade_settled = reduce_motion_ || fade_alpha_ >= 1.0f;
     if (!dirty_ && fade_settled && !dragging_ && pending_dpi_scale_ <= 0.0f &&
         (state_ == OverlayModel::PillState::Ready ||
@@ -274,17 +287,24 @@ void Overlay::RenderFrame(float delta_seconds) {
         glfwGetWindowPos(window_, &poll_win_x, &poll_win_y);
         glfwGetWindowSize(window_, &poll_win_w, nullptr);
         const float poll_dot = metrics::mini_dot * static_cast<float>(dpi_scale_);
+        const int poll_dot_px = static_cast<int>(poll_dot);
         const int poll_dot_min_x =
-            (poll_win_w - static_cast<int>(poll_dot)) / 2;
+            (poll_win_w - poll_dot_px) / 2;
+        const int poll_inflate = static_cast<int>(metrics::mini_hover_inflate *
+                                                  static_cast<float>(dpi_scale_));
         const bool poll_near = WindowStyles::IsCursorInsideRect(
-            poll_win_x + poll_dot_min_x, poll_win_y, static_cast<int>(poll_dot),
-            static_cast<int>(poll_dot),
-            static_cast<int>(metrics::mini_hover_inflate *
-                             static_cast<float>(dpi_scale_)));
-        if (poll_near == poll_near_dot_) {
+            poll_win_x + poll_dot_min_x, poll_win_y, poll_dot_px, poll_dot_px,
+            poll_inflate);
+        const bool poll_hover_dot = WindowStyles::IsCursorInsideRect(
+            poll_win_x + poll_dot_min_x, poll_win_y, poll_dot_px, poll_dot_px, 0);
+        const bool poll_button_down = WindowStyles::LeftMouseButtonDown();
+        if (poll_near == poll_near_dot_ && poll_hover_dot == poll_hover_dot_ &&
+            poll_button_down == poll_button_down_) {
             return;  // Nothing changed; skip the full frame render.
         }
         poll_near_dot_ = poll_near;
+        poll_hover_dot_ = poll_hover_dot;
+        poll_button_down_ = poll_button_down;
         dirty_ = true;
     }
 
@@ -414,8 +434,10 @@ void Overlay::DrawBadge() {
             float x = center.x + 10.0f * scale - group_w * 0.5f;
             for (int i = 0; i < 5; ++i) {
                 float level = avg;
-                if (!reduce_motion_ && levels.size() >= static_cast<std::size_t>(5)) {
-                    level = levels[levels.size() - 5 + static_cast<std::size_t>(i)];
+                if (!reduce_motion_ && waveform_.Size() >= static_cast<std::size_t>(5)) {
+                    // Oldest-first indexed read (same order as levels[] above);
+                    // WaveformRing::At is the bounds-checked hot accessor.
+                    level = waveform_.At(waveform_.Size() - 5 + static_cast<std::size_t>(i));
                 }
                 const float h = std::clamp(2.0f + level * max_h, 2.0f * scale, max_h);
                 draw.AddRectFilled(ImVec2(x, base_y - h), ImVec2(x + bar_w, base_y),

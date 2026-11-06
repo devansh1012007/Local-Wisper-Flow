@@ -76,9 +76,16 @@ private:
     // the dwell/fade bookkeeping and a cheap OS hover poll. Any SetState/
     // PushLevel/OnContentScale/UpdateDrag input sets dirty_ again.
     bool dirty_ = true;
-    // INVARIANT: poll_near_dot_ is the last hover-poll verdict; a change
-    // means the pass-through state flips, so the badge must repaint.
+    // INVARIANT: poll_near_dot_ is the last hover-poll verdict for the
+    // inflated pass-through zone; poll_hover_dot_ is the last verdict for the
+    // exact dot rect; poll_button_down_ is the last physical left-button
+    // state. A change in ANY of them means the badge must repaint: the
+    // inflated zone alone cannot see intra-zone dot entry/exit (hover alpha
+    // 0.55 <-> 1.0) or a click while the cursor is parked over the dot
+    // (R-W2-002).
     bool poll_near_dot_ = false;
+    bool poll_hover_dot_ = false;
+    bool poll_button_down_ = false;
     // INVARIANT: levels_scratch_ is reused across Listening frames so the
     // per-frame render performs zero heap allocations.
     std::vector<float> levels_scratch_;

@@ -307,13 +307,14 @@ TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete s
 TEST_CASE("mini badge alphas meet the mockup contrast floors") {
     namespace metrics = lwf::ui::metrics;
     // GUI-A6: mockup section 2 note pins the Ready badge at "55 percent
-    // opacity, 100 on hover". The tokens must carry those values so the idle
-    // badge and the status word stay legible over the desktop.
-    CHECK(metrics::mini_idle_alpha >= 0.55f);
-    CHECK(metrics::mini_active_alpha >= 1.0f);
-    CHECK(metrics::mini_active_alpha <= 1.0f);
+    // opacity, 100 on hover". The tokens must carry those exact values so the
+    // idle badge and the status word stay legible over the desktop.
+    // (R-W2-003-002: exact pins, not floors — drift above the mockup is a
+    // mockup violation and must fail the test, not slide by as headroom.)
+    CHECK(metrics::mini_idle_alpha == 0.55f);
+    CHECK(metrics::mini_active_alpha == 1.0f);
     // The window reserves room for the attention message at the wider width.
-    CHECK(metrics::mini_message_w >= 250.0f);
+    CHECK(metrics::mini_message_w == 250.0f);
     // "Saved" dwell (mockup motion table: 1.5 s).
     CHECK(metrics::saved_dwell == 1.5f);
 }
@@ -352,9 +353,164 @@ TEST_CASE("mini status word is drawn at badge alpha without a discount") {
     const std::string content((std::istreambuf_iterator<char>(overlay)),
                               std::istreambuf_iterator<char>());
     CHECK(content.find("Pack(kDarkPalette.muted, badge_alpha)") != std::string::npos);
-    CHECK(content.find("0.75f * badge_alpha") == std::string::npos);
+    // R-W2-003-003: forbid the CLASS, not one literal. "* badge_alpha" must
+    // appear exactly once (the intended surface base dimming
+    // `surface_alpha * badge_alpha` on the badge circle); any numeric
+    // `0.xf * badge_alpha` discount makes it twice. "badge_alpha * " with a
+    // trailing space catches the reversed operand order while excluding
+    // the two legitimate `badge_alpha *= metrics::...` lines.
+    const auto count_occurrences = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    CHECK(count_occurrences(content, "* badge_alpha") == 1);
+    CHECK(content.find("badge_alpha * ") == std::string::npos);
     // The attention message must render through the scoped 13px font.
     CHECK(content.find("ImGui::PushFont(message_font_, metrics::font_body_px)") !=
           std::string::npos);
     CHECK(content.find("ImGui::PopFont()") != std::string::npos);
+    // R-W2-003-004: ordering inside DrawAttentionMessage — PushFont must wrap
+    // both CalcTextSize and AddText (scoped to the function so the status-word
+    // CalcTextSize in DrawBadge, which precedes it in the file, is excluded).
+    const std::size_t fn = content.find("void Overlay::DrawAttentionMessage");
+    REQUIRE(fn != std::string::npos);
+    const std::string fn_body = content.substr(fn);
+    const std::size_t push = fn_body.find("ImGui::PushFont(message_font_,");
+    const std::size_t calc = fn_body.find("ImGui::CalcTextSize(");
+    const std::size_t add = fn_body.find("draw.AddText(");
+    const std::size_t pop = fn_body.find("ImGui::PopFont()");
+    REQUIRE(push != std::string::npos);
+    REQUIRE(calc != std::string::npos);
+    REQUIRE(add != std::string::npos);
+    REQUIRE(pop != std::string::npos);
+    CHECK(push < calc);
+    CHECK(calc < add);
+    CHECK(add < pop);
+}
+
+TEST_CASE("waveform ring covers partial fill empty and pre-filled scratch") {
+    // R-W2-003-005 + P2.1/P2.2: the filled < capacity branch (start = 0),
+    // the zero-sample contract, and out.clear() over a pre-filled buffer.
+    // Push 5 into cap 64: oldest-first order from the start-0 branch.
+    OverlayModel::WaveformRing ring(64);
+    for (int i = 0; i < 5; ++i) {
+        ring.Push(static_cast<float>(i));
+    }
+    CHECK(ring.Size() == 5);
+    std::vector<float> scratch;
+    ring.SnapshotInto(scratch);
+    REQUIRE(scratch.size() == 5);
+    CHECK(scratch == std::vector<float>({0.0f, 1.0f, 2.0f, 3.0f, 4.0f}));
+    CHECK(ring.At(0) == 0.0f);
+    CHECK(ring.At(4) == 4.0f);
+    CHECK_THROWS_AS(ring.At(5), std::out_of_range);
+    // Pre-filled scratch: no sentinel survives, size is exactly filled_.
+    std::vector<float> filled_scratch(100, -1.0f);
+    ring.SnapshotInto(filled_scratch);
+    REQUIRE(filled_scratch.size() == 5);
+    CHECK(filled_scratch == std::vector<float>({0.0f, 1.0f, 2.0f, 3.0f, 4.0f}));
+    // Empty ring: At throws (0 >= filled_ 0), SnapshotInto writes nothing.
+    OverlayModel::WaveformRing empty(64);
+    CHECK(empty.Size() == 0);
+    CHECK_THROWS_AS(empty.At(0), std::out_of_range);
+    std::vector<float> empty_scratch(3, -1.0f);
+    empty.SnapshotInto(empty_scratch);
+    CHECK(empty_scratch.empty());
+}
+
+TEST_CASE("mini idle early-out wakeup wiring is guarded") {
+    // R-W2-002 / P2.3 source-scan guard (lwf_tests does not link ImGui): the
+    // idle skip is only safe while every wakeup path keeps dirty_ set and the
+    // poll verdicts cover inflated zone + exact dot + button state. Any dropped
+    // setter below would freeze the badge without failing other tests.
+    std::ifstream overlay("src/ui/Overlay.cpp");
+    REQUIRE(static_cast<bool>(overlay));
+    const std::string content((std::istreambuf_iterator<char>(overlay)),
+                              std::istreambuf_iterator<char>());
+    const auto count_occurrences = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    // Wakeups: SetState, PushLevel, UpdateDrag, DPI apply and the poll itself.
+    CHECK(count_occurrences(content, "dirty_ = true") >= 3);
+    // Font-cache invalidation at the DPI-apply sites (SetWorkArea + re-apply).
+    CHECK(count_occurrences(content, "cached_status_valid_ = false") >= 1);
+    // R-W2-002: exact-dot hover verdict + physical button poll in the idle
+    // early-out; three IsCursorInsideRect sites (inflated, exact, DrawBadge).
+    CHECK(content.find("poll_hover_dot_") != std::string::npos);
+    CHECK(content.find("poll_hover_dot_ = poll_hover_dot") != std::string::npos);
+    CHECK(content.find("LeftMouseButtonDown()") != std::string::npos);
+    CHECK(count_occurrences(content, "IsCursorInsideRect(") >= 3);
+}
+
+TEST_CASE("main window keyboard nav and commit-on-deactivate wiring") {
+    // R-W2-003-001 (MAJOR) / P1 source-scan guard for the A1/A3 delta:
+    // lwf_tests does not link ImGui, so the MainWindow wiring is guarded
+    // lexically, the same pattern as the wave-1 T-001 gate and the
+    // Overlay scans above. Fail-before: 3aa4329^ contains none of
+    // NavEnableKeyboard / copied_until_ and only the model-path
+    // IsItemDeactivatedAfterEdit site, so every A1/A3 behavior marker below
+    // fails pre-fix (the pre-existing stt_provider settings key is the lone
+    // exception and guards the cloud branch against removal, not against the
+    // pre-fix tree).
+    std::ifstream main_window("src/ui/MainWindow.cpp");
+    REQUIRE(static_cast<bool>(main_window));
+    const std::string content((std::istreambuf_iterator<char>(main_window)),
+                              std::istreambuf_iterator<char>());
+    const auto count_occurrences = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    // A1: keyboard nav opt-in on the IO config and both InvisibleButtons
+    // (ToggleSwitch + rail page buttons).
+    CHECK(content.find("NavEnableKeyboard") != std::string::npos);
+    CHECK(count_occurrences(content, "ImGuiButtonFlags_EnableNav") >= 2);
+    // R-W2-001: the rail switches on the InvisibleButton activation return
+    // (covers keyboard), never on mouse-only IsItemClicked.
+    CHECK(content.find("const bool pressed =") != std::string::npos);
+    CHECK(content.find("InvisibleButton(item.id") != std::string::npos);
+    CHECK(content.find("if (ImGui::IsItemClicked(") == std::string::npos);
+    // Focus restore is NavActive-gated and fires before SetKeyboardFocusHere
+    // is handed to the next item.
+    const std::size_t nav_active = content.find("NavActive");
+    const std::size_t focus_here = content.find("SetKeyboardFocusHere");
+    REQUIRE(nav_active != std::string::npos);
+    REQUIRE(focus_here != std::string::npos);
+    CHECK(nav_active < focus_here);
+    // R-W2-003: only SetVisible and Welcome-Finish arm the restore; the rail
+    // press must clear it (focus is already on the pressed item).
+    CHECK(count_occurrences(content, "page_focus_pending_ = true") == 2);
+    // A3: "Copied" dwell driven by copied_until_ and the shared token.
+    CHECK(content.find("copied_until_") != std::string::npos);
+    CHECK(content.find("\"Copied\"") != std::string::npos);
+    // A3: commit-on-deactivate on model path + both cleanup sliders.
+    CHECK(count_occurrences(content, "IsItemDeactivatedAfterEdit") >= 3);
+    // A3: cleanup sliders must not be re-wrapped in per-tick
+    // `if (SliderInt(...))` saves (the original bug).
+    const std::size_t cleanup = content.find("void MainWindow::DrawCleanupPage");
+    REQUIRE(cleanup != std::string::npos);
+    CHECK(content.find("if (ImGui::SliderInt(", cleanup) == std::string::npos);
+    // A3: validation errors clear on page switch / successful edit, and the
+    // Welcome finish saves through ApplyAndSave.
+    CHECK(count_occurrences(content, "validation_error_.clear()") >= 2);
+    const std::size_t welcome = content.find("void MainWindow::DrawWelcomePage");
+    REQUIRE(welcome != std::string::npos);
+    CHECK(count_occurrences(content.substr(welcome), "ApplyAndSave()") >= 2);
+    // Trust card cloud branch keys off the provider setting.
+    CHECK(content.find("stt_provider") != std::string::npos);
 }

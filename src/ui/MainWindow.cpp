@@ -385,7 +385,12 @@ void MainWindow::DrawRail(float scale) {
         // Restore keyboard focus after a page switch or re-show, only when the
         // user is actually driving with the keyboard (NavActive) so a mouse
         // click or tray pop never steals focus. The next focusable item (the
-        // first rail button) receives it.
+        // first rail button) receives it. Any mouse use cancels a stale arm:
+        // a mouse-first user who clicks anywhere (rail or content) must not
+        // have the next Tab yank focus back to the rail (R-W2-003).
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            page_focus_pending_ = false;
+        }
         if (page_focus_pending_ && ImGui::GetIO().NavActive) {
             ImGui::SetKeyboardFocusHere();
             page_focus_pending_ = false;
@@ -393,11 +398,21 @@ void MainWindow::DrawRail(float scale) {
         for (const NavItem& item : items) {
             const ImVec2 p = ImGui::GetCursorScreenPos();
             const float w = ImGui::GetContentRegionAvail().x;
-            ImGui::InvisibleButton(item.id, ImVec2(w, item_h), ImGuiButtonFlags_EnableNav);
-            if (ImGui::IsItemClicked()) {
+            // DECISION: switch on the InvisibleButton activation return, not
+            // IsItemClicked. Vendored IsItemClicked is IsMouseClicked &&
+            // IsItemHovered, while keyboard (nav) activation returns
+            // pressed=true without setting HoveredId, so discarding the
+            // return made Enter/Space on a focused rail item a no-op
+            // (R-W2-001). The return covers mouse and keyboard alike.
+            const bool pressed =
+                ImGui::InvisibleButton(item.id, ImVec2(w, item_h), ImGuiButtonFlags_EnableNav);
+            if (pressed) {
                 page_ = item.page;
                 validation_error_.clear();  // errors belong to the page that set them
-                page_focus_pending_ = true;
+                // Focus is already on the pressed item; never arm the restore
+                // here (mouse or keyboard). A stale arm would yank focus to
+                // the first rail button on a later Tab (R-W2-003).
+                page_focus_pending_ = false;
             }
             const bool active = page_ == item.page;
             const bool hovered = ImGui::IsItemHovered();
