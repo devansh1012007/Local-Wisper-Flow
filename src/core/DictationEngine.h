@@ -41,6 +41,10 @@ public:
     void Run();
 
     bool ProcessOne(int timeout_ms);
+    // Tick is safe to call from more than one thread: the streaming-segment
+    // commit inside it is serialized by commit_mutex_ (see
+    // MaybeCommitStreamingSegment). Production calls Tick only from the
+    // single Run() worker, but the class does not rely on that.
     void Tick();
 
     void PostEvent(EngineEventType type);
@@ -105,5 +109,11 @@ private:
     std::size_t chunk_count_ = 0;
     std::size_t speech_chunk_count_ = 0;
     mutable std::mutex text_mutex_;
+    // Serializes MaybeCommitStreamingSegment: without it two concurrent Tick
+    // callers can both load the same silence_start/committed values and both
+    // slice+commit the identical segment (check-then-act race). Held only
+    // for the duration of that one commit; never held across
+    // Finish()/StopAndTranscribe().
+    std::mutex commit_mutex_;
     std::string last_text_;
 };

@@ -214,6 +214,21 @@ void DictationEngine::MaybeCommitStreamingSegment() {
     if (!settings_.streaming_stt || streamer_ == nullptr) {
         return;
     }
+    // Fast no-op pre-check: when no silence has started there is nothing to
+    // commit. This keeps the common path lock-free and allocation-free; the
+    // full check below is repeated under commit_mutex_ because the atomics
+    // can change between this load and lock acquisition.
+    if (silence_start_samples_.load() < 0) {
+        return;
+    }
+    // DECISION: hold commit_mutex_ for the whole check-slice-advance-commit
+    // sequence so concurrent Tick callers cannot both derive the same
+    // [committed, silence_start) segment. CommitSegment is a non-blocking
+    // enqueue (StreamingDictator guards its own queue), so the lock is held
+    // only briefly and is never held across Finish()/StopAndTranscribe().
+    // Lock order is commit_mutex_ -> StreamingDictator::mutex_; nothing
+    // takes those in the opposite order.
+    std::lock_guard<std::mutex> lock(commit_mutex_);
     const std::int64_t silence_start = silence_start_samples_.load();
     if (silence_start < 0) {
         return;
