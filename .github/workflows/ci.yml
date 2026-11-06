@@ -69,7 +69,16 @@ jobs:
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DGRPC_URL=file://$ws/_deps-cache/grpc-v1.71.0-full.tar.gz" "-DLLAMA_URL=file://$ws/_deps-cache/llama-b10603.tar.gz"
 
       - name: Build (phase 1, builds llama)
-        run: cmake --build build --config Release -j 4
+        # Phase 1 exists to build+install llama only: with no llama-install
+        # present, LLAMA_READY is false, the `llama` target is a placeholder
+        # without the ggml link closure (llama b10603 objects reference
+        # ggml_rope_set_offset, absent from whisper v1.9.3's bundled ggml),
+        # so linking the app here is impossible by design. Build the
+        # llama_ext ExternalProject explicitly; phase 2 re-configures with
+        # find_package(llama) and the full build then links against the
+        # installed closure. (Linux: LWF_BUILD_FULL is off so llama_ext does
+        # not exist there; the project builds core-only and links fine cold.)
+        run: cmake --build build --config Release --target llama_ext -j 4
 
       - name: Configure (phase 2)
         run: |
