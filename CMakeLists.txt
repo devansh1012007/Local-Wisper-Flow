@@ -36,6 +36,23 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(doctest)
 
+# TonePlayer.cpp is part of lwf_core (always built) and #includes <miniaudio.h>,
+# so miniaudio is a genuine core dependency: declare it unconditionally here,
+# next to the other always-fetched deps. (It previously lived under
+# if(LWF_BUILD_FULL), which broke non-FULL Linux builds lacking the
+# gitignored _deps-src/ checkout.)
+FetchContent_Declare(
+    miniaudio
+    GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+    GIT_TAG        0.11.25
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(miniaudio)
+if(NOT TARGET miniaudio)
+    add_library(miniaudio INTERFACE)
+    target_include_directories(miniaudio INTERFACE "${miniaudio_SOURCE_DIR}")
+endif()
+
 set(LWF_CORE_SOURCES
     src/core/AppContextResolver.cpp
     src/core/AudioGain.cpp
@@ -90,8 +107,7 @@ set(LWF_CORE_SOURCES
 )
 
 add_library(lwf_core STATIC ${LWF_CORE_SOURCES})
-target_include_directories(lwf_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src"
-  "${CMAKE_CURRENT_SOURCE_DIR}/_deps-src/miniaudio")
+target_include_directories(lwf_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_definitions(lwf_core PUBLIC LWF_APP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(lwf_core PUBLIC nlohmann_json::nlohmann_json miniaudio)
 
@@ -209,18 +225,6 @@ if(LWF_BUILD_FULL)
         )
         message(STATUS "llama.cpp builds during this build - re-run cmake configure "
                        "afterwards so the full static-link closure is picked up")
-    endif()
-
-    FetchContent_Declare(
-        miniaudio
-        GIT_REPOSITORY https://github.com/mackron/miniaudio.git
-        GIT_TAG        0.11.25
-        GIT_SHALLOW    TRUE
-    )
-    FetchContent_MakeAvailable(miniaudio)
-    if(NOT TARGET miniaudio)
-        add_library(miniaudio INTERFACE)
-        target_include_directories(miniaudio INTERFACE "${miniaudio_SOURCE_DIR}")
     endif()
 
     set(BUILD_SHARED_LIBS      OFF CACHE BOOL "" FORCE)

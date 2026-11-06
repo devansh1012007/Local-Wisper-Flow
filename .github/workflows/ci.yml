@@ -30,7 +30,7 @@ jobs:
         run: sh scripts/check_hygiene.sh
 
       - name: Configure (phase 1)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLWF_BUILD_GRPC=OFF
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build (phase 1, builds llama)
         run: cmake --build build -j4
@@ -57,16 +57,24 @@ jobs:
             build/llama-ext
             build/llama-install
             build/downloads
-          key: windows-deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+            _deps-cache
+          key: windows-deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'scripts/fetch_deps.ps1') }}
+
+      - name: Fetch dependencies (tarballs + grpc submodules at pinned SHAs)
+        run: pwsh scripts/fetch_deps.ps1
 
       - name: Configure (phase 1)
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DLWF_BUILD_GRPC=OFF
+        run: |
+          $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DGRPC_URL=file:///$ws/_deps-cache/grpc-v1.71.0-full.tar.gz" "-DLLAMA_URL=file:///$ws/_deps-cache/llama-b10603.tar.gz"
 
       - name: Build (phase 1, builds llama)
         run: cmake --build build --config Release -j 4
 
       - name: Configure (phase 2)
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+        run: |
+          $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DGRPC_URL=file:///$ws/_deps-cache/grpc-v1.71.0-full.tar.gz" "-DLLAMA_URL=file:///$ws/_deps-cache/llama-b10603.tar.gz"
 
       - name: Build (phase 2)
         run: cmake --build build --config Release -j 4
