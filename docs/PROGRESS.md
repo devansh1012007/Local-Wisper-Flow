@@ -194,6 +194,14 @@ fix in flight). G3 zig pending (no zig on this box). G4 hygiene was FAIL
 
 ## Task log
 
+- 2026-11-06: T-001 improvement pass (W1-IMPR-A2): F1 MAJOR (ApplyImGuiStyle re-apply
+  path) FIXED via per-(context, scale) apply-on-change tracking in src/ui/theme/ThemePalette.{h,cpp};
+  F2 MAJOR (changed-behaviour regression coverage) FIXED via new source-scan TEST_CASE guarding
+  SetWindowFontScale removal + scoped PushFont design-px mechanism in tests/test_overlay_settings_ui.cpp;
+  F3 MINOR (mockup s4=14/s5=13 mapping) FIXED via approved-mapping pin in token test; token split DEFERRED;
+  F4 MINOR / F5 NIT DEFERRED. Scoped gates: build green, lwf-tests 218/218 passed, check_hygiene OK.
+  Report: docs/agent-ops/20261106-gui/reports/w1-improve/W1-IMPR-A2-T-001.md.
+
 - 2026-11-06: GUI-A2 (T-001) scoped fonts + design-px typography tokens: obsolete
   ImGui::SetWindowFontScale replaced with scoped ImGui::PushFont(nullptr, design_px)
   + ImGui::PopFont using new metrics::font_*_px design tokens (wordmark 18, page title
