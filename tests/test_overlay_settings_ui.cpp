@@ -217,3 +217,12 @@ TEST_CASE("contrast math matches the WCAG formula") {
     CHECK(std::abs(ContrastRatio(0xC9A96E, 0x14221D) - 7.35) < 0.02);
     CHECK(std::abs(ContrastRatio(0x1C2B26, 0xF6F1E4) - 13.09) < 0.02);
 }
+
+TEST_CASE("design px font tokens follow the mockup type scale") {
+    namespace metrics = lwf::ui::metrics;
+    CHECK(metrics::font_wordmark_px == 18.0f);
+    CHECK(metrics::font_page_title_px == 28.0f);
+    CHECK(metrics::font_card_title_px == 15.0f);
+    CHECK(metrics::font_body_px == 13.0f);
+    CHECK(metrics::font_mini_text_px == 8.5f);
+}

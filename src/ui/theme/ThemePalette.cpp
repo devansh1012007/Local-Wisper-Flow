@@ -46,8 +46,8 @@ void ApplyImGuiStyle(const Palette& palette, float scale) {
     style.IndentSpacing = metrics::space_m;
     style.GrabMinSize = 14.0f;
 
-    // The built-in font is scaled until real fonts are approved; the display
-    // sizes on the rail and page titles use SetWindowFontScale at call sites.
+    // DPI scaling only; display typography is scoped per call site via
+    // ImGui::PushFont(nullptr, design_px) with the metrics::font_*_px tokens.
     style.FontScaleMain = scale;
 
     ImVec4* c = style.Colors;

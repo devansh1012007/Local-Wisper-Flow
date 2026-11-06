@@ -36,8 +36,6 @@ using lwf::ui::Color;
 using lwf::ui::kDarkPalette;
 using lwf::ui::Pack;
 
-constexpr float kBaseFontPx = 13.0f;  // built-in font until real fonts are approved
-
 std::vector<std::string> SplitChord(const std::string& chord) {
     std::vector<std::string> parts;
     std::size_t start = 0;
@@ -264,6 +262,11 @@ void MainWindow::RunOnce(float) {
 
     const float scale = static_cast<float>(dpi_scale_);
 
+    // Body text renders at the design-px token; display sizes below push
+    // narrower scopes with their own design-px tokens. The DPI factor is
+    // applied once via style.FontScaleMain in ApplyImGuiStyle.
+    ImGui::PushFont(nullptr, metrics::font_body_px);
+
     // Host window fills the client area; rail and page are children.
     ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
@@ -303,6 +306,7 @@ void MainWindow::RunOnce(float) {
     }
 
     ImGui::End();
+    ImGui::PopFont();
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -347,10 +351,10 @@ void MainWindow::DrawRail(float scale) {
         draw.AddLine(ImVec2(rail_right - 1.0f, rail_pos.y),
                      ImVec2(rail_right - 1.0f, rail_pos.y + size.y), Pack(kDarkPalette.border));
 
-        // Wordmark at display size until real fonts land.
-        ImGui::SetWindowFontScale(18.0f / kBaseFontPx);
+        // Wordmark at the design size until real fonts land.
+        ImGui::PushFont(nullptr, metrics::font_wordmark_px);
         ImGui::TextUnformatted("Local Wisper Flow");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
         ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
         struct NavItem {
@@ -429,9 +433,9 @@ void MainWindow::DrawRail(float scale) {
 }
 
 void MainWindow::DrawPageChrome(const char* title, const char* subtitle, float scale) {
-    ImGui::SetWindowFontScale(28.0f / kBaseFontPx);
+    ImGui::PushFont(nullptr, metrics::font_page_title_px);
     ImGui::TextUnformatted(title);
-    ImGui::SetWindowFontScale(1.0f);
+    ImGui::PopFont();
     ImGui::TextDisabled("%s", subtitle);
     ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
 }
@@ -539,9 +543,9 @@ void MainWindow::DrawHomePage(float scale) {
 
     BeginCard("##card_now", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Right now");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
         const std::string hotkey = settings_.GetString("hotkey_ptt");
         const char* rest = nullptr;
         std::uint32_t status_color = kDarkPalette.ok;
@@ -579,9 +583,9 @@ void MainWindow::DrawHomePage(float scale) {
 
     BeginCard("##card_hotkey", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Hotkey");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
         DrawHotkeyChips(settings_.GetString("hotkey_ptt"), scale);
         ImGui::TextDisabled("Hold to speak, release to type.");
         if (ImGui::Button("Learn a new chord...")) {
@@ -592,9 +596,9 @@ void MainWindow::DrawHomePage(float scale) {
 
     BeginCard("##card_trust", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Trust");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
         ImGui::TextUnformatted("Everything runs on this computer.");
         ImGui::TextDisabled("Cloud speech is off.");
         // When cloud speech lands, this card switches to the mockup's cloud
@@ -604,9 +608,9 @@ void MainWindow::DrawHomePage(float scale) {
 
     BeginCard("##card_quick", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Quick settings");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
         bool dictation = settings_.GetBool("dictation_enabled");
         if (ToggleRow("Dictation", dictation, nullptr, scale)) {
             settings_.SetBool("dictation_enabled", !dictation);
@@ -628,9 +632,9 @@ void MainWindow::DrawHomePage(float scale) {
 
     BeginCard("##card_last", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Last dictation");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
         if (last_transcript_.empty()) {
             ImGui::TextDisabled("Nothing yet.");
         } else {
@@ -651,9 +655,9 @@ void MainWindow::DrawSpeechPage(float scale) {
 
     BeginCard("##card_model", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Model");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
 
         if (model_path_buffer_[0] == '\0') {
             const std::string current = settings_.GetString("whisper_model_path");
@@ -678,9 +682,9 @@ void MainWindow::DrawSpeechPage(float scale) {
 
     BeginCard("##card_lang", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Language");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
         const std::string current = settings_.GetString("whisper_language");
         if (ImGui::BeginCombo("##language", current.c_str())) {
             if (ImGui::Selectable("auto", current == "auto")) {
@@ -700,9 +704,9 @@ void MainWindow::DrawSpeechPage(float scale) {
 
     BeginCard("##card_listen", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Listening");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
         bool boost = settings_.GetBool("quiet_speech_boost");
         if (ToggleRow("Boost quiet speech", boost, "Lifts a soft voice without clipping", scale)) {
             settings_.SetBool("quiet_speech_boost", !boost);
@@ -720,9 +724,9 @@ void MainWindow::DrawCloudPage(float scale) {
 
     BeginCard("##card_cloud_provider", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Provider");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
 
         static const char* kProviderItems[] = {"local", "gnani", "elevenlabs", "muse"};
         const std::string provider = settings_.GetString("stt_provider");
@@ -747,9 +751,9 @@ void MainWindow::DrawCloudPage(float scale) {
 
     BeginCard("##card_cloud_consent", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Consent");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
 
         bool consent = settings_.GetBool("stt_consent_accepted");
         if (ToggleRow("I understand; enable cloud transcription", consent, nullptr, scale)) {
@@ -776,9 +780,9 @@ void MainWindow::DrawCleanupPage(float scale) {
 
     BeginCard("##card_cleanup", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Cleanup");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
 
         bool enabled = settings_.GetBool("cleanup_enabled");
         if (ToggleRow("Enable cleanup", enabled, nullptr, scale)) {
@@ -823,9 +827,9 @@ void MainWindow::DrawPrivacyPage(float scale) {
 
     BeginCard("##card_privacy", width, scale);
     {
-        ImGui::SetWindowFontScale(15.0f / kBaseFontPx);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Privacy");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
 
         bool debug_transcripts = settings_.GetBool("debug_log_transcripts");
         if (ToggleRow("Log transcript text", debug_transcripts,

@@ -96,7 +96,7 @@ bool Overlay::Init() {
     // size; style.FontScaleMain (set below) applies the DPI factor on top:
     // GetFontSize() == SizePixels * FontScaleMain.
     ImFontConfig label_font;
-    label_font.SizePixels = metrics::mini_text_px;
+    label_font.SizePixels = metrics::font_mini_text_px;
     io.Fonts->AddFontDefaultBitmap(&label_font);
 
     // Track monitor scale changes so the badge follows DPI moves live.
