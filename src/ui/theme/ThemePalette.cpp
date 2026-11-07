@@ -22,33 +22,55 @@ ImVec4 ToColor(std::uint32_t rgb, float alpha = 1.0f) {
     return ImVec4(r, g, b, std::clamp(alpha, 0.0f, 1.0f));
 }
 
+// Last (ImGui context, window DPI scale) pair ApplyImGuiStyle applied through
+// ImGuiStyle. ImGuiStyle::ScaleAllSizes is cumulative (_MainScale *= scale
+// factor with lossy ImTrunc rounding) over a freshly initialized style, so it
+// must run only when the applied scale actually changes; this tracks the last
+// applied pair so a re-apply cannot drift.
+ImGuiContext* g_last_applied_context = nullptr;
+float g_last_applied_scale = 1.0f;
+
 }  // namespace
 
 void ApplyImGuiStyle(const Palette& palette, float scale) {
     ImGuiStyle& style = ImGui::GetStyle();
 
-    // Geometry from the token set.
-    style.WindowRounding = metrics::radius_card;
-    style.ChildRounding = metrics::radius_card;
-    style.PopupRounding = metrics::radius_control;
-    style.FrameRounding = metrics::radius_control;
-    style.GrabRounding = metrics::radius_pill;
-    style.ScrollbarRounding = metrics::radius_pill;
-    style.ScrollbarSize = 10.0f;
-    style.WindowBorderSize = 1.0f;
-    style.ChildBorderSize = 1.0f;
-    style.PopupBorderSize = 1.0f;
-    style.FrameBorderSize = 0.0f;
-    style.WindowPadding = ImVec2(metrics::space_m, metrics::space_m);
-    style.FramePadding = ImVec2(metrics::space_s, 6.0f);
-    style.ItemSpacing = ImVec2(metrics::space_s, metrics::space_s);
-    style.ItemInnerSpacing = ImVec2(metrics::space_s, 4.0f);
-    style.IndentSpacing = metrics::space_m;
-    style.GrabMinSize = 14.0f;
+    // Apply the token geometry and the DPI scale only when the applied scale
+    // actually changed for this ImGui context (init, or a live content-scale
+    // move). style.FontScaleMain is assigned absolutely below; ScaleAllSizes
+    // must not run twice for the same scale or its cumulative state drifts.
+    const bool applies = ImGui::GetCurrentContext() != g_last_applied_context ||
+                         scale != g_last_applied_scale;
+    if (applies) {
+        g_last_applied_context = ImGui::GetCurrentContext();
+        g_last_applied_scale = scale;
 
-    // The built-in font is scaled until real fonts are approved; the display
-    // sizes on the rail and page titles use SetWindowFontScale at call sites.
-    style.FontScaleMain = scale;
+        // Geometry from the token set.
+        style.WindowRounding = metrics::radius_card;
+        style.ChildRounding = metrics::radius_card;
+        style.PopupRounding = metrics::radius_control;
+        style.FrameRounding = metrics::radius_control;
+        style.GrabRounding = metrics::radius_pill;
+        style.ScrollbarRounding = metrics::radius_pill;
+        style.ScrollbarSize = 10.0f;
+        style.WindowBorderSize = 1.0f;
+        style.ChildBorderSize = 1.0f;
+        style.PopupBorderSize = 1.0f;
+        style.FrameBorderSize = 0.0f;
+        style.WindowPadding = ImVec2(metrics::space_m, metrics::space_m);
+        style.FramePadding = ImVec2(metrics::space_s, 6.0f);
+        style.ItemSpacing = ImVec2(metrics::space_s, metrics::space_s);
+        style.ItemInnerSpacing = ImVec2(metrics::space_s, 4.0f);
+        style.IndentSpacing = metrics::space_m;
+        style.GrabMinSize = 14.0f;
+
+        // DPI scaling only; display typography is scoped per call site via
+        // ImGui::PushFont(nullptr, design_px) with the metrics::font_*_px tokens.
+        // The window DPI factor is applied exactly once: style.FontScaleMain is
+        // absolute, and ScaleAllSizes runs once per actual scale change.
+        style.FontScaleMain = scale;
+        style.ScaleAllSizes(scale);
+    }
 
     ImVec4* c = style.Colors;
     c[ImGuiCol_Text] = ToColor(palette.text);
@@ -110,10 +132,6 @@ void ApplyImGuiStyle(const Palette& palette, float scale) {
     c[ImGuiCol_DragDropTarget] = ToColor(palette.accent);
     c[ImGuiCol_NavCursor] = ToColor(palette.focus);
     c[ImGuiCol_ModalWindowDimBg] = ToColor(palette.bg, 0.60f);
-
-    if (scale != 1.0f) {
-        style.ScaleAllSizes(scale);
-    }
 }
 
 }  // namespace lwf::ui

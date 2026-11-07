@@ -4,6 +4,11 @@ project(LocalWisperFlow VERSION 0.1.0 LANGUAGES C CXX)
 
 if(WIN32)
     add_compile_definitions(_USE_MATH_DEFINES)
+    # windows.h defines global min/max macros unless NOMINMAX is defined,
+    # which breaks std::min/std::max in any translation unit that pulls in
+    # windows.h (e.g. glfw3native.h -> windows.h). Define it project-wide,
+    # the same guard already used per-file in src/os/*.cpp.
+    add_compile_definitions(NOMINMAX)
 endif()
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING
@@ -35,6 +40,23 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 FetchContent_MakeAvailable(doctest)
+
+# TonePlayer.cpp is part of lwf_core (always built) and #includes <miniaudio.h>,
+# so miniaudio is a genuine core dependency: declare it unconditionally here,
+# next to the other always-fetched deps. (It previously lived under
+# if(LWF_BUILD_FULL), which broke non-FULL Linux builds lacking the
+# gitignored _deps-src/ checkout.)
+FetchContent_Declare(
+    miniaudio
+    GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+    GIT_TAG        0.11.25
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(miniaudio)
+if(NOT TARGET miniaudio)
+    add_library(miniaudio INTERFACE)
+    target_include_directories(miniaudio INTERFACE "${miniaudio_SOURCE_DIR}")
+endif()
 
 set(LWF_CORE_SOURCES
     src/core/AppContextResolver.cpp
@@ -86,12 +108,16 @@ set(LWF_CORE_SOURCES
     src/core/TransformManager.cpp
     src/core/UiBus.cpp
     src/audio/TonePlayer.cpp
-    src/stt/cloud/WindowsHttpClient.cpp
 )
 
 add_library(lwf_core STATIC ${LWF_CORE_SOURCES})
-target_include_directories(lwf_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src"
-  "${CMAKE_CURRENT_SOURCE_DIR}/_deps-src/miniaudio")
+# WindowsHttpClient.cpp unconditionally #includes <windows.h>/<winhttp.h>; like
+# the src/os/* adapters it must stay out of the non-Windows build. Its only
+# consumer (main.cpp) is inside #ifdef _WIN32, so gating here is behavior-neutral.
+if(WIN32)
+    target_sources(lwf_core PRIVATE src/stt/cloud/WindowsHttpClient.cpp)
+endif()
+target_include_directories(lwf_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_definitions(lwf_core PUBLIC LWF_APP_VERSION="${PROJECT_VERSION}")
 target_link_libraries(lwf_core PUBLIC nlohmann_json::nlohmann_json miniaudio)
 
@@ -211,18 +237,6 @@ if(LWF_BUILD_FULL)
                        "afterwards so the full static-link closure is picked up")
     endif()
 
-    FetchContent_Declare(
-        miniaudio
-        GIT_REPOSITORY https://github.com/mackron/miniaudio.git
-        GIT_TAG        0.11.25
-        GIT_SHALLOW    TRUE
-    )
-    FetchContent_MakeAvailable(miniaudio)
-    if(NOT TARGET miniaudio)
-        add_library(miniaudio INTERFACE)
-        target_include_directories(miniaudio INTERFACE "${miniaudio_SOURCE_DIR}")
-    endif()
-
     set(BUILD_SHARED_LIBS      OFF CACHE BOOL "" FORCE)
     set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(WHISPER_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
@@ -257,6 +271,17 @@ if(LWF_BUILD_FULL)
     set(protobuf_BUILD_TESTS     OFF CACHE BOOL "" FORCE)
     set(protobuf_INSTALL         OFF CACHE BOOL "" FORCE)
     set(utf8_range_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+
+    # MinGW + GCC cannot drive BoringSSL's vendored GNU-asm field-element
+    # backends (the fiat_*.S files are ELF/Apple-gated, and BoringSSL's generated
+    # NASM sources do not include them), which leaves bssl.exe with undefined
+    # fiat_p256_adx_mul/sqr references. Fall back to the portable C field-element
+    # arithmetic via OPENSSL_NO_ASM (the same fallback gRPC's Bazel config uses).
+    # Reaching the subproject through CMAKE_C_FLAGS/CMAKE_CXX_FLAGS (rather than
+    # only the subproject's own compiler-ID checks) keeps the flag visible to the
+    # BoringSSL add_subdirectory scope.
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -DOPENSSL_NO_ASM")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DOPENSSL_NO_ASM")
 
     FetchContent_Declare(
         grpc

@@ -8,6 +8,7 @@
 #include <shellapi.h>
 
 #include <condition_variable>
+#include <cstdint>
 #include <mutex>
 
 #pragma comment(lib, "shell32.lib")

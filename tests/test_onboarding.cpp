@@ -27,7 +27,8 @@ TEST_CASE("sha256 known vectors") {
 }
 
 TEST_CASE("sha256 of a file matches the digest of its content") {
-    const std::string path = "/tmp/lwf_sha.bin";
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_sha.bin").string();
     WriteFile(path, "hello onboarding file");
     bool ok = false;
     const std::string digest = lwf_sha256::HexDigestOfFile(path, ok);
@@ -35,12 +36,16 @@ TEST_CASE("sha256 of a file matches the digest of its content") {
     CHECK(digest == lwf_sha256::HexDigest("hello onboarding file"));
 
     bool missing_ok = true;
-    CHECK(lwf_sha256::HexDigestOfFile("/tmp/lwf_sha_missing.bin", missing_ok).empty());
+    CHECK(lwf_sha256::HexDigestOfFile(
+              (std::filesystem::temp_directory_path() / "lwf_sha_missing.bin").string(),
+              missing_ok)
+              .empty());
     CHECK_FALSE(missing_ok);
 }
 
 TEST_CASE("models catalog parses entries and flags missing hashes") {
-    const std::string path = "/tmp/lwf_models.json";
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_models.json").string();
     WriteFile(path, R"json({
         "whisper": [
             {"name": "ggml-base.en.bin", "url": "https://example/ggml-base.en.bin",
@@ -66,7 +71,8 @@ TEST_CASE("models catalog parses entries and flags missing hashes") {
     CHECK(broken.whisper.empty());
     CHECK_FALSE(broken.warnings.empty());
 
-    const Onboarding::ModelCatalog missing = Onboarding::ParseModelsJson("/tmp/lwf_models_absent.json");
+    const Onboarding::ModelCatalog missing = Onboarding::ParseModelsJson(
+        (std::filesystem::temp_directory_path() / "lwf_models_absent.json").string());
     CHECK(missing.whisper.empty());
     CHECK_FALSE(missing.warnings.empty());
 }

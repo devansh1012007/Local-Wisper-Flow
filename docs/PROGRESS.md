@@ -184,7 +184,7 @@ build; Windows CI runner is MSVC):
 | WB3 | Full window collapsed to 140x70 pill (black screen) | DONE | 1a8304f | G1 (MinGW exe build) | partial: both windows render (window capture); clicks untested | root cause: `ImGui::CreateContext()` restores the PREVIOUS context after init; both Init() used `GetCurrentContext()`, so both windows shared ctx_A; the overlay's backend then overwrote `BackendPlatformUserData` (the "already initialized" assert is compiled out in Release); main window rendered with `DisplaySize=140x70`, viewport (0,0,140,70) = bottom-left in GL |
 | WB4 | Earlier dark-theme contrast change reverted | DONE | (in 1a8304f) | n/a | n/a | lighter palette was a misdiagnosis; mockup-exact tokens restored (tests/test_overlay_settings_ui.cpp enforces them) |
 | WB5 | Mini badge + Full window verified by capture | DONE | 1a8304f | G1 | partial | PrintWindow render shows rail/nav items/Welcome page with card and mini badge (mic + Ready) |
-| WB6 | CI repairs (hygiene, whisper patch stderr, lwf_tests) | IN PROGRESS | | | | sub agents launched 2026-11-06; see task log |
+| WB6 | CI repairs (hygiene, whisper patch stderr, lwf_tests) | DONE | d643c4e..f9c3431 | see task log | partial | sub agents launched 2026-11-06; dep provision + Linux green; windows compile reached; NOMINMAX fix f9c3431 pending CI |
 
 Gates: G1 OK (MinGW `-j4` build of the exe). G2 not green this session —
 `lwf_tests` does not compile (stale `ScriptedLlm` call sites in test files;
@@ -193,6 +193,47 @@ fix in flight). G3 zig pending (no zig on this box). G4 hygiene was FAIL
 `src/os/WindowStyles.cpp` (same session); G5 not run.
 
 ## Task log
+
+- 2026-11-07: GUI fix/improvement wave run 20261106-gui CLOSED (branch
+  `fix/gui-typography-dpi`; see `docs/agent-ops/20261106-gui/SUMMARY.md`).
+  - GUI-A2 (T-001): scoped PushFont + design-px typography tokens replace
+    obsolete SetWindowFontScale (b21e40f; ApplyImGuiStyle per-context scale
+    gate e0a3882).
+  - GUI-A1/A3 (T-002/T-003): rail/toggle keyboard nav (NavEnableKeyboard,
+    EnableNav, 2 px focus ring, NavActive-gated restore), Copied feedback,
+    slider deactivation commit, Welcome save path (3aa4329; review fixes
+    07cc957).
+  - GUI-A5/A6 (T-005/T-006): mini idle early-out + alloc-free waveform,
+    contrast uplift to mockup alphas (0.55 idle / 1.0 active, box 250 px,
+    13 px message font) (d9e86dd; review fixes 07cc957).
+  - ENG-B1 (T-007): streaming double-commit race serialized via
+    commit_mutex_ (8223834; Tick contract narrowed b0cfe38).
+  - Independent code+test review per wave; final integration review
+    APPROVE-WITH-CHANGES (0 BLOCKER/0 MAJOR). Gates at close: build green,
+    lwf-tests 1/1 Passed, check_hygiene OK, check_no_network OK.
+  - CI pre-existing dependency-provision failures repaired (miniaudio
+    FetchContent hoisted out of FULL; Windows CI fetches deps via
+    scripts/fetch_deps.ps1 + file:/// tarball URLs; WindowsHttpClient gated
+    to WIN32) in d643c4e/94901cc/081d90d; MSVC-only glfw3native.h→windows.h
+    min/max macro collision fixed by project-wide NOMINMAX on WIN32 (f9c3431).
+    Linux CI job: success (run 42262321737). Windows CI: past configure and
+    dependency provision; reached app compile; f9c3431 run pending. NOT
+    claimed green yet — will record on completion. G3 zig pending (no zig).
+
+- 2026-11-06: T-001 improvement pass (W1-IMPR-A2): F1 MAJOR (ApplyImGuiStyle re-apply
+  path) FIXED via per-(context, scale) apply-on-change tracking in src/ui/theme/ThemePalette.{h,cpp};
+  F2 MAJOR (changed-behaviour regression coverage) FIXED via new source-scan TEST_CASE guarding
+  SetWindowFontScale removal + scoped PushFont design-px mechanism in tests/test_overlay_settings_ui.cpp;
+  F3 MINOR (mockup s4=14/s5=13 mapping) FIXED via approved-mapping pin in token test; token split DEFERRED;
+  F4 MINOR / F5 NIT DEFERRED. Scoped gates: build green, lwf-tests 218/218 passed, check_hygiene OK.
+  Report: docs/agent-ops/20261106-gui/reports/w1-improve/W1-IMPR-A2-T-001.md.
+
+- 2026-11-06: GUI-A2 (T-001) scoped fonts + design-px typography tokens: obsolete
+  ImGui::SetWindowFontScale replaced with scoped ImGui::PushFont(nullptr, design_px)
+  + ImGui::PopFont using new metrics::font_*_px design tokens (wordmark 18, page title
+  28, card title 15, body 13, mini 8.5); FontScaleMain applies DPI once; token
+  regression test added. Scoped gates: build green, lwf-tests 1/1 Passed, check_hygiene
+  OK. Report: docs/agent-ops/20261106-gui/reports/w1-impl/W1-IMPL-A2-T-001.md.
 
 - 2026-11-06: Windows bring-up + GUI: model path exe-dir-parent/cwd fallbacks
   (ba46cbf/db4e40a), GL context re-assert (b7f677d), root-cause fix for the
@@ -205,3 +246,9 @@ fix in flight). G3 zig pending (no zig on this box). G4 hygiene was FAIL
   "Windows bring-up + GUI (2026-11-06)" above.
 
 - 2026-11-04: Fixed CI `windows` job failure by pinning the runner to `windows-2022` (the `windows-2025-vs2026` image no longer provides the Visual Studio 2022 generator used by this workflow). Gates for this workflow-only change: G1-G5 not run locally.
+
+- 2026-11-06: Full Windows/MinGW rebuild green again after dependency install + dep fixes.
+  - BoringSSL bssl.exe link failure (undefined `fiat_p256_adx_mul`/`fiat_p256_adx_sqr`) root-caused: BoringSSL on WIN32+x86_64 enables the NASM backend whose source list omits the GNU-asm fiat field-element implementations, while the C++ still emits calls to those symbols. Fixed two ways: (1) vendored `third_party/boringssl-with-bazel/src/CMakeLists.txt` now sets `OPENSSL_NO_ASM ON` for MinGW+GNU (portable C fallback, same as gRPC's Bazel CPPFLAGS); (2) repo `CMakeLists.txt` propagates `-DOPENSSL_NO_ASM` via `CMAKE_C_FLAGS`/`CMAKE_CXX_FLAGS` into the gRPC add_subdirectory scope (subproject-internal compiler-ID checks alone did not take effect). Vendored `re2/util/pcre.h` keeps the GCC-15-needed `#include <cstdint>`.
+  - Build: clean `cmake --build build --parallel 2` (user cap) — `local-wisper-flow.exe` (32 MB), `bssl.exe`, full gRPC stack, whisper, llama_ext all built; `lwf_tests`/`lwf-bench`/`lwf-cloud-bench` compiled.
+  - Gates: G1 (MinGW full build) OK, G2 ctest 23/23 green (lwf-tests 16.5s; re2 suites green; config_v0 compat inside suite), G4 check_hygiene.sh OK, check_no_network.sh OK, G5 config_v0 backward-compat via suite; G3 zig pending (no zig on this box).
+  - Phase-2 llama install-closure reconfigure re-run; whisper picked up installed llama (WHISPER_USE_SYSTEM_GGML).

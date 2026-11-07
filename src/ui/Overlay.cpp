@@ -96,8 +96,21 @@ bool Overlay::Init() {
     // size; style.FontScaleMain (set below) applies the DPI factor on top:
     // GetFontSize() == SizePixels * FontScaleMain.
     ImFontConfig label_font;
-    label_font.SizePixels = metrics::mini_text_px;
+    label_font.SizePixels = metrics::font_mini_text_px;
     io.Fonts->AddFontDefaultBitmap(&label_font);
+
+    // Second 13px bitmap font for the attention message (mockup type scale
+    // helper text size: metrics::font_body_px). DrawAttentionMessage pushes
+    // this font via PushFont(message_font_, font_body_px) so the message
+    // renders at the body size instead of the 8.5px status-label size.
+    ImFontConfig message_font_config;
+    message_font_config.SizePixels = metrics::font_body_px;
+    message_font_ = io.Fonts->AddFontDefaultBitmap(&message_font_config);
+    if (message_font_ == nullptr) {
+        // Fall back to the default (already added) font; the PushFont scope
+        // in DrawAttentionMessage still applies the body design size.
+        message_font_ = io.Fonts->Fonts[0];
+    }
 
     // Track monitor scale changes so the badge follows DPI moves live.
     glfwSetWindowUserPointer(window_, this);
@@ -139,20 +152,27 @@ void Overlay::SetState(OverlayModel::PillState state, const std::string& message
     message_ = message;
     const OverlayModel::Visual visual = OverlayModel::VisualFor(state, message);
     dwell_remaining_ms_ = static_cast<float>(visual.dwell_after_ms);
+    // SECURITY: none (no auth path) — but the badge must repaint, and the
+    // idle early-out must not swallow a dwell/fade restart.
+    dirty_ = true;
 }
 
 void Overlay::PushLevel(float level) {
     waveform_.Push(level);
+    dirty_ = true;
 }
 
 void Overlay::SetReduceMotion(bool reduce) {
     reduce_motion_ = reduce;
+    dirty_ = true;
 }
 
 void Overlay::SetWorkArea(const OverlayModel::Rect& area, double dpi_scale) {
     work_area_ = area;
     dpi_scale_ = dpi_scale;
     pending_dpi_scale_ = 0.0f;
+    cached_status_valid_ = false;
+    dirty_ = true;
     if (window_ != nullptr) {
         ApplyWindowGeometry();
     }
@@ -165,6 +185,7 @@ void Overlay::SetSavedPosition(int x, int y) {
     has_saved_position_ = true;
     saved_x_ = x;
     saved_y_ = y;
+    dirty_ = true;
 }
 
 void Overlay::SetPositionPersistHandler(std::function<void(int, int)> handler) {
@@ -175,6 +196,7 @@ void Overlay::OnContentScale(GLFWwindow* window, float scale_x, float) {
     if (Overlay* self = static_cast<Overlay*>(glfwGetWindowUserPointer(window))) {
         if (scale_x > 0.0f) {
             self->pending_dpi_scale_ = scale_x;
+            self->dirty_ = true;
         }
     }
 }
@@ -237,6 +259,55 @@ void Overlay::RenderFrame(float delta_seconds) {
                       : std::clamp(fade_alpha_ + delta_seconds / metrics::fade_in, 0.0f, 1.0f);
     animation_time_ += delta_seconds;
 
+    // Idle early-out (GUI-A5): Ready/Paused are non-animated once the fade
+    // settles, so skip the GL/ImGui pass while dirty_ is clear. Always keep
+    // the dwell/fade bookkeeping above (done), then poll hover cheaply at the
+    // OS level so mouse entry still wakes the badge. A pending DPI scale or
+    // an active drag forces a full frame. Other states keep rendering.
+    //
+    // The poll watches three verdicts, not one (R-W2-002): the inflated
+    // pass-through zone (near_dot, as DrawBadge computes it), the EXACT dot
+    // rect (hovered_/badge alpha), and the physical left-button state. The
+    // old poll watched only the inflated zone, so moving from the ring onto
+    // the dot changed nothing in the verdict: hovered_ stayed false (badge
+    // stuck at idle alpha, IsMouseClicked never observed) and a click while
+    // the cursor was parked over the dot never woke the frame. The exact-dot
+    // poll uses the same center geometry as DrawBadge's dot_min (window
+    // width centered, top-anchored); a fractional-DPI ±1px difference from
+    // ImGui DisplaySize can cause at most one extra frame per crossing and
+    // self-corrects on the next tick, since the verdict is re-polled every
+    // frame while idle (cf. R-W2-005).
+    const bool fade_settled = reduce_motion_ || fade_alpha_ >= 1.0f;
+    if (!dirty_ && fade_settled && !dragging_ && pending_dpi_scale_ <= 0.0f &&
+        (state_ == OverlayModel::PillState::Ready ||
+         state_ == OverlayModel::PillState::Paused)) {
+        int poll_win_x = 0;
+        int poll_win_y = 0;
+        int poll_win_w = 0;
+        glfwGetWindowPos(window_, &poll_win_x, &poll_win_y);
+        glfwGetWindowSize(window_, &poll_win_w, nullptr);
+        const float poll_dot = metrics::mini_dot * static_cast<float>(dpi_scale_);
+        const int poll_dot_px = static_cast<int>(poll_dot);
+        const int poll_dot_min_x =
+            (poll_win_w - poll_dot_px) / 2;
+        const int poll_inflate = static_cast<int>(metrics::mini_hover_inflate *
+                                                  static_cast<float>(dpi_scale_));
+        const bool poll_near = WindowStyles::IsCursorInsideRect(
+            poll_win_x + poll_dot_min_x, poll_win_y, poll_dot_px, poll_dot_px,
+            poll_inflate);
+        const bool poll_hover_dot = WindowStyles::IsCursorInsideRect(
+            poll_win_x + poll_dot_min_x, poll_win_y, poll_dot_px, poll_dot_px, 0);
+        const bool poll_button_down = WindowStyles::LeftMouseButtonDown();
+        if (poll_near == poll_near_dot_ && poll_hover_dot == poll_hover_dot_ &&
+            poll_button_down == poll_button_down_) {
+            return;  // Nothing changed; skip the full frame render.
+        }
+        poll_near_dot_ = poll_near;
+        poll_hover_dot_ = poll_hover_dot;
+        poll_button_down_ = poll_button_down;
+        dirty_ = true;
+    }
+
     ImGui::SetCurrentContext(imgui_context_);
     glfwMakeContextCurrent(window_);
 
@@ -246,6 +317,7 @@ void Overlay::RenderFrame(float delta_seconds) {
         dpi_scale_ = pending_dpi_scale_;
         pending_dpi_scale_ = 0.0f;
         lwf::ui::ApplyImGuiStyle(kDarkPalette, static_cast<float>(dpi_scale_));
+        cached_status_valid_ = false;  // font scale changed: remap cache key
         ApplyWindowGeometry();
     }
 
@@ -268,6 +340,7 @@ void Overlay::RenderFrame(float delta_seconds) {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     glfwSwapBuffers(window_);
+    dirty_ = false;
 }
 
 void Overlay::DrawBadge() {
@@ -322,8 +395,8 @@ void Overlay::DrawBadge() {
 
     ImDrawList& draw = *ImGui::GetWindowDrawList();
 
-    // Badge base: surface at a deliberately low opacity so it never blocks
-    // the desktop; it rises while hovered, dragged or busy.
+    // Badge base: surface at the token opacity so it never blocks the
+    // desktop; it rises while hovered, dragged or busy.
     float badge_alpha = fade_alpha_;
     if (state_ == OverlayModel::PillState::Ready && !hovered_) {
         badge_alpha *= metrics::mini_idle_alpha;
@@ -341,10 +414,13 @@ void Overlay::DrawBadge() {
             break;
         case OverlayModel::PillState::Listening: {
             // Filled brass mic, breathing ring, five level bars.
+            // INVARIANT: levels_scratch_ is reused across frames so this
+            // path performs zero heap allocations (WaveformRing::SnapshotInto).
             draw.AddCircle(center, radius + 6.0f * scale,
                            Pack(kDarkPalette.accent, breathe * fade_alpha_), 0, 2.0f * scale);
             DrawMic(draw, center, scale, Pack(kDarkPalette.accent, fade_alpha_), true);
-            const std::vector<float> levels = waveform_.Snapshot();
+            waveform_.SnapshotInto(levels_scratch_);
+            const std::vector<float>& levels = levels_scratch_;
             float avg = 0.0f;
             for (float level : levels) {
                 avg += level;
@@ -358,8 +434,10 @@ void Overlay::DrawBadge() {
             float x = center.x + 10.0f * scale - group_w * 0.5f;
             for (int i = 0; i < 5; ++i) {
                 float level = avg;
-                if (!reduce_motion_ && levels.size() >= static_cast<std::size_t>(5)) {
-                    level = levels[levels.size() - 5 + static_cast<std::size_t>(i)];
+                if (!reduce_motion_ && waveform_.Size() >= static_cast<std::size_t>(5)) {
+                    // Oldest-first indexed read (same order as levels[] above);
+                    // WaveformRing::At is the bounds-checked hot accessor.
+                    level = waveform_.At(waveform_.Size() - 5 + static_cast<std::size_t>(i));
                 }
                 const float h = std::clamp(2.0f + level * max_h, 2.0f * scale, max_h);
                 draw.AddRectFilled(ImVec2(x, base_y - h), ImVec2(x + bar_w, base_y),
@@ -417,7 +495,10 @@ void Overlay::DrawBadge() {
     }
 
     // Tiny status word under the dot, hidden while the attention message is
-    // showing (the message takes the space below the dot instead).
+    // showing (the message takes the space below the dot instead). Drawn at
+    // the badge alpha (GUI-A6 contrast): no extra discount. CalcTextSize is
+    // cached in a 1-entry cache keyed by word content (GUI-A5 idle cost);
+    // the cache is invalidated whenever the DPI scale re-applies the style.
     if (state_ != OverlayModel::PillState::Attention) {
         const char* status_word = "";
         switch (state_) {
@@ -428,9 +509,14 @@ void Overlay::DrawBadge() {
             default: break;
         }
         if (status_word[0] != '\0') {
-            const ImVec2 text_size = ImGui::CalcTextSize(status_word);
+            if (!cached_status_valid_ || cached_status_word_ != status_word) {
+                cached_status_size_ = ImGui::CalcTextSize(status_word);
+                cached_status_word_ = status_word;
+                cached_status_valid_ = true;
+            }
+            const ImVec2 text_size = cached_status_size_;
             draw.AddText(ImVec2(center.x - text_size.x * 0.5f, dot_max.y + 2.0f * scale),
-                         Pack(kDarkPalette.muted, 0.75f * badge_alpha), status_word);
+                         Pack(kDarkPalette.muted, badge_alpha), status_word);
         }
     }
 
@@ -444,6 +530,7 @@ void Overlay::UpdateDrag(bool near_dot) {
     if (!dragging_) {
         if (near_dot && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             dragging_ = true;
+            dirty_ = true;
             drag_travel_px_ = 0;
             WindowStyles::CursorScreenPoint(drag_cursor_origin_x_, drag_cursor_origin_y_);
             glfwGetWindowPos(window_, &drag_win_origin_x_, &drag_win_origin_y_);
@@ -467,6 +554,7 @@ void Overlay::UpdateDrag(bool near_dot) {
             work_area_, drag_win_origin_x_ + cursor_x - drag_cursor_origin_x_,
             drag_win_origin_y_ + cursor_y - drag_cursor_origin_y_, window_w, window_h);
         glfwSetWindowPos(window_, position.x, position.y);
+        dirty_ = true;  // badge window moved: keep rendering while dragging
     }
 
     // Release: persist a drag, or treat an in-place press on Paused as the
@@ -487,6 +575,7 @@ void Overlay::UpdateDrag(bool near_dot) {
             on_activate_();
         }
         dragging_ = false;
+        dirty_ = true;
     }
 }
 
@@ -514,11 +603,13 @@ void Overlay::DrawMic(ImDrawList& draw, const ImVec2& center, float scale, ImU32
 
 void Overlay::DrawAttentionMessage(ImDrawList& draw, const ImVec2& dot_min, float scale) {
     // One calm line under the dot, spanning the window width (the dot is
-    // centered in it, so the box is window-wide, never clipped).
+    // centered in it, so the box is window-wide, never clipped). Renders at
+    // the 13px body design size via the second bitmap font (GUI-A6).
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     const float pad = metrics::space_s * scale;
     const float text_w = display.x - 2.0f * pad;
     const ImVec2 text_pos(pad, dot_min.y + metrics::mini_dot * scale + pad);
+    ImGui::PushFont(message_font_, metrics::font_body_px);
     const ImVec2 text_size = ImGui::CalcTextSize(message_.c_str(), nullptr, false, text_w);
     const ImVec2 box_min(0.0f, dot_min.y + metrics::mini_dot * scale);
     const ImVec2 box_max(display.x, box_min.y + text_size.y + 2.0f * pad);
@@ -528,4 +619,5 @@ void Overlay::DrawAttentionMessage(ImDrawList& draw, const ImVec2& dot_min, floa
                  metrics::radius_control * scale, 0, 1.0f * scale);
     draw.AddText(ImGui::GetFont(), ImGui::GetFontSize(), text_pos,
                  Pack(kDarkPalette.err, fade_alpha_), message_.c_str(), nullptr, text_w);
+    ImGui::PopFont();
 }

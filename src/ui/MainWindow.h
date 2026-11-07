@@ -86,6 +86,8 @@ private:
     int welcome_step_ = 1;
     bool restart_needed_ = false;
     float saved_until_ = -1.0f;
+    float copied_until_ = -1.0f;  // "Copied" dwell after Copy; reset on new transcript
+    bool page_focus_pending_ = false;  // restore keyboard focus after switch/re-show
     double dpi_scale_ = 1.0;
     float pending_dpi_scale_ = 0.0f;  // deferred content-scale callback value
 

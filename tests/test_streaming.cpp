@@ -4,6 +4,7 @@
 #include "core/StreamingDictation.h"
 
 #include <doctest/doctest.h>
+#include <atomic>
 #include <chrono>
 #include <string>
 #include <thread>
@@ -197,6 +198,82 @@ TEST_CASE("long utterance with a pause commits a segment and joins with the tail
     CHECK(h.stt.prompts.size() == 2);
     CHECK(h.stt.prompts[0].empty());
     CHECK(h.stt.prompts[1] == "hello world");
+}
+
+TEST_CASE("concurrent Tick callers commit a streaming segment exactly once") {
+    // ENG-B1 regression: MaybeCommitStreamingSegment used to check-then-act on
+    // the silence_start/committed atomics with no lock, so two Tick callers
+    // interleaving between the loads and the stores both sliced the same
+    // [committed, silence_start) range and both called CommitSegment.
+    Harness h;
+    h.stt.transcript = "hello world";
+    h.settings.streaming_stt = true;
+    h.settings.streaming_min_segment_ms = 3000;
+    h.settings.streaming_pause_ms = 700;
+    auto engine = MakeEngine(h);
+
+    engine->PostEvent(EngineEventType::PttPress);
+    engine->ProcessOne(0);
+    // Drive right up to the commit point (same totals as the long-utterance
+    // test above: 100 voiced + 26 silent chunks) but without calling Tick,
+    // so the segment is armed and not yet committed.
+    h.vad.SetSpeech(true);
+    const std::vector<float> voiced(kChunkSamples, 0.3f);
+    for (int i = 0; i < 100; ++i) {
+        h.capture.FeedSamples(voiced);
+    }
+    h.vad.SetSpeech(false);
+    const std::vector<float> silent(kChunkSamples, 0.0f);
+    for (int i = 0; i < 26; ++i) {
+        h.capture.FeedSamples(silent);
+    }
+    CHECK(engine->StreamedSegments() == 0);
+
+    // Release many Tick callers at the same instant. Without the commit
+    // mutex, several of them load the same silence_start/committed values
+    // before the first store lands (the GetRecordedAudio copy widens that
+    // window), so more than one segment gets committed.
+    constexpr int kTickThreads = 8;
+    std::atomic<int> arrived{0};
+    std::atomic<bool> go{false};
+    std::vector<std::thread> threads;
+    for (int t = 0; t < kTickThreads; ++t) {
+        threads.emplace_back([&] {
+            arrived.fetch_add(1);
+            while (!go.load()) {
+                std::this_thread::yield();
+            }
+            engine->Tick();
+        });
+    }
+    while (arrived.load() < kTickThreads) {
+        std::this_thread::yield();
+    }
+    go.store(true);
+    for (std::thread& thread : threads) {
+        thread.join();
+    }
+    CHECK(engine->StreamedSegments() == 1);
+
+    // The rest of the utterance must still stream+tail exactly as in the
+    // single-threaded long-utterance test: one streamed segment plus one
+    // tail transcription.
+    h.vad.SetSpeech(true);
+    for (int i = 0; i < 20; ++i) {
+        h.capture.FeedSamples(voiced);
+        engine->ProcessOne(0);
+    }
+    h.vad.SetSpeech(false);
+    for (int i = 0; i < 4; ++i) {
+        h.capture.FeedSamples(silent);
+        engine->ProcessOne(0);
+    }
+    engine->PostEvent(EngineEventType::PttRelease);
+    engine->ProcessOne(0);
+
+    REQUIRE(h.injector.HasInjected());
+    CHECK(h.injector.Injected().back() == "hello world hello world");
+    CHECK(h.stt.TranscribeCount() == 2);
 }
 
 TEST_CASE("short utterance never streams and runs a single one-shot transcription") {

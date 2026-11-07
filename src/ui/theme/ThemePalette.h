@@ -96,6 +96,16 @@ inline constexpr float rail_width = 208.0f;      // Full window navigation rail
 inline constexpr float content_max = 640.0f;     // widest page content, left aligned
 inline constexpr float control_min_height = 32.0f;  // controls are at least 32 px tall
 
+// Font sizes in design pixels (mockup type scale, section 5). Values are
+// design px at 1.0 scale; callers apply typography through scoped fonts
+// (ImGui::PushFont(nullptr, design_px) + ImGui::PopFont) and the window
+// DPI factor once via style.FontScaleMain in ApplyImGuiStyle.
+inline constexpr float font_wordmark_px = 18.0f;   // wordmark "Local Wisper Flow"
+inline constexpr float font_page_title_px = 28.0f; // page title
+inline constexpr float font_card_title_px = 15.0f; // card title
+inline constexpr float font_body_px = 13.0f;       // body / helper text
+inline constexpr float font_mini_text_px = 8.5f;   // tiny status label font
+
 // Full window (native title bar on top of these).
 inline constexpr float full_default_w = 960.0f;
 inline constexpr float full_default_h = 640.0f;
@@ -104,15 +114,14 @@ inline constexpr float full_min_h = 520.0f;
 
 // Mini badge. Quarter-size dot with a tiny status label under it; the window
 // still reserves room below the dot for the attention hover message. The
-// badge stays highly transparent so it never blocks the desktop behind it.
+// badge stays semi-transparent so it never blocks the desktop behind it.
 inline constexpr float mini_dot = 22.0f;             // was 44: 1/4 of the area
-inline constexpr float mini_message_w = 140.0f;      // was 250
+inline constexpr float mini_message_w = 250.0f;      // was 140
 inline constexpr float mini_message_h = 48.0f;       // was 96
 inline constexpr float mini_margin = 16.0f;  // above the taskbar
 inline constexpr float mini_hover_inflate = 10.0f;  // hit zone around the dot
-inline constexpr float mini_text_px = 8.5f;         // tiny status label font
-inline constexpr float mini_idle_alpha = 0.35f;     // badge opacity when idle
-inline constexpr float mini_active_alpha = 0.65f;   // badge opacity when hovered, dragged or busy
+inline constexpr float mini_idle_alpha = 0.55f;     // badge opacity when idle (mockup: 55%)
+inline constexpr float mini_active_alpha = 1.0f;    // badge opacity when hovered, dragged or busy (mockup: 100%)
 
 // Motion (seconds). All animations stop at a static pose when
 // reduce_motion is on.
@@ -123,7 +132,7 @@ inline constexpr float think_dot_cycle = 0.9f; // thinking dots period
 inline constexpr float think_dot_offset = 0.3f;
 inline constexpr float done_dwell = 0.6f;      // Done check before Ready
 inline constexpr float attention_dwell = 6.0f; // attention auto-clear
-inline constexpr float saved_dwell = 1.6f;     // "Saved" indicator on pages
+inline constexpr float saved_dwell = 1.5f;     // "Saved" indicator on pages (mockup motion table: 1.5 s)
 
 }  // namespace metrics
 
@@ -149,10 +158,14 @@ inline double ContrastRatio(std::uint32_t a, std::uint32_t b) {
     return (hi + 0.05) / (lo + 0.05);
 }
 
-// Applies the palette to the current ImGui context's style. Scale is the
-// window DPI scale (1.0 = 100%); metrics and the default font are scaled by
-// it. Real fonts land with the font-approval change; until then the built-in
-// font is scaled, which is deliberate and temporary.
+// Applies the palette and the window DPI scale to the current ImGui context's
+// style. Scale is the window DPI scale (1.0 = 100%). Display typography is not
+// part of the style: it is scoped per call site with ImGui::PushFont(nullptr,
+// design_px) + ImGui::PopFont using the metrics::font_*_px design tokens, so
+// the DPI factor (style.FontScaleMain) applies exactly once. The scale is
+// applied once per actual change (init or live content-scale move); re-applying
+// an unchanged scale does not re-run the metrics scaling. Real fonts land
+// with the font-approval change.
 void ApplyImGuiStyle(const Palette& palette, float scale);
 
 }  // namespace lwf::ui

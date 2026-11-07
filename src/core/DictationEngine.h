@@ -41,6 +41,15 @@ public:
     void Run();
 
     bool ProcessOne(int timeout_ms);
+    // Tick's streaming-segment commit is serialized by commit_mutex_ and is
+    // safe under concurrent Tick callers (see
+    // MaybeCommitStreamingSegment): each [committed, silence_start) segment
+    // commits exactly once. The remainder of Tick is NOT thread-safe: the
+    // HandleMicLost, hands-free/max-recording timeout, and ARMED-timeout
+    // paths (StopAndTranscribe, FSM triggers) are single-caller-only, as in
+    // production, which calls Tick only from the single Run() worker.
+    // TakeTail() likewise reads committed_samples_ without commit_mutex_,
+    // so a concurrent commit can still race StopAndTranscribe's tail read.
     void Tick();
 
     void PostEvent(EngineEventType type);
@@ -105,5 +114,11 @@ private:
     std::size_t chunk_count_ = 0;
     std::size_t speech_chunk_count_ = 0;
     mutable std::mutex text_mutex_;
+    // Serializes MaybeCommitStreamingSegment: without it two concurrent Tick
+    // callers can both load the same silence_start/committed values and both
+    // slice+commit the identical segment (check-then-act race). Held only
+    // for the duration of that one commit; never held across
+    // Finish()/StopAndTranscribe().
+    std::mutex commit_mutex_;
     std::string last_text_;
 };
