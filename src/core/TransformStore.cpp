@@ -257,7 +257,12 @@ void TransformStore::RecomputeConflicts() {
 }
 
 bool TransformStore::Load(const std::string& path) {
-    std::ifstream file(path);
+    std::error_code rc_ec;
+    const bool missing_path = !std::filesystem::is_regular_file(path, rc_ec) || rc_ec;
+    std::ifstream file;
+    if (!missing_path) {
+        file.open(path);
+    }
     if (!file.is_open()) {
         SeedDefaults();
         {

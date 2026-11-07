@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <set>
@@ -91,6 +92,10 @@ bool WholeWordFindInsensitive(const std::string& text, const std::string& needle
 bool PersonalDictionary::Load(const std::string& path) {
     std::lock_guard<std::mutex> lock(mutex_);
     path_ = path;
+    std::error_code rc_ec;
+    if (!std::filesystem::is_regular_file(path, rc_ec) || rc_ec) {
+        return false;
+    }
     std::ifstream file(path);
     if (!file.is_open()) {
         return false;

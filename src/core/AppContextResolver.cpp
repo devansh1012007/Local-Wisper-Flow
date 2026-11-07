@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <initializer_list>
 
@@ -35,6 +36,10 @@ bool ContainsAny(const std::string& haystack, std::initializer_list<const char*>
 }
 
 bool AppContextResolver::Load(const std::string& path) {
+    std::error_code rc_ec;
+    if (!std::filesystem::is_regular_file(path, rc_ec) || rc_ec) {
+        return false;
+    }
     std::ifstream file(path);
     if (!file.is_open()) {
         return false;

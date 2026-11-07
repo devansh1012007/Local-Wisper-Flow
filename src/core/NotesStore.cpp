@@ -114,6 +114,12 @@ std::vector<NotesStore::Note> SortedCopy(const std::vector<NotesStore::Note>& no
 }
 
 bool ReadBodyFile(const std::string& path, std::string& body) {
+    std::error_code rc_ec;
+    // SECURITY: On Linux, opening a directory with ifstream succeeds and reads
+    // throw ios_base::failure. Treat a non-regular-file as a missing body.
+    if (!std::filesystem::is_regular_file(path, rc_ec) || rc_ec) {
+        return false;
+    }
     std::ifstream file(path);
     if (!file.is_open()) {
         return false;
@@ -152,7 +158,15 @@ bool NotesStore::LoadLocked() {
     }
     bool corrupt = false;
     bool dirty = false;
-    std::ifstream file(index_path_);
+    // INVARIANT: a directory at index_path_ is treated as a missing index
+    // (empty state, no .bad rename). Only real files enter the corrupt path.
+    std::error_code index_ec;
+    const bool index_is_file =
+        std::filesystem::is_regular_file(index_path_, index_ec) && !index_ec;
+    std::ifstream file;
+    if (index_is_file) {
+        file.open(index_path_);
+    }
     if (file.is_open()) {
         nlohmann::json json;
         try {

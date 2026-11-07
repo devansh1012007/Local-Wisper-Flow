@@ -347,6 +347,15 @@ bool DictionaryStore::Load() {
     if (path_.empty()) {
         return false;
     }
+    // INVARIANT: a directory is treated as a missing file (seeded defaults),
+    // never opened for parse and never renamed to .bad.
+    std::error_code rc_ec;
+    if (!std::filesystem::is_regular_file(path_, rc_ec) || rc_ec) {
+        SeedLocked();
+        loaded_ = true;
+        migrated_ = false;
+        return true;
+    }
     std::ifstream file(path_);
     if (!file.is_open()) {
         SeedLocked();
@@ -729,6 +738,13 @@ bool DictionaryStore::ExportFile(const std::string& path) const {
 }
 
 bool DictionaryStore::ImportFile(const std::string& path, std::string* error) {
+    std::error_code rc_ec;
+    if (!std::filesystem::is_regular_file(path, rc_ec) || rc_ec) {
+        if (error != nullptr) {
+            *error = "cannot open import file";
+        }
+        return false;
+    }
     std::ifstream file(path);
     if (!file.is_open()) {
         if (error != nullptr) {

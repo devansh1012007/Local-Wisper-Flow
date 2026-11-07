@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 
 namespace lwf_sha256 {
@@ -143,6 +144,10 @@ std::string HexDigest(const std::string& input) {
 
 std::string HexDigestOfFile(const std::string& path, bool& ok) {
     ok = false;
+    std::error_code rc_ec;
+    if (!std::filesystem::is_regular_file(path, rc_ec) || rc_ec) {
+        return {};
+    }
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
         return {};

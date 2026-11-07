@@ -100,6 +100,25 @@ void SettingsStore::Load() {
 
 void SettingsStore::LoadLocked() {
 
+    // INVARIANT: a directory at path_ is treated as a missing config
+    // (defaults, loaded_existing=false, corrupt_=false) and is never renamed.
+    std::error_code rc_ec;
+    if (!std::filesystem::is_regular_file(path_, rc_ec) || rc_ec) {
+        loaded_existing_ = false;
+        raw_unknown_.clear();
+        for (const SchemaEntry& entry : BuildSchema()) {
+            if (entry.type != Type::String) {
+                numbers_[entry.key] = entry.default_value;
+            } else {
+                strings_[entry.key] = entry.default_string;
+            }
+            if (entry.type == Type::Bool) {
+                bools_[entry.key] = entry.default_value != 0.0;
+            }
+        }
+        return;
+    }
+
     std::ifstream file(path_);
     if (!file.is_open()) {
         loaded_existing_ = false;

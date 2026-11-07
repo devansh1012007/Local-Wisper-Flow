@@ -4,12 +4,18 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 
 namespace Onboarding {
 
 ModelCatalog ParseModelsJson(const std::string& path) {
     ModelCatalog catalog;
+    std::error_code rc_ec;
+    if (!std::filesystem::is_regular_file(path, rc_ec) || rc_ec) {
+        catalog.warnings.push_back("models.json not found at " + path);
+        return catalog;
+    }
     std::ifstream file(path);
     if (!file.is_open()) {
         catalog.warnings.push_back("models.json not found at " + path);

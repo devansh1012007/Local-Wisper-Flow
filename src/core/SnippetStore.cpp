@@ -134,6 +134,10 @@ std::string SnippetStore::GenerateIdLocked() const {
 }
 
 bool SnippetStore::Load(const std::string& path) {
+    std::error_code rc_ec;
+    if (!std::filesystem::is_regular_file(path, rc_ec) || rc_ec) {
+        return false;
+    }
     std::ifstream file(path);
     if (!file.is_open()) {
         return false;

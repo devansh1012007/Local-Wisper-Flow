@@ -201,6 +201,10 @@ std::uint64_t StatsStore::Generation() const noexcept {
 
 void StatsStore::LoadLocked() {
     days_.clear();
+    std::error_code rc_ec;
+    if (!std::filesystem::is_regular_file(path_, rc_ec) || rc_ec) {
+        return;
+    }
     std::ifstream file(path_);
     if (!file.is_open()) {
         return;

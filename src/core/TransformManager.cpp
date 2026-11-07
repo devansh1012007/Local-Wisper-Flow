@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <utility>
@@ -33,6 +34,10 @@ TransformManager::TransformManager(ILlmProvider& provider, const std::string& tr
 
 std::vector<TransformManager::Entry> TransformManager::LoadFile(
     const std::string& path) const {
+    std::error_code rc_ec;
+    if (!std::filesystem::is_regular_file(path, rc_ec) || rc_ec) {
+        throw std::runtime_error("TransformManager: cannot open '" + path + "'");
+    }
     std::ifstream file(path);
     if (!file.is_open()) {
         throw std::runtime_error("TransformManager: cannot open '" + path + "'");
