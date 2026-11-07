@@ -47,6 +47,9 @@
 ## Wave 2 tranche close-out 2026-11-08
 - W2-IMPL-01 landed: 9 tokens + stage-2 migration, greps 0, ban/pin/negative green, exe links, hygiene OK. Residual: 2 test pins stale (test_snippets 338-341, test_transforms ~380 require native fonts) + 1 space_xs site kept (Transforms:576). Disposition: expand write-set for W2-IMPL-02 (those 2 test files + Transforms comment). space_xs stays as documented native-grid reuse (no 10th token; D-W2-01 escape hatch). Then re-gate.
 
+## Final close 2026-11-08
+- Wave 2 gates w2-1 green, reviews W2-REV-01/W2-TREV-01 APPROVE-WITH-CHANGES (0 BLOCKER/0 MAJOR), final integration W-DELTA-01 APPROVE-WITH-CHANGES (F-001 P-006 screenshots owed — record waiver or capture on Windows; F-002 PROGRESS rows closed by this commit). SUMMARY.md written. Wave 2 CLOSED. No BLOCKER/MAJOR open. Screenshots + G3 zig honestly deferred.
+
 ## Wave 2 decisions (orchestrator, from W2-PLAN-01 critique, 2026-11-08)
 - D-W2-01 token set: FULL 9 tokens (4 fonts + 5 gaps). Stage-2 spacing migration ships IN tranche 2 (not deferred), staged commits code-then-tests. done criteria: grep metrics::font_ over 8 files → 0, metrics::space_* → 0 or documented reuse sentence if descoped mid-flight (no silent mix).
 - D-W2-02 inventory: implementer MUST generate exhaustive grep list (metrics:: plus all allowlisted values) at implementation time; design tables are illustrative, grep→0 is the verification. Transforms font_body/card lists (~45 hits) migrate exhaustively.
