@@ -44,6 +44,9 @@
 - Improvement: W1-IMPR-01 (Transforms tokens, general) + W1-IMPR-02 (scanner negative test, coder), disjoint files, then re-gate + delta review. 1 of 2 cycles used.
 - Improvement results: W1-IMPR-01 code 1f7a71d (Transforms 3 sites same-value), W1-IMPR-02 code bbc8a14 (6 CHECKs negative scanner test, neutered-scanner probe 3/6 fail proven). Gate w1-2 green (ctest 1/1 Passed 19.97s). Delta W1-DELTA-01 APPROVE (fdf5892). Wave 1 CLOSED 2026-11-08. Remain deferred to Wave 2: code R-W1-002 (RowList dead code), test R-W1-002..006 (mapping pins, glob, loopholes, CWD), plus token-gap allowlist 26 sites. Screenshots P-006 still pending.
 
+## Wave 2 tranche close-out 2026-11-08
+- W2-IMPL-01 landed: 9 tokens + stage-2 migration, greps 0, ban/pin/negative green, exe links, hygiene OK. Residual: 2 test pins stale (test_snippets 338-341, test_transforms ~380 require native fonts) + 1 space_xs site kept (Transforms:576). Disposition: expand write-set for W2-IMPL-02 (those 2 test files + Transforms comment). space_xs stays as documented native-grid reuse (no 10th token; D-W2-01 escape hatch). Then re-gate.
+
 ## Wave 2 decisions (orchestrator, from W2-PLAN-01 critique, 2026-11-08)
 - D-W2-01 token set: FULL 9 tokens (4 fonts + 5 gaps). Stage-2 spacing migration ships IN tranche 2 (not deferred), staged commits code-then-tests. done criteria: grep metrics::font_ over 8 files → 0, metrics::space_* → 0 or documented reuse sentence if descoped mid-flight (no silent mix).
 - D-W2-02 inventory: implementer MUST generate exhaustive grep list (metrics:: plus all allowlisted values) at implementation time; design tables are illustrative, grep→0 is the verification. Transforms font_body/card lists (~45 hits) migrate exhaustively.
