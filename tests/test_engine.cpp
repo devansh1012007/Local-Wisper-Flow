@@ -2,8 +2,16 @@
 
 #include "EngineHarness.h"
 
+#include "core/AppContextResolver.h"
+#include "core/CommandModeController.h"
+#include "core/PersonalDictionary.h"
+#include "core/StatsStore.h"
+
 #include <doctest/doctest.h>
+#include <chrono>
+#include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -25,6 +33,48 @@ int CountThreads() {
     return -1;
 }
 #endif
+
+std::string StatsPath(const char* name) {
+    return (std::filesystem::temp_directory_path() /
+            (std::string("lwf_stats_wiring_") + name + ".json"))
+        .string();
+}
+
+std::int64_t StatsTotalWords(const StatsStore& store) {
+    std::int64_t total = 0;
+    for (const auto& entry : store.Snapshot()) {
+        total += entry.second.words;
+    }
+    return total;
+}
+
+std::int64_t StatsTotalDictations(const StatsStore& store) {
+    std::int64_t total = 0;
+    for (const auto& entry : store.Snapshot()) {
+        total += entry.second.dictations;
+    }
+    return total;
+}
+
+class ScriptedActiveWindow final : public IActiveWindow {
+public:
+    ActiveWindowInfo info;
+
+    ActiveWindowInfo Get() override {
+        return info;
+    }
+};
+
+class ScriptedSelectionCapture final : public ISelectionCapture {
+public:
+    std::optional<std::string> selection = std::string("the selected sentence");
+
+    std::optional<std::string> CaptureSelection() override {
+        return selection;
+    }
+
+    void RestoreClipboard() override {}
+};
 
 }
 
@@ -280,4 +330,297 @@ TEST_CASE("paste last with empty history reports nothing to paste") {
     engine->ProcessOne(0);
     CHECK_FALSE(h.injector.HasInjected());
     CHECK(HasStatus(h.sink.statuses, "nothing to paste"));
+}
+
+TEST_CASE("stats store records successful injection") {
+    const std::string path = StatsPath("success");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    Harness h;
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+
+    PressAndSpeak(h, *engine);
+
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(store.Generation() == 1);
+    CHECK(StatsTotalDictations(store) == 1);
+    CHECK(StatsTotalWords(store) == 2);
+    const auto snap = store.Snapshot();
+    REQUIRE(snap.size() == 1);
+    CHECK(snap.begin()->second.words_corrected == 0);
+    CHECK(snap.begin()->second.dictionary_fixes == 0);
+    CHECK(snap.begin()->second.speaking_ms == 120);
+    REQUIRE(snap.begin()->second.apps.find("unknown") != snap.begin()->second.apps.end());
+    CHECK(snap.begin()->second.apps.at("unknown") == 2);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats record uses capture time app and duration") {
+    const std::string path = StatsPath("captureapp");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    AppContextResolver resolver;
+    resolver.UseBuiltInProfiles();
+    ScriptedActiveWindow active;
+    active.info.process_name = "slack.exe";
+    active.info.window_title = "Team chat";
+    Harness h;
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+    engine->SetActiveWindow(&active);
+    engine->SetAppContextResolver(&resolver);
+
+    engine->PostEvent(EngineEventType::PttPress);
+    engine->ProcessOne(0);
+    h.Speak();
+    active.info.process_name = "outlook.exe";
+    active.info.window_title = "Inbox";
+    engine->PostEvent(EngineEventType::PttRelease);
+    engine->ProcessOne(0);
+
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(store.Generation() == 1);
+    const auto snap = store.Snapshot();
+    REQUIRE(snap.size() == 1);
+    CHECK(snap.begin()->second.speaking_ms == 120);
+    REQUIRE(snap.begin()->second.apps.find("slack.exe") !=
+            snap.begin()->second.apps.end());
+    CHECK(snap.begin()->second.apps.at("slack.exe") == 2);
+    CHECK(snap.begin()->second.apps.find("outlook.exe") ==
+          snap.begin()->second.apps.end());
+    REQUIRE(snap.begin()->second.by_category.find("Work messages") !=
+            snap.begin()->second.by_category.end());
+    CHECK(snap.begin()->second.by_category.at("Work messages") == 2);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats record carries words corrected and dictionary fixes") {
+    const std::string path = StatsPath("fixes");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    PersonalDictionary dict;
+    dict.SetWords({"hello", "world"});
+    dict.SetReplacements({{"helo", "hello"}});
+    Harness h;
+    h.stt.transcript = "helo world";
+    h.pipeline.SetDictionary(&dict);
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+
+    PressAndSpeak(h, *engine);
+
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(h.injector.Injected()[0] == "hello world");
+    CHECK(store.Generation() == 1);
+    const auto snap = store.Snapshot();
+    REQUIRE(snap.size() == 1);
+    CHECK(snap.begin()->second.words == 2);
+    CHECK(snap.begin()->second.words_corrected == 1);
+    CHECK(snap.begin()->second.dictionary_fixes == 1);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("pipeline process result counts diff and dictionary fixes") {
+    PassthroughLlm llm;
+    DictationCleanup cleanup{&llm};
+    cleanup.SetEnabled(false);
+    TextPipeline pipeline{cleanup};
+    PersonalDictionary dict;
+    dict.SetWords({"hello", "world"});
+    dict.SetReplacements({{"helo", "hello"}});
+    pipeline.SetDictionary(&dict);
+
+    const ProcessResult result = pipeline.ProcessWithStats("helo world");
+    CHECK(result.text == "hello world");
+    CHECK(result.words_corrected == 1);
+    CHECK(result.dictionary_fixes == 1);
+    CHECK(pipeline.Process("helo world") == result.text);
+
+    PassthroughLlm plain_llm;
+    DictationCleanup plain_cleanup{&plain_llm};
+    plain_cleanup.SetEnabled(false);
+    TextPipeline plain{plain_cleanup};
+    const ProcessResult identical = plain.ProcessWithStats("hello world");
+    CHECK(identical.text == "hello world");
+    CHECK(identical.words_corrected == 0);
+    CHECK(identical.dictionary_fixes == 0);
+}
+
+TEST_CASE("pipeline words corrected counts inserted words from cleanup") {
+    ScriptedLlm llm;
+    llm.response = "hello brave world ok now";
+    DictationCleanup cleanup{&llm};
+    cleanup.SetMinWords(1);
+    TextPipeline pipeline{cleanup};
+
+    const ProcessResult result = pipeline.ProcessWithStats("hello world ok now");
+    CHECK(result.text == "hello brave world ok now");
+    CHECK(result.words_corrected == 1);
+    CHECK(result.dictionary_fixes == 0);
+}
+
+TEST_CASE("stats store records nothing for cancelled capture") {
+    const std::string path = StatsPath("cancelled");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    Harness h;
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+
+    engine->PostEvent(EngineEventType::PttPress);
+    engine->ProcessOne(0);
+    h.Speak();
+    engine->PostEvent(EngineEventType::Cancel);
+    engine->ProcessOne(0);
+
+    CHECK_FALSE(h.injector.HasInjected());
+    CHECK(store.Generation() == 0);
+    CHECK(store.Snapshot().empty());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats store records nothing for cancel during transcription") {
+    const std::string path = StatsPath("canceltranscribe");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    Harness h;
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+    h.stt.on_transcribe = [&]() { engine->RequestCancel(); };
+
+    PressAndSpeak(h, *engine);
+
+    CHECK_FALSE(h.injector.HasInjected());
+    CHECK(store.Generation() == 0);
+    CHECK(store.Snapshot().empty());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats store records nothing for empty final text") {
+    const std::string path = StatsPath("emptyfinal");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    Harness h;
+    h.stt.transcript = "";
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+
+    PressAndSpeak(h, *engine);
+
+    CHECK_FALSE(h.injector.HasInjected());
+    CHECK(store.Generation() == 0);
+    CHECK(store.Snapshot().empty());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats store records nothing for failed injection") {
+    const std::string path = StatsPath("failedinject");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    Harness h;
+    h.injector.fail_inject = true;
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+
+    PressAndSpeak(h, *engine);
+
+    CHECK(h.fsm.GetCurrentState() == State::IDLE);
+    REQUIRE(h.sink.errors.size() == 1);
+    CHECK(h.sink.errors[0] == ErrorCode::InjectFailed);
+    CHECK(store.Generation() == 0);
+    CHECK(store.Snapshot().empty());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats store records nothing for command mode") {
+    const std::string path = StatsPath("commandmode");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    Harness h;
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+    ScriptedSelectionCapture selection;
+    ScriptedLlm command_llm;
+    command_llm.response = "the edited sentence";
+    CommandModeController controller{selection, &command_llm, h.injector};
+    engine->SetCommandController(&controller);
+
+    engine->PostEvent(EngineEventType::CommandMode);
+    engine->ProcessOne(0);
+    h.Speak();
+    engine->PostEvent(EngineEventType::PttRelease);
+    engine->ProcessOne(0);
+
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(h.injector.Injected()[0] == "the edited sentence");
+    CHECK(store.Generation() == 0);
+    CHECK(store.Snapshot().empty());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats store records nothing for paste last") {
+    const std::string path = StatsPath("pastelast");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    Harness h;
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+
+    PressAndSpeak(h, *engine);
+    REQUIRE(h.injector.InjectionCount() == 1);
+    REQUIRE(store.Generation() == 1);
+
+    engine->PostEvent(EngineEventType::PasteLast);
+    engine->ProcessOne(0);
+
+    REQUIRE(h.injector.InjectionCount() == 2);
+    CHECK(store.Generation() == 1);
+    CHECK(StatsTotalDictations(store) == 1);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats store records nothing for scratchpad target") {
+    const std::string path = StatsPath("scratchpad");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    Harness h;
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+    engine->SetScratchpadTarget(true);
+
+    PressAndSpeak(h, *engine);
+
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(store.Generation() == 0);
+    CHECK(store.Snapshot().empty());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats store toggle off records nothing") {
+    const std::string path = StatsPath("toggleoff");
+    std::filesystem::remove(path);
+    StatsStore store(path, false);
+    CHECK_FALSE(store.UsageStatsEnabled());
+    Harness h;
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+
+    PressAndSpeak(h, *engine);
+
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(store.Generation() == 0);
+    CHECK(store.Snapshot().empty());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("engine works with no stats store attached") {
+    Harness h;
+    auto engine = MakeEngine(h);
+
+    PressAndSpeak(h, *engine);
+
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(h.injector.Injected()[0] == "hello world");
+    CHECK(h.fsm.GetCurrentState() == State::IDLE);
 }

@@ -143,4 +143,31 @@ DiffResult Diff(const std::string& original, const std::string& edited) {
     return result;
 }
 
+void TransformDiffStore::Put(const std::string& before, const std::string& after,
+                             std::int64_t captured_ms) {
+    TransformDiff next;
+    next.before = before;
+    next.after = after;
+    next.diff = Diff(before, after);
+    next.captured_ms = captured_ms;
+    next.valid = true;
+    std::lock_guard<std::mutex> lock(mutex_);
+    current_ = std::move(next);
+}
+
+TransformDiff TransformDiffStore::Get(std::int64_t now_ms) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!current_.valid) {
+        return {};
+    }
+    if (now_ms - current_.captured_ms > kRetentionMs) {
+        return {};
+    }
+    return current_;
+}
+
+bool TransformDiffStore::Has(std::int64_t now_ms) const {
+    return Get(now_ms).valid;
+}
+
 }

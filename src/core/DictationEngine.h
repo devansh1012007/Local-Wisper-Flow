@@ -4,10 +4,12 @@
 #include "core/EngineTypes.h"
 #include "core/EventQueue.h"
 #include "core/IAudioCapture.h"
+#include "core/IActiveWindow.h"
 #include "core/IEngineSink.h"
 #include "core/IInferenceProvider.h"
 #include "core/ITextInjector.h"
 #include "core/IVadProvider.h"
+#include "core/TextDiff.h"
 
 #include <atomic>
 #include <cstdint>
@@ -19,8 +21,13 @@
 class IClock;
 class TextPipeline;
 class CommandModeController;
+class ISelectionCapture;
+class ILlmProvider;
+class TransformStore;
 class IToneFeedback;
 class StreamingDictator;
+class StatsStore;
+class AppContextResolver;
 
 namespace ToneGenerator {
 struct ToneSpec;
@@ -61,6 +68,16 @@ public:
     void SetHandsFree(bool enabled);
     void SetCommandController(CommandModeController* controller);
     void SetToneFeedback(IToneFeedback* tones);
+    void SetStatsStore(StatsStore* stats);
+    void SetActiveWindow(IActiveWindow* active_window);
+    void SetAppContextResolver(AppContextResolver* resolver);
+    void SetScratchpadTarget(bool enabled);
+    void SetTransformStore(const TransformStore* store);
+    void SetTransformLlm(ILlmProvider* llm);
+    void SetSelectionCapture(ISelectionCapture* capture);
+    void RequestTransform(int slot);
+    bool HasTransformDiff() const;
+    lwf::TransformDiff TransformDiffSnapshot() const;
     std::string LastText() const;
     std::size_t StreamedSegments() const;
 
@@ -74,6 +91,8 @@ private:
     void StopAndTranscribe(std::int64_t now_ms, bool timeout_fired);
     void HandleCommandMode(std::int64_t now_ms);
     void HandlePasteLast();
+    void HandleTransform(int slot);
+    void PumpTransform();
     void EmitError(ErrorCode code, const std::string& detail);
     void PlayTone(const ToneGenerator::ToneSpec& spec);
     void DiscardCapture(const char* reason);
@@ -107,6 +126,16 @@ private:
     std::unique_ptr<StreamingDictator> streamer_;
     CommandModeController* command_ = nullptr;
     IToneFeedback* tones_ = nullptr;
+    StatsStore* stats_ = nullptr;
+    IActiveWindow* active_window_ = nullptr;
+    AppContextResolver* app_context_ = nullptr;
+    bool scratchpad_target_ = false;
+    ActiveWindowInfo capture_app_;
+    const TransformStore* transform_store_ = nullptr;
+    ILlmProvider* transform_llm_ = nullptr;
+    ISelectionCapture* selection_ = nullptr;
+    std::atomic<int> pending_transform_slot_{-1};
+    lwf::TransformDiffStore transform_diffs_;
 
     std::int64_t press_ms_ = 0;
     std::int64_t capture_start_ms_ = 0;
