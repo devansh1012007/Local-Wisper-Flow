@@ -11,9 +11,9 @@ class MiniaudioCapture;
 class SettingsStore;
 class UiBus;
 
-// The Full window: rail navigation plus pages (Home, Speech, Cloud, Cleanup,
-// Privacy, About, and the first-run Welcome). Owns its GLFW window and its
-// Dear ImGui context (one context per OS window, docs/UI_AUDIT.md section 1).
+// The Full window: rail navigation plus pages (Home, Insights, Dictionary,
+// Snippets, Transforms, Scratchpad, Settings, and the first-run Welcome).
+// Owns its GLFW window and its Dear ImGui context (one context per OS window, docs/UI_AUDIT.md section 1).
 //
 // Closing the window hides it - the tray owns Quit. Settings changes apply
 // live: every edit is written, saved and followed by an ApplySettings command
@@ -21,6 +21,51 @@ class UiBus;
 // docs/design/mockup.html sections 3 and 5.
 class MainWindow {
 public:
+    enum class Page { Welcome, Home, Insights, Dictionary, Snippets, Transforms, Scratchpad, Settings };
+
+    static const char* RouteName(Page page) {
+        switch (page) {
+            case Page::Home:
+                return "Home";
+            case Page::Insights:
+                return "Insights";
+            case Page::Dictionary:
+                return "Dictionary";
+            case Page::Snippets:
+                return "Snippets";
+            case Page::Transforms:
+                return "Transforms";
+            case Page::Scratchpad:
+                return "Scratchpad";
+            case Page::Settings:
+                return "Settings";
+            default:
+                return "Welcome";
+        }
+    }
+
+    static Page PageForRoute(const std::string& route) {
+        if (route == "Insights") {
+            return Page::Insights;
+        }
+        if (route == "Dictionary") {
+            return Page::Dictionary;
+        }
+        if (route == "Snippets") {
+            return Page::Snippets;
+        }
+        if (route == "Transforms") {
+            return Page::Transforms;
+        }
+        if (route == "Scratchpad") {
+            return Page::Scratchpad;
+        }
+        if (route == "Settings") {
+            return Page::Settings;
+        }
+        return Page::Home;
+    }
+
     MainWindow(const DictationFSM& fsm, const MiniaudioCapture& audio,
                SettingsStore& settings, UiBus& bus);
     ~MainWindow();
@@ -55,6 +100,13 @@ private:
     void DrawRail(float scale);
     void DrawPageChrome(const char* title, const char* subtitle, float scale);
     void DrawHomePage(float scale);
+    void DrawInsightsPage(float scale);
+    void DrawDictionaryPage(float scale);
+    void DrawSnippetsPage(float scale);
+    void DrawTransformsPage(float scale);
+    void DrawScratchpadPage(float scale);
+    void DrawSettingsPage(float scale);
+    void DrawGeneralPage(float scale);
     void DrawSpeechPage(float scale);
     void DrawCloudPage(float scale);
     void DrawCleanupPage(float scale);
@@ -69,8 +121,9 @@ private:
     void ShowSaved();
     void DrawRestartBanner(float scale);
     void DrawHotkeyChips(const std::string& chord, float scale);
+    void PersistPage();
 
-    enum class Page { Welcome, Home, Speech, Cloud, Cleanup, Privacy, About };
+    enum class SettingsTab { General, Speech, Cloud, Cleanup, Privacy, About };
 
     const DictationFSM& fsm_;
     const MiniaudioCapture& audio_;
@@ -83,6 +136,7 @@ private:
     bool close_requested_ = false;
 
     Page page_ = Page::Home;
+    SettingsTab settings_tab_ = SettingsTab::General;
     int welcome_step_ = 1;
     bool restart_needed_ = false;
     float saved_until_ = -1.0f;

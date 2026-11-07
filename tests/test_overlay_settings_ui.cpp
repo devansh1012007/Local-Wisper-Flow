@@ -2,6 +2,8 @@
 #include "core/OverlayModel.h"
 #include "core/SettingsStore.h"
 #include "core/SettingsUiModel.h"
+#include "ui/MainWindow.h"
+#include "ui/theme/StudioPalette.h"
 #include "ui/theme/ThemePalette.h"
 
 #include <doctest/doctest.h>
@@ -515,4 +517,276 @@ TEST_CASE("main window keyboard nav and commit-on-deactivate wiring") {
     CHECK(count_occurrences(content.substr(welcome), "ApplyAndSave()") >= 2);
     // Trust card cloud branch keys off the provider setting.
     CHECK(content.find("stt_provider") != std::string::npos);
+}
+
+TEST_CASE("studio navigation routes round-trip with Home fallback") {
+    using Page = MainWindow::Page;
+    const Page pages[] = {Page::Home, Page::Insights, Page::Dictionary, Page::Snippets,
+                          Page::Transforms, Page::Scratchpad, Page::Settings};
+    for (Page page : pages) {
+        const std::string route = MainWindow::RouteName(page);
+        CHECK(MainWindow::PageForRoute(route) == page);
+    }
+    CHECK(MainWindow::PageForRoute("Home") == Page::Home);
+    CHECK(MainWindow::PageForRoute("Insights") == Page::Insights);
+    CHECK(MainWindow::PageForRoute("Dictionary") == Page::Dictionary);
+    CHECK(MainWindow::PageForRoute("Snippets") == Page::Snippets);
+    CHECK(MainWindow::PageForRoute("Transforms") == Page::Transforms);
+    CHECK(MainWindow::PageForRoute("Scratchpad") == Page::Scratchpad);
+    CHECK(MainWindow::PageForRoute("Settings") == Page::Settings);
+    CHECK(MainWindow::PageForRoute("Welcome") == Page::Home);
+    CHECK(MainWindow::PageForRoute("Speech") == Page::Home);
+    CHECK(MainWindow::PageForRoute("About") == Page::Home);
+    CHECK(MainWindow::PageForRoute("") == Page::Home);
+    CHECK(MainWindow::PageForRoute("bogus-route") == Page::Home);
+    CHECK(MainWindow::PageForRoute("settings") == Page::Home);
+    CHECK(std::string(MainWindow::RouteName(Page::Welcome)) == "Welcome");
+    CHECK(MainWindow::PageForRoute(MainWindow::RouteName(Page::Welcome)) == Page::Home);
+}
+
+TEST_CASE("last_page setting defaults to Home and persists across reload") {
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_lastpage_settings.json").string();
+    {
+        std::ofstream file(path, std::ios::trunc);
+        file << "{}";
+    }
+    {
+        SettingsStore store(path);
+        CHECK(store.HasKey("last_page"));
+        CHECK(store.GetString("last_page") == "Home");
+    }
+    {
+        SettingsStore store(path);
+        CHECK(store.GetString("last_page") == "Home");
+    }
+    {
+        SettingsStore store(path);
+        store.SetString("last_page", "Insights");
+        store.Save();
+    }
+    {
+        SettingsStore store(path);
+        CHECK(store.GetString("last_page") == "Insights");
+    }
+    {
+        SettingsStore store(path);
+        store.SetString("last_page", "Settings");
+        store.Save();
+    }
+    {
+        SettingsStore store(path);
+        CHECK(store.GetString("last_page") == "Settings");
+        CHECK(MainWindow::PageForRoute(store.GetString("last_page")) == MainWindow::Page::Settings);
+    }
+}
+
+TEST_CASE("studio navigation rail and settings tab structure source-scan") {
+    const auto count_occurrences = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    std::ifstream header("src/ui/MainWindow.h");
+    REQUIRE(static_cast<bool>(header));
+    const std::string header_content((std::istreambuf_iterator<char>(header)),
+                                     std::istreambuf_iterator<char>());
+    CHECK(header_content.find("enum class Page") != std::string::npos);
+    CHECK(header_content.find("Welcome, Home, Insights, Dictionary, Snippets, Transforms, Scratchpad, Settings") != std::string::npos);
+    CHECK(header_content.find("Welcome, Home, Speech, Cloud, Cleanup, Privacy, About") == std::string::npos);
+    CHECK(header_content.find("void DrawSettingsPage(float scale)") != std::string::npos);
+    CHECK(header_content.find("void DrawGeneralPage(float scale)") != std::string::npos);
+    CHECK(header_content.find("void DrawInsightsPage(float scale)") != std::string::npos);
+    CHECK(header_content.find("void DrawDictionaryPage(float scale)") != std::string::npos);
+    CHECK(header_content.find("void DrawSnippetsPage(float scale)") != std::string::npos);
+    CHECK(header_content.find("void DrawTransformsPage(float scale)") != std::string::npos);
+    CHECK(header_content.find("void DrawScratchpadPage(float scale)") != std::string::npos);
+    CHECK(header_content.find("RouteName") != std::string::npos);
+    CHECK(header_content.find("PageForRoute") != std::string::npos);
+
+    std::ifstream main_window("src/ui/MainWindow.cpp");
+    REQUIRE(static_cast<bool>(main_window));
+    const std::string content((std::istreambuf_iterator<char>(main_window)),
+                              std::istreambuf_iterator<char>());
+    CHECK(content.find("##nav_home") != std::string::npos);
+    CHECK(content.find("##nav_insights") != std::string::npos);
+    CHECK(content.find("##nav_dictionary") != std::string::npos);
+    CHECK(content.find("##nav_snippets") != std::string::npos);
+    CHECK(content.find("##nav_transforms") != std::string::npos);
+    CHECK(content.find("##nav_scratchpad") != std::string::npos);
+    CHECK(content.find("##nav_settings") != std::string::npos);
+    CHECK(content.find("##nav_speech") == std::string::npos);
+    CHECK(content.find("##nav_cloud") == std::string::npos);
+    CHECK(content.find("##nav_cleanup") == std::string::npos);
+    CHECK(content.find("##nav_privacy") == std::string::npos);
+    CHECK(content.find("##nav_about") == std::string::npos);
+    CHECK(content.find("##tab_general") != std::string::npos);
+    CHECK(content.find("##tab_speech") != std::string::npos);
+    CHECK(content.find("##tab_cloud") != std::string::npos);
+    CHECK(content.find("##tab_cleanup") != std::string::npos);
+    CHECK(content.find("##tab_privacy") != std::string::npos);
+    CHECK(content.find("##tab_about") != std::string::npos);
+    CHECK(count_occurrences(content, "Not available yet.") == 5);
+    CHECK(content.find("kRailWidth") != std::string::npos);
+    CHECK(content.find("40.0f * scale") != std::string::npos);
+    CHECK(content.find("font_card_title_px") != std::string::npos);
+    CHECK(content.find("PersistPage();") != std::string::npos);
+    CHECK(content.find("last_page") != std::string::npos);
+    CHECK(content.find("void MainWindow::DrawSettingsPage") != std::string::npos);
+    CHECK(content.find("void MainWindow::DrawGeneralPage") != std::string::npos);
+    CHECK(content.find("void MainWindow::DrawInsightsPage") != std::string::npos);
+    CHECK(content.find("void MainWindow::DrawDictionaryPage") != std::string::npos);
+    CHECK(content.find("void MainWindow::DrawSnippetsPage") != std::string::npos);
+    CHECK(content.find("void MainWindow::DrawTransformsPage") != std::string::npos);
+    CHECK(content.find("void MainWindow::DrawScratchpadPage") != std::string::npos);
+    CHECK(content.find("##card_general_hotkey") != std::string::npos);
+    CHECK(content.find("StartLearnHotkey") != std::string::npos);
+    CHECK(content.find("sound_enabled") != std::string::npos);
+    CHECK(content.find("reduce_motion") != std::string::npos);
+    CHECK(content.find("mini_x") != std::string::npos);
+
+    std::ifstream store_file("src/core/SettingsStore.cpp");
+    REQUIRE(static_cast<bool>(store_file));
+    const std::string store_content((std::istreambuf_iterator<char>(store_file)),
+                                    std::istreambuf_iterator<char>());
+    CHECK(store_content.find("last_page") != std::string::npos);
+    CHECK(store_content.find("\"Home\"") != std::string::npos);
+
+    std::ifstream main_file("src/main.cpp");
+    REQUIRE(static_cast<bool>(main_file));
+    const std::string main_content((std::istreambuf_iterator<char>(main_file)),
+                                   std::istreambuf_iterator<char>());
+    CHECK(main_content.find("case UiCommandType::StartTransform") != std::string::npos);
+    CHECK(main_content.find("case UiCommandType::OpenScratchpad") != std::string::npos);
+}
+
+TEST_CASE("studio palette keeps the provisional estimate token values") {
+    using lwf::ui::kStudioPalette;
+    CHECK(kStudioPalette.page_bg == 0xFAFAF8u);
+    CHECK(kStudioPalette.rail_bg == 0xF4F2EEu);
+    CHECK(kStudioPalette.card_bg == 0xF4F2EEu);
+    CHECK(kStudioPalette.card_bg_white == 0xFFFFFFu);
+    CHECK(kStudioPalette.border == 0xE7E4DEu);
+    CHECK(kStudioPalette.ink == 0x1C1C1Cu);
+    CHECK(kStudioPalette.muted == 0x7A776Fu);
+    CHECK(kStudioPalette.teal_700 == 0x1E5E5Au);
+    CHECK(kStudioPalette.teal_500 == 0x2F8077u);
+    CHECK(kStudioPalette.teal_300 == 0x7DBFB7u);
+    CHECK(kStudioPalette.teal_100 == 0xCDEBE7u);
+    CHECK(kStudioPalette.heat_empty == 0xCDC6BBu);
+    CHECK(kStudioPalette.banner_cream == 0xF1ECE4u);
+}
+
+TEST_CASE("studio palette layout tokens follow the shape scale") {
+    namespace metrics = lwf::ui::studio_metrics;
+    CHECK(metrics::radius_banner == 16.0f);
+    CHECK(metrics::radius_card == 12.0f);
+    CHECK(metrics::radius_row == 10.0f);
+    CHECK(metrics::radius_input == 10.0f);
+    CHECK(metrics::radius_button == 8.0f);
+    CHECK(metrics::radius_chip == 6.0f);
+    CHECK(metrics::page_padding == 32.0f);
+    CHECK(metrics::gap == 24.0f);
+    CHECK(metrics::row_height == 52.0f);
+    CHECK(metrics::hit_size == 32.0f);
+    CHECK(metrics::font_banner_px == 40.0f);
+    CHECK(metrics::font_caps_px == 12.0f);
+    CHECK(metrics::font_page_title_px == 28.0f);
+    CHECK(metrics::font_helper_px == 13.0f);
+    CHECK(metrics::toast_dwell_ms == 5000);
+    CHECK(metrics::activity_cell == 14.0f);
+    CHECK(metrics::activity_gap == 4.0f);
+    CHECK(metrics::activity_corner == 3.0f);
+    CHECK(metrics::gauge_stroke == 14.0f);
+    CHECK(metrics::progress_height == 28.0f);
+}
+
+TEST_CASE("studio palette contrast passes on ink and teal pairs with provisional muted") {
+    using lwf::ui::ContrastRatio;
+    using lwf::ui::kStudioPalette;
+    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.page_bg) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.rail_bg) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.card_bg) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.card_bg_white) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.banner_cream) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.teal_100) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.teal_300) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.card_bg_white, kStudioPalette.teal_700) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.card_bg_white, kStudioPalette.teal_500) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.page_bg) >= 3.0);
+    CHECK(ContrastRatio(kStudioPalette.teal_500, kStudioPalette.card_bg_white) >= 3.0);
+    CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.teal_100) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.card_bg_white) >= 3.0);
+    CHECK(std::abs(ContrastRatio(kStudioPalette.muted, kStudioPalette.card_bg_white) - 4.47) < 0.02);
+    CHECK(std::abs(ContrastRatio(kStudioPalette.muted, kStudioPalette.page_bg) - 4.28) < 0.02);
+    CHECK(std::abs(ContrastRatio(kStudioPalette.muted, kStudioPalette.card_bg) - 4.00) < 0.02);
+    CHECK(ContrastRatio(kStudioPalette.border, kStudioPalette.page_bg) < 3.0);
+    CHECK(ContrastRatio(kStudioPalette.border, kStudioPalette.card_bg_white) < 3.0);
+}
+
+TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
+    using lwf::ui::Clamp01;
+    using lwf::ui::HeatLevel;
+    using lwf::ui::UpperSpaced;
+    CHECK(HeatLevel(0, 10) == 0);
+    CHECK(HeatLevel(5, 0) == 0);
+    CHECK(HeatLevel(0, 0) == 0);
+    CHECK(HeatLevel(1, 10) == 1);
+    CHECK(HeatLevel(2, 10) == 1);
+    CHECK(HeatLevel(3, 10) == 2);
+    CHECK(HeatLevel(6, 10) == 3);
+    CHECK(HeatLevel(8, 10) == 4);
+    CHECK(HeatLevel(10, 10) == 4);
+    CHECK(HeatLevel(99, 10) == 4);
+    CHECK(Clamp01(2.0f) == 1.0f);
+    CHECK(Clamp01(-0.5f) == 0.0f);
+    CHECK(Clamp01(0.5f) == 0.5f);
+    CHECK(UpperSpaced("Beta") == "B E T A");
+    CHECK(UpperSpaced("") == "");
+}
+
+TEST_CASE("studio widgets respect the font mechanism and stay opt in") {
+    const std::vector<std::string> studio_sources = {
+        "src/ui/theme/StudioPalette.h",
+        "src/ui/theme/StudioPalette.cpp",
+        "src/ui/widgets/Widgets.h",
+        "src/ui/widgets/Buttons.cpp",
+        "src/ui/widgets/Display.cpp",
+        "src/ui/widgets/Overlays.h",
+        "src/ui/widgets/Overlays.cpp",
+    };
+    for (const std::string& path : studio_sources) {
+        std::ifstream file(path);
+        REQUIRE(static_cast<bool>(file));
+        INFO(path);
+        const std::string content((std::istreambuf_iterator<char>(file)),
+                                  std::istreambuf_iterator<char>());
+        CHECK(content.find("SetWindowFontScale") == std::string::npos);
+    }
+    std::ifstream buttons("src/ui/widgets/Buttons.cpp");
+    REQUIRE(static_cast<bool>(buttons));
+    const std::string buttons_content((std::istreambuf_iterator<char>(buttons)),
+                                      std::istreambuf_iterator<char>());
+    CHECK(buttons_content.find("PushFont(nullptr,") != std::string::npos);
+    CHECK(buttons_content.find("InvisibleButton") != std::string::npos);
+    std::ifstream overlays("src/ui/widgets/Overlays.cpp");
+    REQUIRE(static_cast<bool>(overlays));
+    const std::string overlays_content((std::istreambuf_iterator<char>(overlays)),
+                                       std::istreambuf_iterator<char>());
+    CHECK(overlays_content.find("BeginPopupModal") != std::string::npos);
+    CHECK(overlays_content.find("ImGuiKey_Escape") != std::string::npos);
+    std::ifstream main_window("src/ui/MainWindow.cpp");
+    REQUIRE(static_cast<bool>(main_window));
+    const std::string main_content((std::istreambuf_iterator<char>(main_window)),
+                                   std::istreambuf_iterator<char>());
+    CHECK(main_content.find("ApplyStudioStyle") == std::string::npos);
+    std::ifstream overlay("src/ui/Overlay.cpp");
+    REQUIRE(static_cast<bool>(overlay));
+    const std::string overlay_content((std::istreambuf_iterator<char>(overlay)),
+                                      std::istreambuf_iterator<char>());
+    CHECK(overlay_content.find("ApplyStudioStyle") == std::string::npos);
 }

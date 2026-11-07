@@ -36,6 +36,8 @@ using lwf::ui::Color;
 using lwf::ui::kDarkPalette;
 using lwf::ui::Pack;
 
+constexpr float kRailWidth = 220.0f;
+
 std::vector<std::string> SplitChord(const std::string& chord) {
     std::vector<std::string> parts;
     std::size_t start = 0;
@@ -87,7 +89,9 @@ bool ToggleSwitch(const char* id, bool value, float scale) {
 
 MainWindow::MainWindow(const DictationFSM& fsm, const MiniaudioCapture& audio,
                        SettingsStore& settings, UiBus& bus)
-    : fsm_(fsm), audio_(audio), settings_(settings), bus_(bus) {}
+    : fsm_(fsm), audio_(audio), settings_(settings), bus_(bus) {
+    page_ = PageForRoute(settings_.GetString("last_page"));
+}
 
 MainWindow::~MainWindow() {
     Shutdown();
@@ -289,7 +293,7 @@ void MainWindow::RunOnce(float) {
 
     DrawRail(scale);
 
-    const float rail_w = metrics::rail_width * scale;
+    const float rail_w = kRailWidth * scale;
     const ImVec2 content_pos(rail_w, 0.0f);
     const ImVec2 content_size(ImGui::GetIO().DisplaySize.x - rail_w,
                               ImGui::GetIO().DisplaySize.y);
@@ -330,26 +334,29 @@ void MainWindow::RenderPages(float scale) {
         case Page::Home:
             DrawHomePage(scale);
             break;
-        case Page::Speech:
-            DrawSpeechPage(scale);
+        case Page::Insights:
+            DrawInsightsPage(scale);
             break;
-        case Page::Cloud:
-            DrawCloudPage(scale);
+        case Page::Dictionary:
+            DrawDictionaryPage(scale);
             break;
-        case Page::Cleanup:
-            DrawCleanupPage(scale);
+        case Page::Snippets:
+            DrawSnippetsPage(scale);
             break;
-        case Page::Privacy:
-            DrawPrivacyPage(scale);
+        case Page::Transforms:
+            DrawTransformsPage(scale);
             break;
-        case Page::About:
-            DrawAboutPage(scale);
+        case Page::Scratchpad:
+            DrawScratchpadPage(scale);
+            break;
+        case Page::Settings:
+            DrawSettingsPage(scale);
             break;
     }
 }
 
 void MainWindow::DrawRail(float scale) {
-    const ImVec2 size(metrics::rail_width * scale, ImGui::GetIO().DisplaySize.y);
+    const ImVec2 size(kRailWidth * scale, ImGui::GetIO().DisplaySize.y);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kDarkPalette.surface));
     ImGui::BeginChild("##rail", size, ImGuiChildFlags_None);
     ImGui::PopStyleColor();
@@ -373,14 +380,16 @@ void MainWindow::DrawRail(float scale) {
         };
         const NavItem items[] = {
             {"##nav_home", "Home", Page::Home},
-            {"##nav_speech", "Speech", Page::Speech},
-            {"##nav_cloud", "Cloud", Page::Cloud},
-            {"##nav_cleanup", "Cleanup", Page::Cleanup},
-            {"##nav_privacy", "Privacy", Page::Privacy},
-            {"##nav_about", "About", Page::About},
+            {"##nav_insights", "Insights", Page::Insights},
+            {"##nav_dictionary", "Dictionary", Page::Dictionary},
+            {"##nav_snippets", "Snippets", Page::Snippets},
+            {"##nav_transforms", "Transforms", Page::Transforms},
+            {"##nav_scratchpad", "Scratchpad", Page::Scratchpad},
+            {"##nav_settings", "Settings", Page::Settings},
         };
 
-        const float item_h = 36.0f * scale;
+        const float item_h = 40.0f * scale;
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         const float font_h = ImGui::GetFontSize();
         // Restore keyboard focus after a page switch or re-show, only when the
         // user is actually driving with the keyboard (NavActive) so a mouse
@@ -396,6 +405,11 @@ void MainWindow::DrawRail(float scale) {
             page_focus_pending_ = false;
         }
         for (const NavItem& item : items) {
+            if (item.page == Page::Settings) {
+                ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+            }
             const ImVec2 p = ImGui::GetCursorScreenPos();
             const float w = ImGui::GetContentRegionAvail().x;
             // DECISION: switch on the InvisibleButton activation return, not
@@ -408,6 +422,7 @@ void MainWindow::DrawRail(float scale) {
                 ImGui::InvisibleButton(item.id, ImVec2(w, item_h), ImGuiButtonFlags_EnableNav);
             if (pressed) {
                 page_ = item.page;
+                PersistPage();
                 validation_error_.clear();  // errors belong to the page that set them
                 // Focus is already on the pressed item; never arm the restore
                 // here (mouse or keyboard). A stale arm would yank focus to
@@ -422,16 +437,15 @@ void MainWindow::DrawRail(float scale) {
                              Pack(kDarkPalette.focus), 2.0f * scale, 0, 2.0f * scale);
             }
             const std::uint32_t color =
-                active ? kDarkPalette.accent : (hovered ? kDarkPalette.text : kDarkPalette.muted);
+                active ? kDarkPalette.text : (hovered ? kDarkPalette.text : kDarkPalette.muted);
             if (active) {
-                draw.AddRectFilled(
-                    ImVec2(p.x, p.y + (item_h - 20.0f * scale) * 0.5f),
-                    ImVec2(p.x + 3.0f * scale, p.y + (item_h + 20.0f * scale) * 0.5f),
-                    Pack(kDarkPalette.accent), 2.0f * scale);
+                draw.AddRectFilled(p, ImVec2(p.x + w, p.y + item_h),
+                                   Pack(kDarkPalette.text, 0.10f), 8.0f * scale);
             }
             draw.AddText(ImVec2(p.x + 19.0f * scale, p.y + (item_h - font_h) * 0.5f),
                          Pack(color), item.label);
         }
+        ImGui::PopFont();
 
         // Rail bottom: live status and the way back to mini.
         const float line = ImGui::GetTextLineHeightWithSpacing();
@@ -532,6 +546,14 @@ void MainWindow::ApplyAndSave() {
 
 void MainWindow::ShowSaved() {
     saved_until_ = static_cast<float>(ImGui::GetTime()) + metrics::saved_dwell;
+}
+
+void MainWindow::PersistPage() {
+    if (page_ == Page::Welcome) {
+        return;
+    }
+    settings_.SetString("last_page", RouteName(page_));
+    settings_.Save();
 }
 
 void MainWindow::DrawRestartBanner(float scale) {
@@ -916,6 +938,170 @@ void MainWindow::DrawAboutPage(float scale) {
     EndCard(scale);
 }
 
+void MainWindow::DrawInsightsPage(float scale) {
+    DrawPageChrome("Insights", "Your dictation at a glance.", scale);
+    ImGui::TextDisabled("Not available yet.");
+}
+
+void MainWindow::DrawDictionaryPage(float scale) {
+    DrawPageChrome("Dictionary", "Words the app corrects.", scale);
+    ImGui::TextDisabled("Not available yet.");
+}
+
+void MainWindow::DrawSnippetsPage(float scale) {
+    DrawPageChrome("Snippets", "Reusable phrases.", scale);
+    ImGui::TextDisabled("Not available yet.");
+}
+
+void MainWindow::DrawTransformsPage(float scale) {
+    DrawPageChrome("Transforms", "Rewrite selected text.", scale);
+    ImGui::TextDisabled("Not available yet.");
+}
+
+void MainWindow::DrawScratchpadPage(float scale) {
+    DrawPageChrome("Scratchpad", "A scratch space for notes.", scale);
+    ImGui::TextDisabled("Not available yet.");
+}
+
+void MainWindow::DrawGeneralPage(float scale) {
+    DrawPageChrome("General", "Everyday controls in one place.", scale);
+
+    const float width = std::min(ImGui::GetContentRegionAvail().x, metrics::content_max * scale);
+
+    BeginCard("##card_general_hotkey", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Hotkey");
+        ImGui::PopFont();
+        DrawHotkeyChips(settings_.GetString("hotkey_ptt"), scale);
+        ImGui::TextDisabled("Hold to speak, release to type.");
+        if (ImGui::Button("Learn a new chord...")) {
+            bus_.PostCommand(UiCommandType::StartLearnHotkey);
+        }
+    }
+    EndCard(scale);
+
+    BeginCard("##card_general_sound", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Sound");
+        ImGui::PopFont();
+        bool sound = settings_.GetBool("sound_enabled");
+        if (ToggleRow("Sound", sound, "Play short sounds while dictating", scale)) {
+            settings_.SetBool("sound_enabled", !sound);
+            ApplyAndSave();
+        }
+        const std::string device = settings_.GetString("mic_device");
+        if (device.empty()) {
+            ImGui::TextDisabled("Microphone: default device.");
+        } else {
+            ImGui::TextWrapped("Microphone: %s", device.c_str());
+        }
+    }
+    EndCard(scale);
+
+    BeginCard("##card_general_motion", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Motion");
+        ImGui::PopFont();
+        bool reduced = settings_.GetBool("reduce_motion");
+        if (ToggleRow("Reduce motion", reduced, "Stop animations", scale)) {
+            settings_.SetBool("reduce_motion", !reduced);
+            ApplyAndSave();
+        }
+    }
+    EndCard(scale);
+
+    BeginCard("##card_general_window", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Window");
+        ImGui::PopFont();
+        const int mini_x = settings_.GetInt("mini_x");
+        const int mini_y = settings_.GetInt("mini_y");
+        if (mini_x < 0 && mini_y < 0) {
+            ImGui::TextDisabled("Mini window: default position (bottom center).");
+        } else {
+            ImGui::Text("Mini window position: %d, %d", mini_x, mini_y);
+        }
+    }
+    EndCard(scale);
+}
+
+void MainWindow::DrawSettingsPage(float scale) {
+    struct TabItem {
+        const char* id;
+        const char* label;
+        SettingsTab tab;
+    };
+    const TabItem tabs[] = {
+        {"##tab_general", "General", SettingsTab::General},
+        {"##tab_speech", "Speech", SettingsTab::Speech},
+        {"##tab_cloud", "Cloud", SettingsTab::Cloud},
+        {"##tab_cleanup", "Cleanup", SettingsTab::Cleanup},
+        {"##tab_privacy", "Privacy", SettingsTab::Privacy},
+        {"##tab_about", "About", SettingsTab::About},
+    };
+    ImDrawList& draw = *ImGui::GetWindowDrawList();
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    const float tab_h = 36.0f * scale;
+    const float tab_pad = 16.0f * scale;
+    for (std::size_t i = 0; i < 6; ++i) {
+        const TabItem& item = tabs[i];
+        if (i > 0) {
+            ImGui::SameLine(0.0f, 8.0f * scale);
+        }
+        const ImVec2 text_size = ImGui::CalcTextSize(item.label);
+        const float w = text_size.x + 2.0f * tab_pad;
+        const ImVec2 p = ImGui::GetCursorScreenPos();
+        const bool pressed =
+            ImGui::InvisibleButton(item.id, ImVec2(w, tab_h), ImGuiButtonFlags_EnableNav);
+        if (pressed) {
+            settings_tab_ = item.tab;
+            validation_error_.clear();
+        }
+        const bool active = settings_tab_ == item.tab;
+        const bool hovered = ImGui::IsItemHovered();
+        if (ImGui::IsItemFocused()) {
+            draw.AddRect(ImVec2(p.x - 2.0f * scale, p.y - 2.0f * scale),
+                         ImVec2(p.x + w + 2.0f * scale, p.y + tab_h + 2.0f * scale),
+                         Pack(kDarkPalette.focus), 8.0f * scale, 0, 2.0f * scale);
+        }
+        if (active) {
+            draw.AddRectFilled(p, ImVec2(p.x + w, p.y + tab_h),
+                               Pack(kDarkPalette.text, 0.10f), 8.0f * scale);
+        }
+        const std::uint32_t color =
+            active ? kDarkPalette.text : (hovered ? kDarkPalette.text : kDarkPalette.muted);
+        draw.AddText(ImVec2(p.x + tab_pad, p.y + (tab_h - text_size.y) * 0.5f), Pack(color),
+                     item.label);
+    }
+    ImGui::PopFont();
+    ImGui::Separator();
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+    switch (settings_tab_) {
+        case SettingsTab::General:
+            DrawGeneralPage(scale);
+            break;
+        case SettingsTab::Speech:
+            DrawSpeechPage(scale);
+            break;
+        case SettingsTab::Cloud:
+            DrawCloudPage(scale);
+            break;
+        case SettingsTab::Cleanup:
+            DrawCleanupPage(scale);
+            break;
+        case SettingsTab::Privacy:
+            DrawPrivacyPage(scale);
+            break;
+        case SettingsTab::About:
+            DrawAboutPage(scale);
+            break;
+    }
+}
+
 void MainWindow::DrawWelcomePage(float scale) {
     DrawPageChrome("Welcome", "Three small steps and you are dictating.", scale);
 
@@ -988,6 +1174,7 @@ void MainWindow::DrawWelcomePage(float scale) {
                 welcome_step_ = 0;
                 validation_error_.clear();  // page switch: errors stay on their page
                 page_ = Page::Home;
+                PersistPage();
                 page_focus_pending_ = true;
             }
         }
