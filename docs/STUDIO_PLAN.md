@@ -1,6 +1,6 @@
 # Studio pages plan (F0) — repo copy of approved plan
 
-- Status: **F0 STOP — awaiting Devansh sign-off**. No UI code until Devansh signs this F0. Backends may land in order P02-P11 only as gated by F0 approval; shell/pages (P17-P23) are blocked until F0 is signed.
+- Status: **IMPLEMENTED on `feature/studio-pages`** (F0 signed 2026-11-07; P01-P24 + workstreams A/C shipped; merge + Windows manual pass still open — see §15). The F0 STOP language below is historical; §§3/5 describe shipped shapes and `src/` is the source of truth where this file and the code disagree.
 - Branch: `feature/studio-pages` from origin/main `1d95fb2` (PR #2 merged). Local docs commit `d7595d1` (PROGRESS/SUMMARY CI-green record) is NOT in origin/main — cherry-pick onto main before work starts or the docs record is lost. Baseline `0e655ec` (1d95fb2 merge + docs cherry-pick). Baseline gates at `1d95fb2`: CI run 42310536369 both jobs success; local configure 0, app build 0, ctest lwf-tests 1/1, hygiene OK. G3 zig pending (no zig on box).
 - Spec: operator message 2026-11-07 (five pages + F0-F9) plus five settings-GUI bullets.
 - Operator / agent: Devansh / planning session (MiMo); implementation = future agent sessions.
@@ -34,7 +34,7 @@
 | `CMakeLists.txt` | modify | same commit as every phase adding sources/tests | new sources + tests + `font_sources` scan list | G1 |
 | `tests/test_*.cpp` (new + targeted updates) | new/modify | see §11 | gates | CI |
 | `AGENTS.md` | modify | A1 | D3 key-persistence rule amendment (text pre-approved in P01) | agents |
-| `installer/lwf.iss` | modify | P10 | seeds v1 `transforms.json` array [FACT lwf.iss:43] | TransformStore migration |
+| `installer/lwf.iss` | read-only (unchanged — no installer edit shipped) | P10 | still seeds v1 `transforms.json` array [FACT lwf.iss:43]; `TransformStore` migrates it on first load | TransformStore migration |
 | `src/ui/theme/ThemePalette.*` | read-only | P18 | dark tokens frozen; StudioPalette separate | — |
 
 Ordering rationale: P01 stop → data P02-P11 (green before UI) → hooks P12-P16 → shell P17 + base widgets P18 → workstream A → pages P19-P23 → polish P24 → C last. Every phase independently green; no phase depends on a later one; every gate edit travels with the file it unblocks; `CMakeLists.txt` and the source-scan file lists are updated inside each page/phase's own commit (each P19-P23 row extends `font_sources` with its new file).
@@ -54,12 +54,12 @@ The 4 migration shapes for `DictionaryStore` (T-mig x4) are the partitions of th
 
 | Shape | On-disk form | Migration |
 |---|---|---|
-| S1 | Array of strings `["btw", "xyz"]` | Words keep order; `replacements = []`; write v2 object `{version:2, words:[...], replacements:[]}` on first Save. Empty string / >60-char entries dropped (`PersonalDictionary.cpp:130-134`). |
+| S1 | Array of strings `["btw", "xyz"]` | Words keep order; `replacements = []`; write v2 object `{schema_version:2, entries:[...]}` on first Save. Empty string / >60-char entries dropped (`PersonalDictionary.cpp`). |
 | S2 | Object with `words` only `{"words":["a"]}` | Same as S1; missing `replacements` defaults to `[]`. |
 | S3 | Object with both `{"words":["a"], "replacements":[{"from":"a","to":"b"}]}` | Full fidelity; entry order preserved; dedupe exact duplicates (T-dup). |
 | S4 | Object with `replacements` only `{"replacements":[{"from":"a","to":"b"}]}` (words missing) | Words default to `[]`; replacements preserved. |
 
-v2 entry fields (additive beyond today's `{word, from, to}`): `version:2` envelope; per-word `starred` (bool, default false, used by Dictionary page sort/star, checkpoint D1) and `added_at` (ISO date string, default `""` for migrated entries); per-replacement unchanged `{from, to}`. Any other root (number, string, `null`) or unparseable JSON follows the corrupt path: rename to `.bad`, return empty + seed (§3.1 seed). First Save always writes `.bak` of the pre-migration file. `PersonalDictionary::Enforce` order is unchanged (replacements first `PersonalDictionary.cpp:233-246`, then exact-case fix + fuzzy EditDistance==1 for len>=6 at `:256-276`); P13 adds a fix-count return via additive out-param. D-OP2 (single shared dictionary instance: pipeline + page + cloud keyterms, `main.cpp:369,414` dual load) means page edits reload the SAME `PersonalDictionary` object or pipeline/keyterms go stale (T-reload).
+v2 (shipped): `{schema_version:2, entries:[{id, phrase, replacement?, starred, source, usage_count, created_at, updated_at}]}` where `replacement` is present only when set, `source` is `manual`/`imported`, and timestamps are int64 seconds (`DictionaryStore.cpp:EntriesToJson`). Any other root (number, string, `null`) or unparseable JSON follows the corrupt path: rename to `.bad`, return empty + seed (§3.1 seed). First migrated Save preserves the legacy file in `.bak` only if `.bak` is absent (`DictionaryStore.cpp:476-484`). Downgrade note: branch builds dual-read v1 and v2 (`PersonalDictionary::Load` accepts both), so rolling back within this branch reads both shapes; rolling back to pre-branch `0e655ec` silently loads an empty dictionary (old loader only knows array/`{words,replacements}`) — restore the `.bak` if a pre-branch rollback is needed. `PersonalDictionary::Enforce` order is unchanged (replacements first `PersonalDictionary.cpp:233-246`, then exact-case fix + fuzzy EditDistance==1 for len>=6 at `:256-276`); P13 adds a fix-count return via additive out-param. D-OP2 (single shared dictionary instance: pipeline + page + cloud keyterms, `main.cpp:369,414` dual load) means page edits reload the SAME `PersonalDictionary` object or pipeline/keyterms go stale (T-reload).
 
 Seed: if `dictionary.json` is absent on first run, `DictionaryStore` seeds one entry `btw` (plan P06) so the Dictionary page is not empty. Missing-file is NOT corrupt — seed, never throw (contrast `TransformManager` missing-file throw, see §3.3).
 
@@ -67,13 +67,13 @@ Seed: if `dictionary.json` is absent on first run, `DictionaryStore` seeds one e
 
 Current store: `SnippetStore::Load` at `src/core/SnippetStore.cpp:76-128`, expects a JSON array; each element must be an object containing `trigger` (string) and `expansion` (string). Entries with empty trigger are skipped; `expansion.size() > 4000` is rejected with warning `snippet '<trigger>' rejected: expansion over 4000 chars`; duplicate triggers are last-wins with warning `duplicate snippet trigger '<trigger>', last wins`. No `Save` exists. v1 on-disk shape is therefore `[{trigger, expansion}]`.
 
-v2 envelope: `{"version":2, "snippets":[{id, trigger, expansion, created_at, updated_at}]}`. `id` is a stable lowercase hex string derived on migration as `s-<n>` in file order (or existing value if already present); `created_at`/`updated_at` default to `""` for migrated entries and to the save timestamp for new entries. Migration reads the v1 array (and tolerates the v2 envelope on already-migrated files), applies the same 4 validation messages as Load today (trigger-empty reject, over-4000 reject, duplicate last-wins, non-object/missing-field skip) — T-val x4 pins each message — then writes v2 atomically with `.bak`. `Expand` semantics preserved: whole-phrase `Normalize` equality by default; `contains` mode does whole-word find/replace (`SnippetStore.cpp:152-186`); mixed casing/punctuation handled by `Normalize` (`:61-74`); longest-match wins when multiple triggers match (T-match); empty expansion deletes (spec R5; T-val). Trigger/expansion limits (`expansion <= 4000`) enforced on every Save with the same 4 messages surfaced to the Snippets page sheet (checkpoint S1). Missing file → seed with empty list + empty state, never throw.
+v2 (shipped): `{"version":2, "snippets":[{id, trigger, expansion, created_at, updated_at}]}` where `id` is `snippet-<n>` in file order on migration (existing value preserved when present) or `snippet-<ts>-<n>` for new entries via `SetEntries`, and `created_at`/`updated_at` are int64 seconds (`SnippetStore.cpp:236-250,292-309`). Every Save overwrites `.bak` unconditionally (only `DictionaryStore` guards against overwriting `.bak` — see §15 F-1). Migration reads the v1 array (and tolerates the v2 envelope on already-migrated files), applies the same 4 validation messages as Load today (trigger-empty reject, over-4000 reject, duplicate last-wins, non-object/missing-field skip) — T-val x4 pins each message — then writes v2 atomically with `.bak`. `Expand` semantics preserved: whole-phrase `Normalize` equality by default; `contains` mode does whole-word find/replace (`SnippetStore.cpp:152-186`); mixed casing/punctuation handled by `Normalize` (`:61-74`); longest-match wins when multiple triggers match (T-match); empty expansion deletes (spec R5; T-val). Trigger/expansion limits (`expansion <= 4000`) enforced on every Save with the same 4 messages surfaced to the Snippets page sheet (checkpoint S1). Missing file → seed with empty list + empty state, never throw.
 
 ### 3.3 `transforms.json` — v1 → v2, slot layout (P08/P10)
 
 Current: `TransformManager::LoadFile` at `src/core/TransformManager.cpp:34-76` REQUIRES `{text}` in every prompt (throws `:63-65`) and THROWS on missing file (`:38`) and on parse failure (`:45-46`). Loader expects exactly a JSON array `[{name, prompt}]` (`:49-76`). The shipped file `transforms.json:1-14` is v1 array with 3 entries (Fix Grammar / Make Formal / Summarize), all containing `{text}`. Installer seeds v1 to the install dir (`installer/lwf.iss:43`, `.gitignore:11`), so a fresh install has v1 PRESENT, not missing.
 
-v2 slot layout (P08): 10 fixed slots; slots 1-2 are built-ins (Fix Grammar, Make Formal — prompts migrated verbatim from v1); slots 3-10 empty/custom. Each slot carries `{slot, name, prompt, shortcut, enabled, updated_at}`; `prompt <= 2000` chars; `{text}` auto-appended when absent (D7 — editor copy unchanged, spec §4.4); per-slot shortcut recorder (A3) with conflict-check against `HotkeyBinding` registry (T-conflict → conflict disables + card warning). Migration (P10, T-transform-v1): on first load, if the file is a v1 array, convert entry order to slots 1..n in order, write v2 atomically with `.bak`, one-way (never write v1 again). Missing file → seed built-ins 1-2 (never construct `TransformManager`'s throwing ctor on the raw path — TransformStore wraps or seeds first; `TransformManager` itself is left throwing per existing contract). Opt-in gate (P22): when transforms opt-in is OFF, no shortcuts register and cards dim (T-optin). Run flow (P15) reuses `CommandModeController` technique (see §4), not the dead `WindowsClipboardInjector`.
+v2 (shipped): 10 fixed slots; slots 1-2 are built-ins `Polish` / `Prompt Engineer` with D5 prompts (default entries 1-2, never overwritten by migration); slots 3-10 empty/custom. Each slot carries `{slot, name, prompt, shortcut, built_in, created_at, updated_at}`; `prompt <= 2000` chars of editor copy (`{text}` auto-appended on save, D7); per-slot shortcut recorder (A3) with conflict-check against `HotkeyBinding` registry (conflict disables the slot + card warning). Migration (P10, T-transform-v1): on first load, if the file is a v1 array, convert entry order to slots 3..n (built-ins 1-2 stay), write v2 atomically with `.bak`, one-way (never write v1 again). The shipped `transforms.json` v1 entries are `Fix Grammar` / `Make Formal` / `Summarize` (`INV-datastore.md`); they land in slots 3-5, not 1-2. Missing file → seed built-ins 1-2 (never construct `TransformManager`'s throwing ctor on the raw path — TransformStore wraps or seeds first; `TransformManager` itself is left throwing per existing contract). Opt-in gate (P22): when transforms opt-in is OFF, no shortcuts register and cards dim (T-optin). Run flow (P15) reuses `CommandModeController` technique (see §4), not the dead `WindowsClipboardInjector`.
 
 ### 3.4 `stats.json` — new daily-rollup store (P05, Insights)
 
@@ -85,13 +85,16 @@ Greenfield directory. Layout: `notes/index.json` (array of `{id, title, pinned, 
 
 ### 3.6 `config.json` — additive keys, no migration (A4)
 
-`SettingsStore::BuildSchema()` at `src/core/SettingsStore.cpp:16-64` = 49 keys today (verified `Select-String` count). Keys are additive-only across releases; unknown keys round-trip `raw_unknown_` (`SettingsStore.cpp:180-196`); Save re-emits unknown keys verbatim (`:190-229`). No format migration: older files load by filling defaults for missing keys (`:167-178`) and clamping out-of-range numbers (`:146-149`, recorded in `clamped_`). Three additive keys land (D6 scope note at A4 time = 49 + 3 = **52 keys**, all with a control or a documented carve-out D-OP3):
+`SettingsStore::BuildSchema()` at `src/core/SettingsStore.cpp:16-64` = 49 keys before this branch (verified `Select-String` count). Keys are additive-only across releases; unknown keys round-trip `raw_unknown_` (`SettingsStore.cpp:180-196`); Save re-emits unknown keys verbatim (`:190-229`). No format migration: older files load by filling defaults for missing keys (`:167-178`) and clamping out-of-range numbers (`:146-149`, recorded in `clamped_`). Six additive keys land on this branch (49 + 6 = **55 keys**, all with a control or a documented carve-out D-OP3):
 
 | Key | Type (proposed) | Default | Source of truth / consumer |
 |---|---|---|---|
 | `last_page` | String | `""` (→ Home) | P17 route round-trip (T-route): `MainWindow::Page` ↔ string; unknown value → Home. `hot_apply = true`. |
-| `llm_provider` | String | `"local"` | C1 OpenRouter opt-in; `"local"` default = no behaviour change. |
 | `quiet_speech_boost` | Bool | false | D-OP4: has a LIVE UI toggle today (`src/ui/MainWindow.cpp:760`) but sits outside the 49 — `SetBool→SetNumber` early-returns for unknown keys (`SettingsStore.cpp:257-261`) and `GetBool` returns false (`:245-249`), so the toggle never persists and `main.cpp:476,561` always reads false into `EngineSettings.quiet_speech_boost` (`EngineTypes.h:25`). Adding to BuildSchema is a behaviour FIX, not cosmetics. `hot_apply = true`. |
+| `scratchpad_flow_bar` | Bool | false | Overlay note-button visibility; `hot_apply = true`. |
+| `keep_usage_stats` | Bool | true | Insights gating; `hot_apply = true`. |
+| `llm_provider` | String | `"local"` | C1 OpenRouter opt-in; `"local"` default = no behaviour change. `hot_apply = false` (restart: provider is constructed once at startup; FINAL-FIX-01). |
+| `openrouter_model` | String | `""` | C1 model name for OpenRouter; `hot_apply = false` (restart + hand-edit; readout on Privacy; no GUI editor). |
 
 Carve-outs (D-OP3, T-a4 scan): `mini_x`/`mini_y` (set by drag, no control), `schema_version` (readout), `first_run` (write-only; owned by Welcome flow). Every other key (incl. internals per D6) has a real control; readout counts as a control. A4 keys consumed live must be added to the `ApplySettings` consumer at `main.cpp:557-569` (today: `min_hold_ms`, `quiet_speech_boost`, `sound_enabled`, `streaming_*`, `spoken_commands_aggressive`, `snippet_mode`, `reduce_motion` + `LoadBindings`) or they apply only after restart.
 
@@ -130,7 +133,7 @@ File shape today (`AppContextResolver.cpp:69-115`): `{"profiles":{<key>:{prompt_
 | `focus` | 2 px focus ring | `#1F3A5F` |  |
 | `surface_alpha` | mini badge opacity | `0.90` | mini-overlay palette untouched |
 
-Existing dark palette (`kDarkPalette` in `src/ui/theme/ThemePalette.h:46-61`) and light palette (`kLightPalette`, `:64-79`) remain the enforced source of truth for the current UI (`tests/test_overlay_settings_ui.cpp:176-191`). StudioPalette (P18) is a NEW `src/ui/theme/StudioPalette.{h,cpp}` carrying the measured values once the pixel-picker pass is done; the table above is the starting point for that measurement, not the final tokens.
+Existing dark palette (`kDarkPalette` in `src/ui/theme/ThemePalette.h:46-61`) and light palette (`kLightPalette`, `:64-79`) remain the enforced source of truth for the current UI (`tests/test_overlay_settings_ui.cpp:176-191`). StudioPalette (P18) shipped as `src/ui/theme/StudioPalette.{h,cpp}` with teal tokens (`teal_700 #1E5E5A`, `teal_500 #2F8077`, `teal_300 #7DBFB7`, `teal_100 #CDEBE7`, `page_bg #FAFAF8`, `rail_bg #F4F2EE`, `muted #6E6A62`, `ink #1C1C1C`) — **not** the navy estimates above (the brief's teal values won; see W3 finding). `src/ui/theme/StudioPalette.h` is the source of truth for shipped hexes; the table above is the discarded navy estimate, kept only as history. A pixel-measured pass (R-01) is still open — token contrast pins in `test_overlay_settings_ui.cpp` enforce the shipped teal set, not the table.
 
 ## 6. Fonts — EB Garamond + Inter, OFL (D12)
 
@@ -161,10 +164,10 @@ Rules: only OFL fonts are bundled; no other binary assets without R7 approval. L
 ## 9. F0 answers for Devansh
 
 ### (a) Palette / source images
-Pixel-measured palette is BLOCKED on the five source images. Net: PROVISIONAL visual-estimate table in §5 (flagged "visual estimate pending pixel-picker"); the five images must be saved to `docs/screenshots/source/` (Insights/Dictionary/Snippets/Transforms received 2026-11-07; Scratchpad outstanding — R-01), then a pixel-picker script extracts exact hexes and T-contrast re-runs on measured values. No StudioPalette token is frozen until then.
+F0 signed 2026-11-07. Shipped `StudioPalette` uses the brief's teal tokens (source of truth `src/ui/theme/StudioPalette.h`; contrast pins enforce the shipped set). The five source images were never saved to `docs/screenshots/source/` in this branch and no pixel-picker pass ran — R-01 remains “pixel-measured pass pending; shipped teal is provisional until then” (honest label, not frozen-measured).
 
 ### (b) Fonts
-EB Garamond + Inter (both OFL) approved for bundling (R7); exact file names/sizes recorded in §6 before download — **D12** (operator sign-off 2026-11-07).
+EB Garamond + Inter (both OFL) approved for bundling (R7) — **D12** (operator sign-off 2026-11-07). Shipped code still uses the default font with scoped `PushFont(nullptr, design_px)` tokens; no OFL files are bundled yet (§6 intent only). Bundle + `float` hashes remain a follow-up.
 
 ### (c) Banner copy
 Original banner copy — **D13** (operator sign-off 2026-11-07).
@@ -182,7 +185,7 @@ Decisions D1-D11 + D-OP1..D-OP4 are recorded in the approved plan §G (D1 branch
 
 ## 10. Change list (ordered, atomic) — summary
 
-P01 F0 file list/migration/answers/palette (this commit). P02 `AtomicFile` + gate allowlist same commit. P03 `TextDiff` LCS. P04 `InsightsModel` pure formulas. P05 `StatsStore` daily rollup 730-day cap. P06 `DictionaryStore` v2 4-shape migration `.bak` seed. P07 `SnippetStore` v2 ids/timestamps/Save/4 messages/longest-match. P08 `TransformStore` 10 slots built-ins 1-2. P09 `NotesStore` index+md CRUD/pin/search/undo. P10 transforms v1→v2 migration + installer. P11 `AppContextResolver` `category` 6 categories. P12 `StatsStore::Record` after successful inject at `DictationEngine.cpp:475` only. P13 `Enforce` fix-count return. P14 `TextPipeline::ProcessResult` overload. P15 engine transform mode + `UiCommandType::StartTransform` (worker thread). P16 scratchpad injection target + `OpenScratchpad` + Overlay note button. P17 `Page` enum + rail + Settings tabs (General D11) + `last_page` + source-scan updates same commit. P18 `StudioPalette` + widgets + toast/sheet/modal infra. P19-P23 pages. P24 contrast/copy/keyboard sweep. A1 `ApiKeyStore` + `api_key_source` store→env + gate allowlist same commit + AGENTS.md rule amendment (pre-approved here). A2 `FileDialogs` picker. A3 hotkey recorders (5 config + studio shortcuts). A4 Settings controls for all 49 keys (52 at A4 time). C1 `OpenRouterProvider` + `OpenRouterContract` + `llm_provider` key. C2 gate allowlist + doc. Full detail per row (symbol, what, how, why, depends, verified-by, risk, revert) is in the approved plan §E — preserved by reference; this file carries the ordering and the F0-expanded sections.
+P01 F0 file list/migration/answers/palette (this commit). P02 `AtomicFile` + gate allowlist same commit. P03 `TextDiff` LCS. P04 `InsightsModel` pure formulas. P05 `StatsStore` daily rollup 730-day cap. P06 `DictionaryStore` v2 4-shape migration `.bak` seed. P07 `SnippetStore` v2 ids/timestamps/Save/4 messages/longest-match. P08 `TransformStore` 10 slots built-ins 1-2 (`Polish` / `Prompt Engineer`). P09 `NotesStore` index+md CRUD/pin/search/undo. P10 transforms v1→v2 migration (installer seed left v1; migration handles it — no `installer/lwf.iss` edit shipped). P11 `AppContextResolver` `category` 6 categories. P12 `StatsStore::Record` after successful inject at `DictationEngine.cpp:475` only. P13 `Enforce` fix-count return. P14 `TextPipeline::ProcessResult` overload. P15 engine transform mode + `UiCommandType::StartTransform` (worker thread; detached-thread lifetime follow-up F-2 in §15). P16 scratchpad injection target + `OpenScratchpad` + Overlay note button. P17 `Page` enum + rail + Settings tabs (General D11) + `last_page` + source-scan updates same commit. P18 `StudioPalette` + widgets + toast/sheet/modal infra. P19-P23 pages. P24 contrast/copy/keyboard sweep. A1 `ApiKeyStore` + `api_key_source` store→env + gate allowlist same commit + AGENTS.md rule amendment (pre-approved here). A2 `FileDialogs` picker. A3 hotkey recorders (5 config + studio shortcuts). A4 Settings controls for all keys (55 at branch end: 49 + 6). C1 `OpenRouterProvider` + `OpenRouterContract` + `llm_provider` key. C2 gate allowlist + doc. Full detail per row (symbol, what, how, why, depends, verified-by, risk, revert) is in the approved plan §E — preserved by reference; this file carries the ordering and the F0-expanded sections.
 
 ## 11. Tests and validation
 
@@ -213,31 +216,47 @@ P01 F0 file list/migration/answers/palette (this commit). P02 `AtomicFile` + gat
 
 | ID | Type | Description | L x I | Mitigation | Owner | Status |
 |---|---|---|---|---|---|---|
-| R-01 | risk | Scratchpad screenshot missing; palette = visual estimates until pixel pass | H x M | 4/5 received 2026-11-07; F0 waits for 5th; pixel-measure in P01 | Devansh | 4/5 received, pending |
-| R-02 | assumption | `IHttpTransport` fits OpenRouter (POST + headers + JSON body) | L x M | first C1 task = contract from vendor docs + fake-transport test | impl | open (POST-only confirmed INV-keys-openrouter §4; GET /models out of C1 scope) |
+| R-01 | risk | Scratchpad screenshot missing; palette = shipped provisional teal until pixel pass | H x M | shipped `StudioPalette` teal is source of truth; pixel pass still open | Devansh | shipped provisional, pixel pass pending |
+| R-02 | assumption | `IHttpTransport` fits OpenRouter (POST + headers + JSON body) | L x M | C1 contract from vendor docs + fake-transport test | impl | CLOSED by C1 (fake-transport green); live-API smoke still pending (F-6) |
 | R-03 | risk | first Save overwrites real dictionary/snippets | M x H | `.bak` + T-mig + T-atomic | impl | designed |
 | R-04 | risk | G3 zig unavailable | H x L | record "pending on Windows" honestly | Devansh | accepted |
 | R-05 | risk | modal infra + `NavEnableKeyboard` regressions | M x M | F3 checkpoint + keyboard sweep F9 | impl | open |
 | R-06 | risk | D6 exposes `schema_version` etc. | L x L | clamps bound values; readout-style control (D-OP3) | Devansh | accepted (D6) |
 | R-07 | — | hook site `main.cpp:254` | — | RESOLVED: dead code; hook = `DictationEngine.cpp:475` | — | closed |
 | R-08 | risk | D5 embedded `{text}` vs spec "text as data" | M x M | default prompts embed `<selection>{text}</selection>` + delimiters sentence | impl | designed |
-| R-09 | risk | local docs commit `d7595d1` not in `origin/main` | L x L | cherry-pick onto main before starting | Devansh | open |
-| R-10 | risk | local checkout on `fix/gui-typography-dpi`, not main | M x M | switch/branch from `1d95fb2` before P02 | impl | open (current branch `feature/studio-pages` @ `0e655ec`) |
+| R-09 | risk | local docs commit `d7595d1` not in `origin/main` | L x L | cherry-pick onto main before merge | Devansh | CLOSED by branch baseline `0e655ec` (docs cherry-pick) |
+| R-10 | risk | local checkout on `fix/gui-typography-dpi`, not main | M x M | branch from `1d95fb2` before P02 | impl | CLOSED (current branch `feature/studio-pages` @ `0e655ec`) |
 
 Pre-mortem top causes (post-red-team): (1) hook at dead `RunEngine` → Insights always empty [mitigated: P12 at `:475` + T-no-record]; (2) gate edit lags file → CI red [same-commit rule]; (3) migration eats user file [`.bak`+T-mig+T-atomic]; (4) dictionary dual-source staleness [D-OP2+T-reload]; (5) UI freeze on transform LLM call [P15 worker-thread + T-no-ui-block]; (6) source-scan cascade at F3 [same-commit updates]; (7) scope creep across 3 workstreams [phase gates, C last].
 
-## 14. Approval gate (F0 sign-off checklist for Devansh)
+## 14. Approval gate (F0 sign-off checklist for Devansh) — SIGNED 2026-11-07
 
-Devansh must explicitly accept each line before UI work (P17+) begins. Reply with exact wording per line or approve the file as-is.
+F0 was signed 2026-11-07 (operator sign-offs D12-D15 recorded in §9); UI code shipped from P17. Checklist below is the historical gate, now satisfied; remaining merge gates are in §15.
 
-- [ ] (a) Palette approach: PROVISIONAL visual estimates in §5 accepted pending pixel-picker; 5 source images to be saved to `docs/screenshots/source/`, then exact hexes extracted (R-01).
-- [ ] (b) Fonts: EB Garamond + Inter (OFL) file names in §6 approved (D12).
-- [ ] (c)(d) Banner: original copy + dark blurred gradient placeholder, no logos/photos, italic accent OFF (D13).
-- [ ] (e) Labels: all-caps 12 px kept (D14).
-- [ ] (f) "Your voice" tab: stays with "Not available yet." (D15).
-- [ ] Data migrations (§3.1-3.8) accepted, incl. 4-shape dictionary table, snippets v2 envelope, transforms slot layout, `stats.json`/`notes/`/`api_keys.json` shapes, 52-key `config.json` (49 + `last_page` + `llm_provider` + `quiet_speech_boost`).
-- [ ] AGENTS.md amendment text (D3 `api_keys.json` + D2 OpenRouter exception, text only) accepted — edits are in the same review batch as this file.
-- [ ] Workstream order (data → hooks → shell → A → pages → polish → C) accepted (D8).
-- [ ] Outstanding non-UI hygiene (R-09/R-10 branch hygiene) assigned.
+- [x] (a) Palette approach: shipped teal `StudioPalette` (source of truth `src/ui/theme/StudioPalette.h`); pixel-measured pass remains pending (R-01).
+- [x] (b) Fonts: EB Garamond + Inter (OFL) approved (D12); bundling still open.
+- [x] (c)(d) Banner: original copy + dark blurred gradient placeholder, no logos/photos, italic accent OFF (D13).
+- [x] (e) Labels: all-caps 12 px kept (D14).
+- [x] (f) "Your voice" tab: stays with "Not available yet." (D15).
+- [x] Data migrations (§3.1-3.8) accepted, incl. 4-shape dictionary table, snippets v2 envelope, transforms slot layout, `stats.json`/`notes/`/`api_keys.json` shapes, 55-key `config.json` (49 + 6).
+- [x] AGENTS.md amendment text (D3 `api_keys.json` + D2 OpenRouter exception, text only) accepted — edits are in the same review batch as this file.
+- [x] Workstream order (data → hooks → shell → A → pages → polish → C) accepted (D8).
+- [x] Outstanding non-UI hygiene (R-09/R-10 branch hygiene) assigned (branch `feature/studio-pages` created from `0e655ec`).
 
-Signed: _Devansh, date: ____ (F0 approved → UI code unblocked from P17; backends P02-P16 proceed as already gated.)
+Signed: Devansh, 2026-11-07 (F0 approved → UI code unblocked from P17; backends P02-P16 proceeded as gated.)
+
+## 15. Post-implementation truth (2026-11-07, branch `feature/studio-pages`)
+
+What shipped vs what stayed planned:
+
+- **Shipped**: 5 pages (Insights/Dictionary/Snippets/Transforms/Scratchpad) on the P17 rail + P18 `StudioPalette`/widget kit; full settings GUI (General/Speech/Cloud/Cleanup/Privacy/About + 55-key schema, `api_keys.json` store→env, model pickers, hotkey recorders); `OpenRouterProvider` over `IHttpTransport` (`llm_provider`, `openrouter_model`, redacted `detail`); data stores (`DictionaryStore` v2, `SnippetStore` v2, `TransformStore` 10 slots, `StatsStore`, `NotesStore`, `ApiKeyStore`, `AtomicFile`, `TextDiff`, `InsightsModel`); engine hooks (stats-after-inject, `ProcessResult`, worker-thread transform, scratchpad-only injection). Ledger: `docs/PROGRESS.md` “Studio pages + settings GUI + OpenRouter (20261107-studio)”.
+- **Residuals really left** (do not mistake for shipped):
+  - F-1 `AtomicFile::WriteAtomic` dead; `.bak` handling diverges (Dictionary guards, Snippets/Transforms overwrite) — unify on Dictionary semantics.
+  - F-2 Detached transform worker (`DictationEngine.cpp:788` `detach()` holding the `llm` pointer) — needs `join()`/shared ownership; shutdown racing a >11 s decode is use-after-lifetime. Tracked, not faked.
+  - F-3 Silent hotkey drop on conflict + bare-letter legacy chords parse — needs a dropped-role log + a pin.
+  - F-4 `api_keys.json` plaintext + `.bak` duplication — DPAPI/ACL design (pre-existing, deferred).
+  - F-5 `HeatLevel`/`CalendarLevel` — **CLOSED by FINAL-FIX-01** (`StudioPalette.h` now mirrors `CalendarLevel` integer buckets; exhaustive parity sweep added). F-5 is no longer open.
+  - F-6 Windows-only surfaces have source-scan tests only on Linux CI; pixel-palette provisional (R-01); manual checkpoints I1/D1/S1/T1-T6/S1n-S5n/P1 + live OpenRouter smoke remain Devansh's Windows pass. Live-API contract stays VERIFIED-from-docs / UNVERIFIED-against-live.
+  - F-7 DECISION-1 (no separate `llm_consent_accepted`; `llm_provider`+model+key is the opt-in) still needs Devansh confirmation for the merge summary. `openrouter_model`/key remain hand-edited (Privacy readout only) + restart (`hot_apply=false`, FINAL-FIX-01).
+  - G3 zig type-check pending (no zig on this box; `docs/QUESTIONS.md` #1). AGENTS.md endpoint sentence + `check_no_network.sh` header still name `src/stt/cloud/*` only — OpenRouter carve-out prose is a docs follow-up (outside FINAL-FIX-01 write-set).
+  - Migrations are one-way mitigated by `.bak`; do not delete `.bak` on upgrade. Branch-internal rollback dual-reads v1+v2; pre-branch `0e655ec` rollback silently empties dictionary/snippets and throws on `transforms.json` (verified from the `0e655ec` loaders) — restore `.bak` for that rollback.

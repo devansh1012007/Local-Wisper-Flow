@@ -412,13 +412,6 @@ void DictionaryStore::Clear() {
     migrated_ = false;
     bak_pending_ = false;
     loaded_ = true;
-    // Tombstone: persist the intentionally-empty state so a later lazy Load()
-    // (first Dictionary page visit after delete-all) reads an empty entries
-    // array instead of hitting the missing-file seed path. Genuine first-run
-    // (file never existed, Clear never called) still seeds "btw" in Load().
-    // Mirrors StatsStore::Clear, which persists "{}" for the same reason.
-    // A subsequent Save() dumps the same empty RAM, so neither Load nor Save
-    // can resurrect entries.
     if (path_.empty()) {
         return;
     }

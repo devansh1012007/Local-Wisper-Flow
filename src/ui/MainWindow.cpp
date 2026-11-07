@@ -950,6 +950,7 @@ void MainWindow::DrawHomePage(float scale) {
         ImGui::PopFont();
         const std::string provider = settings_.GetString("stt_provider");
         const bool cloud_active = provider != "local" && settings_.GetBool("stt_consent_accepted");
+        const bool openrouter_cleanup = settings_.GetString("llm_provider") == "openrouter";
         if (cloud_active) {
             const char* display = provider == "gnani" ? "Gnani"
                                   : provider == "elevenlabs" ? "ElevenLabs"
@@ -957,9 +958,14 @@ void MainWindow::DrawHomePage(float scale) {
             ImGui::Text("Speech is sent to %s for each sentence.", display);
             ImGui::TextDisabled("If a cloud request fails, that sentence is still dictated on this "
                                 "computer.");
-        } else {
+        }
+        if (openrouter_cleanup) {
+            ImGui::TextColored(Color(kDarkPalette.warn),
+                               "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
+        }
+        if (!cloud_active && !openrouter_cleanup) {
             ImGui::TextUnformatted("Everything runs on this computer.");
-            ImGui::TextDisabled("Cloud speech is off.");
+            ImGui::TextDisabled("Cloud speech and OpenRouter cleanup are off.");
         }
     }
     EndCard(scale);
@@ -1203,6 +1209,7 @@ void MainWindow::DrawCloudPage(float scale) {
 
 void MainWindow::DrawCleanupPage(float scale) {
     DrawPageChrome("Cleanup", "How dictation text is polished before it is typed.", scale);
+    DrawRestartBanner(scale);
 
     const float width = std::min(ImGui::GetContentRegionAvail().x, metrics::content_max * scale);
 
@@ -1284,6 +1291,7 @@ void MainWindow::DrawCleanupPage(float scale) {
             for (int item = 0; item < 2; ++item) {
                 if (ImGui::Selectable(kLlmItems[item], item == backend_index)) {
                     settings_.SetString("llm_provider", kLlmItems[item]);
+                    restart_needed_ = true;
                     ApplyAndSave();
                 }
             }

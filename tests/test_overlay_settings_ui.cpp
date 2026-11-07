@@ -1,3 +1,4 @@
+#include "core/InsightsModel.h"
 #include "core/Languages.h"
 #include "core/OverlayModel.h"
 #include "core/SettingsStore.h"
@@ -537,6 +538,14 @@ TEST_CASE("main window keyboard nav and commit-on-deactivate wiring") {
     CHECK(count_occurrences(content.substr(welcome), "ApplyAndSave()") >= 2);
     // Trust card cloud branch keys off the provider setting.
     CHECK(content.find("stt_provider") != std::string::npos);
+    CHECK(content.find("openrouter_cleanup") != std::string::npos);
+    CHECK(content.find("Cloud speech and OpenRouter cleanup are off.") != std::string::npos);
+    const std::size_t llm_combo = content.find("##llm_provider");
+    REQUIRE(llm_combo != std::string::npos);
+    const std::size_t llm_apply = content.find("ApplyAndSave()", llm_combo);
+    REQUIRE(llm_apply != std::string::npos);
+    CHECK(content.find("restart_needed_ = true", llm_combo) < llm_apply);
+    CHECK(content.find("DrawRestartBanner(scale)", cleanup) != std::string::npos);
 }
 
 TEST_CASE("studio navigation routes round-trip with Home fallback") {
@@ -770,17 +779,24 @@ TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
     CHECK(HeatLevel(0, 0) == 0);
     CHECK(HeatLevel(1, 10) == 1);
     CHECK(HeatLevel(2, 10) == 1);
-    CHECK(HeatLevel(3, 10) == 2);
-    CHECK(HeatLevel(6, 10) == 3);
-    CHECK(HeatLevel(8, 10) == 4);
+    CHECK(HeatLevel(3, 10) == 1);
+    CHECK(HeatLevel(6, 10) == 2);
+    CHECK(HeatLevel(8, 10) == 3);
     CHECK(HeatLevel(10, 10) == 4);
     CHECK(HeatLevel(99, 10) == 4);
-    CHECK(HeatLevel(25, 100) == 2);
-    CHECK(HeatLevel(50, 100) == 3);
-    CHECK(HeatLevel(75, 100) == 4);
-    CHECK(HeatLevel(26, 100) == 2);
-    CHECK(HeatLevel(51, 100) == 3);
-    CHECK(HeatLevel(76, 100) == 4);
+    CHECK(HeatLevel(25, 100) == 1);
+    CHECK(HeatLevel(50, 100) == 2);
+    CHECK(HeatLevel(75, 100) == 3);
+    CHECK(HeatLevel(26, 100) == 1);
+    CHECK(HeatLevel(51, 100) == 2);
+    CHECK(HeatLevel(76, 100) == 3);
+    const int month_maxima[] = {0, 1, 10, 100};
+    for (const int month_max : month_maxima) {
+        for (int value = -5; value <= 105; ++value) {
+            CHECK(HeatLevel(value, month_max) ==
+                  lwf::CalendarLevel(value, month_max));
+        }
+    }
     CHECK(HeatColor(0) == kStudioPalette.heat_empty);
     CHECK(HeatColor(1) == kStudioPalette.teal_100);
     CHECK(HeatColor(2) == kStudioPalette.teal_300);
@@ -899,7 +915,7 @@ TEST_CASE("new A4 schema keys default and clamp through the store") {
     CHECK(store.HasKey("llm_provider"));
     CHECK(store.GetString("llm_provider") == "local");
     CHECK(store.IsHotApply("quiet_speech_boost"));
-    CHECK(store.IsHotApply("llm_provider"));
+    CHECK_FALSE(store.IsHotApply("llm_provider"));
     store.SetBool("quiet_speech_boost", false);
     store.SetString("llm_provider", "openrouter");
     store.Save();

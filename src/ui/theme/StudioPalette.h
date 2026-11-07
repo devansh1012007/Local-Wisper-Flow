@@ -76,17 +76,11 @@ inline int HeatLevel(int value, int month_max) {
     if (value <= 0 || month_max <= 0) {
         return 0;
     }
-    const float ratio = static_cast<float>(value) / static_cast<float>(month_max);
-    if (ratio >= 0.75f) {
+    if (value >= month_max) {
         return 4;
     }
-    if (ratio >= 0.5f) {
-        return 3;
-    }
-    if (ratio >= 0.25f) {
-        return 2;
-    }
-    return 1;
+    const std::int64_t quarter = static_cast<std::int64_t>(value) * 4 / month_max;
+    return static_cast<int>(quarter > 0 ? quarter : 1);
 }
 
 inline std::uint32_t HeatColor(int level) {

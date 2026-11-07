@@ -259,3 +259,43 @@ fix in flight). G3 zig pending (no zig on this box). G4 hygiene was FAIL
   - Build: clean `cmake --build build --parallel 2` (user cap) — `local-wisper-flow.exe` (32 MB), `bssl.exe`, full gRPC stack, whisper, llama_ext all built; `lwf_tests`/`lwf-bench`/`lwf-cloud-bench` compiled.
   - Gates: G1 (MinGW full build) OK, G2 ctest 23/23 green (lwf-tests 16.5s; re2 suites green; config_v0 compat inside suite), G4 check_hygiene.sh OK, check_no_network.sh OK, G5 config_v0 backward-compat via suite; G3 zig pending (no zig on this box).
   - Phase-2 llama install-closure reconfigure re-run; whisper picked up installed llama (WHISPER_USE_SYSTEM_GGML).
+
+## Studio pages + settings GUI + OpenRouter (20261107-studio)
+
+Branch `feature/studio-pages` from `0e655ec` (1d95fb2 merge + docs cherry-pick). F0 signed 2026-11-07 (D12-D15 in `docs/STUDIO_PLAN.md` §9/§14; plan file corrected to shipped shapes in FINAL-FIX-01). HEAD at gate-w5-1 was `091ec36` (gate GREEN 23/23 in 660.70 s); tip before FINAL-FIX-01 was `4fb18be`. One row per task, gates run recorded per gate.
+
+| id | title | status | commit | gates G1-G5 | manual-check | notes |
+|----|-------|--------|--------|-------------|--------------|-------|
+| T-001 | F0 docs/STUDIO_PLAN.md + AGENTS D3/D2 amendment | DONE | e9752fc | G1-G2/G4 GREEN, G3 pending | no | plan P01; pixel-palette provisional (R-01) still open |
+| T-002..T-004 | AtomicFile + TextDiff + InsightsModel | DONE | a7dbd93, 54abc8a | G1-G2/G4/G5 GREEN (gate-w1-2 23/23), G3 pending | no | W1 improver 3571116 fixed Enforce hang/races |
+| T-005,T-010 | StatsStore daily rollup + AppContextResolver category | DONE | 7f4975a | as above | no | 730-day cap, 6 categories |
+| T-006 | DictionaryStore v2 4-shape migration | DONE | 2a2cd70, 79e69c1; tombstone f66943b | as above | no | shipped `{schema_version:2, entries}`; `.bak` only-if-absent |
+| T-007,T-008 | SnippetStore v2 + TransformStore 10 slots | DONE | 530555f, f9a9f2c | as above | no | built-ins `Polish` / `Prompt Engineer`; ids `snippet-<n>` int64 |
+| T-009 | NotesStore index+md | DONE | 894675a, 2a765e9 | as above | no | two-file reconcile, undo toast |
+| T-011..T-013 | Engine hooks (stats :475, transform mode, scratchpad target) | DONE | ea22607, ff1c32d (07f6131 W2 improver) | G1-G2/G4 GREEN (gate-w2), G3 pending | no | stats-after-inject; run flow on worker; scratchpad-only |
+| T-014 | Nav shell P17 + Settings tabs + last_page | DONE | a4ab50a, 2ff48b5 | G1-G2/G4 GREEN (gate-w3-1), G3 pending | no | 7-item rail + 6 Settings tabs |
+| T-015 | StudioPalette + widgets + modal/toast infra P18 | DONE | 860b698, 844dd3e; improver d149726 | as above | no | teal tokens shipped (not navy estimates) |
+| T-016..T-020 | Five pages P19-P23 (Dictionary/Snippets/Insights/Transforms/Scratchpad) | DONE | 67c955b, 095ef47, 96fb22c, fc96356, acfaf21; int 76cf674, c9df9df | G1-G2/G4 GREEN (gate-w4-2), G3 pending | not-run (Windows) | one file per page; source-scan tests only on Linux CI |
+| T-021 | F9 polish sweep P24 | DONE | 69c8358, 784edfb | G1-G2/G4 GREEN (gate-w5-1 23/23), G3 pending | not-run (Windows) | Esc fix, toggle/link contrast, copy lint |
+| T-022 | A1 ApiKeyStore + ConsentGate/store→env | DONE | ff1c32d | as T-011 | no | `api_keys.json` separate, redacted, never `config.json` |
+| T-023 | A2 FileDialogs picker + Browse buttons | DONE | acc7c5c, 46cdde4 | G1-G2/G4 GREEN (gate-w4-2), G3 pending | not-run (Windows) | Win32 picker, lexical normalize |
+| T-024 | A3 hotkey recorders (5 config + studio shortcuts) | DONE | a2cbf64 | as T-023 | not-run (Windows) | modifier-required + conflict disable |
+| T-025 | A4 all-key settings GUI (55 keys: 49+6) | DONE | 5a2a618, 6a87b39 | G1-G2/G4 GREEN (gate-w4-2), G3 pending | not-run (Windows) | carve-outs `mini_x/mini_y/schema_version/first_run` |
+| T-026 | C1-C2 OpenRouter provider + contract + gate | DONE | 86605b7, baa650b; improver 8bae0c8, 4fb18be | G1-G2/G4 GREEN (gate-w5-1; openrouter 19/19), G3 pending | not-run (no key; live UNVERIFIED-against-live) | `llm_provider`, `openrouter_model`, try_lock single-flight, Busy, redaction |
+| T-FINAL | FINAL-01 MAJOR1-3 + HeatLevel + tombstone comment | DONE | (this commit) | G1-G2 GREEN, G3 pending | not-run (Windows) | llm_provider restart (`hot_apply=false` + banner); Trust card branches on `llm_provider`; HeatLevel = CalendarLevel; comment deleted |
+
+Final gate run at `4fb18be` + FINAL-FIX-01 (this commit):
+- configure `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release` → exit 0 (`Configuring done`, `Generating done`, `Build files have been written`; ONNX absent expected)
+- build `cmake --build build --config Release --parallel 4 --target lwf_tests` → exit 0, `Built target lwf_tests`
+- scoped `.\build\lwf_tests.exe --test-case="*studio portable helpers classify heat and clamp and space caps*,*new A4 schema keys default and clamp through the store*,*main window keyboard nav and commit-on-deactivate wiring*,*CalendarLevel*"` → 5/5 cases, 519/519 asserts, SUCCESS
+- `ctest --test-dir build -R lwf-tests --output-on-failure` → `1/1 Test #1: lwf-tests Passed 19.97 sec`, `100% tests passed`
+- `bash scripts/check_hygiene.sh` → `hygiene: OK`
+- `bash scripts/check_no_network.sh` → `no-network: OK`
+- G3 zig type-check: pending, no zig on this box (`docs/QUESTIONS.md` #1; per-task record).
+
+Honest limits and really-left residuals (see `docs/STUDIO_PLAN.md` §15 and `docs/agent-ops/20261107-studio/reports/final/FINAL-01.md` F-1..F-7):
+- No contacts/accounts/sync feature shipped (out of scope); 5 pages + settings + OpenRouter contracts are the branch. `openrouter_model`/OpenRouter key remain hand-edited (`api_keys.json`/env, Privacy readout only) and now require restart.
+- DECISION-1 (no separate `llm_consent_accepted`) still needs Devansh merge confirmation; live OpenRouter smoke stays UNVERIFIED-against-live (docs-verified only); Windows checkpoints I1/D1/S1/T1-T6/S1n-S5n/P1 still owed on hardware.
+- Migrations one-way via `.bak` (do not delete `.bak`); branch-internal rollback dual-reads v1+v2, pre-branch `0e655ec` rollback silently empties dictionary/snippets and throws on `transforms.json` (verified from the `0e655ec` loaders) — restore `.bak` for that rollback.
+- Follow-ups F-1 (dead `AtomicFile` + divergent `.bak`), F-2 (detached transform worker), F-3 (silent hotkey drop), F-4 (plaintext `api_keys.json`) remain tracked; F-5 (`HeatLevel`/`CalendarLevel`) is CLOSED by T-FINAL.
+- `docs/STUDIO_PLAN.md` header/§3 drifts corrected to shipped shapes in T-FINAL; AGENTS.md endpoint sentence + `check_no_network.sh` header OpenRouter prose is a small docs follow-up outside this commit.
