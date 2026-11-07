@@ -15,7 +15,7 @@ GUI fix/improvement stream complete: (A2) typography/DPI moved to scoped PushFon
 | GUI-A6 mini contrast | T-006 | DONE | d9e86dd, 07cc957 | same |
 | ENG-B1 streaming race | T-007 | DONE | 8223834, b0cfe38 | w3-impl/W3-IMPL-B1-T-007.md |
 | ENG-B2 G3 zig | — | DEFERRED (no zig on box) | — | — |
-| CI-C1 watch | T-008 | DEFERRED (needs push→CI run) | — | — |
+| CI-C1 watch | T-008 | DONE — CI GREEN, run 42310536369 (both jobs success) | d643c4e, 94901cc, 081d90d, f9c3431, b0eab42, 9b7c75d, 126da58 | w3-impl/W3-IMPL-CI-T-008.md |
 
 ## 3. Changes by domain
 - UI typography (src/ui/theme, MainWindow): scoped PushFont tokens 18/28/15/13/8.5; ApplyImGuiStyle per-context scale gate.

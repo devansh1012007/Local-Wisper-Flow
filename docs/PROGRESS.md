@@ -216,9 +216,16 @@ fix in flight). G3 zig pending (no zig on this box). G4 hygiene was FAIL
     scripts/fetch_deps.ps1 + file:/// tarball URLs; WindowsHttpClient gated
     to WIN32) in d643c4e/94901cc/081d90d; MSVC-only glfw3native.h→windows.h
     min/max macro collision fixed by project-wide NOMINMAX on WIN32 (f9c3431).
-    Linux CI job: success (run 42262321737). Windows CI: past configure and
-    dependency provision; reached app compile; f9c3431 run pending. NOT
-    claimed green yet — will record on completion. G3 zig pending (no zig).
+    Windows two-phase link closure: phase-1 full link is impossible by design
+    (cold cache → LLAMA_READY=false → placeholder llama target; whisper's
+    bundled ggml also lacks ggml_rope_set_offset), so phase-1 now builds
+    llama_ext only (9b7c75d; the imported-target ggml link closure was
+    considered and rejected — it would double-define ggml in phase 1).
+    Test portability: POSIX-only /tmp fixture paths replaced with
+    std::filesystem::temp_directory_path() in 4 test files (126da58) —
+    production code untouched (Load()==false for unreadable file is correct).
+    **CI GREEN: run 42310536369, both jobs success (windows job 128210561461,
+    linux job 128210561573), on branch HEAD 126da58.** G3 zig pending (no zig).
 
 - 2026-11-06: T-001 improvement pass (W1-IMPR-A2): F1 MAJOR (ApplyImGuiStyle re-apply
   path) FIXED via per-(context, scale) apply-on-change tracking in src/ui/theme/ThemePalette.{h,cpp};
