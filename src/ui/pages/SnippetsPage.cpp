@@ -214,7 +214,7 @@ void SnippetsPage::DrawRows(float scale) {
                                 kSnippetsUndoAction);
                 }
             }
-            ImGui::SetCursorScreenPos(saved_cursor);
+            ImGui::SetCursorScreenPos(ImVec2(saved_cursor.x, saved_cursor.y - ImGui::GetStyle().ItemSpacing.y));
             ImGui::Dummy(ImVec2(0.0f, 0.0f));
         }
     }
