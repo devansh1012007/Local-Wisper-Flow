@@ -275,6 +275,8 @@ TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete s
         "src/ui/pages/TransformsPage.cpp",
         "src/ui/pages/ScratchpadPage.h",
         "src/ui/pages/ScratchpadPage.cpp",
+        "src/ui/pages/SnippetsPage.h",
+        "src/ui/pages/SnippetsPage.cpp",
         "src/ui/ScratchpadWindow.h",
         "src/ui/ScratchpadWindow.cpp",
     };

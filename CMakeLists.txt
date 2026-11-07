@@ -163,6 +163,7 @@ add_executable(lwf_tests
     tests/test_dictionary_page.cpp
     tests/test_insights_page.cpp
     tests/test_scratchpad_page.cpp
+    tests/test_snippets_page.cpp
     tests/test_transforms_page.cpp
     tests/test_languages.cpp
     tests/test_errors.cpp
@@ -367,6 +368,7 @@ if(LWF_BUILD_FULL)
             src/ui/pages/InsightsPage.cpp
             src/ui/pages/ScratchpadPage.cpp
             src/ui/pages/TransformsPage.cpp
+            src/ui/pages/SnippetsPage.cpp
             src/ui/theme/ThemePalette.cpp
             src/ui/theme/StudioPalette.cpp
             src/ui/widgets/Buttons.cpp

@@ -17,6 +17,7 @@ class ScratchpadPage;
 
 namespace lwf::ui::pages {
 class DictionaryPage;
+class SnippetsPage;
 }
 namespace lwf::ui::insights {
 class InsightsPage;
@@ -107,6 +108,7 @@ public:
     void SetInsightsPage(std::unique_ptr<lwf::ui::insights::InsightsPage> page);
     void SetTransformsPage(std::unique_ptr<lwf::ui::TransformsPage> page);
     void SetScratchpadPage(std::unique_ptr<ScratchpadPage> page);
+    void SetSnippetsPage(std::unique_ptr<lwf::ui::pages::SnippetsPage> page);
 
     bool FirstRunNeeded() const;
 
@@ -191,6 +193,7 @@ private:
     std::string last_transcript_;
     std::string detected_hotkey_;
     std::unique_ptr<lwf::ui::pages::DictionaryPage> dictionary_page_;
+    std::unique_ptr<lwf::ui::pages::SnippetsPage> snippets_page_;
     std::unique_ptr<lwf::ui::insights::InsightsPage> insights_page_;
     std::unique_ptr<lwf::ui::TransformsPage> transforms_page_;
     std::unique_ptr<ScratchpadPage> scratchpad_page_;

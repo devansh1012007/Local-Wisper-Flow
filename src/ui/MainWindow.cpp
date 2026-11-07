@@ -13,6 +13,7 @@
 #include "ui/pages/DictionaryPage.h"
 #include "ui/pages/InsightsPage.h"
 #include "ui/pages/ScratchpadPage.h"
+#include "ui/pages/SnippetsPage.h"
 #include "ui/pages/TransformsPage.h"
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
@@ -268,6 +269,10 @@ void MainWindow::SetTransformsPage(std::unique_ptr<lwf::ui::TransformsPage> page
 
 void MainWindow::SetScratchpadPage(std::unique_ptr<ScratchpadPage> page) {
     scratchpad_page_ = std::move(page);
+}
+
+void MainWindow::SetSnippetsPage(std::unique_ptr<lwf::ui::pages::SnippetsPage> page) {
+    snippets_page_ = std::move(page);
 }
 
 bool MainWindow::FirstRunNeeded() const {
@@ -1305,6 +1310,10 @@ void MainWindow::DrawDictionaryPage(float scale) {
 }
 
 void MainWindow::DrawSnippetsPage(float scale) {
+    if (snippets_page_) {
+        snippets_page_->Draw(scale);
+        return;
+    }
     DrawPageChrome("Snippets", "Reusable phrases.", scale);
     ImGui::TextDisabled("Not available yet.");
 }
