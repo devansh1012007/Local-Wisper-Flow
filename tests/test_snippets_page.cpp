@@ -328,17 +328,19 @@ TEST_CASE("snippets page sources stay off the font scale ban and carry the brief
     }
     CHECK(header.find("#include \"imgui.h\"") == std::string::npos);
     CHECK(header.find("PushFont") == std::string::npos);
-    // T-004 pin flip (P-005): typography must go through design-px tokens. The
-    // 15px row text maps to metrics::font_card_title_px and the 13px detail
-    // text to studio_metrics::font_helper_px (same-value tokens), so the old
-    // metrics ban is reversed and both vocabularies are required. Anchored
-    // form: a loose "metrics::font_" substring would match studio_metrics::
-    // alone and prove nothing.
+    // T-004 pin flip (P-005) + W2-IMPL-02: typography must go through
+    // design-px tokens. The 15px row text maps to
+    // studio_metrics::font_card_title_px and the 13px detail text to
+    // studio_metrics::font_helper_px (same-value tokens), so the old
+    // metrics requirement is reversed and studio fonts are required.
+    // Anchored form: a loose "metrics::font_" substring would match
+    // studio_metrics:: alone and prove nothing.
     CHECK(impl.find("PushFont(nullptr, studio_metrics::") != std::string::npos);
-    const bool has_metrics_font =
-        impl.find("PushFont(nullptr, metrics::font_") != std::string::npos ||
-        impl.find("PushFont(nullptr, lwf::ui::metrics::font_") != std::string::npos;
-    CHECK(has_metrics_font);
+    const bool has_studio_font =
+        impl.find("PushFont(nullptr, studio_metrics::font_") != std::string::npos ||
+        impl.find("PushFont(nullptr, lwf::ui::studio_metrics::font_") !=
+            std::string::npos;
+    CHECK(has_studio_font);
     CHECK(impl.find("PushFont(nullptr, 15.0f)") == std::string::npos);
     CHECK(impl.find("PushFont(nullptr, 13.0f)") == std::string::npos);
     CHECK(header.find("my booking link") != std::string::npos);

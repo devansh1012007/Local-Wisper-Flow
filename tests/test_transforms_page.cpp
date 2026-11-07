@@ -377,7 +377,7 @@ TEST_CASE("transforms page sources respect the font and hygiene rules") {
         CHECK(text.find("Log::") == std::string::npos);
     }
     CHECK(header.find("PushFont") == std::string::npos);
-    CHECK(source.find("PushFont(nullptr, metrics::font_") != std::string::npos);
+    CHECK(source.find("PushFont(nullptr, studio_metrics::font_") != std::string::npos);
     CHECK(source.find("widgets::BadgeBeta") != std::string::npos);
     CHECK(source.find("widgets::ToggleSwitch") != std::string::npos);
     CHECK(source.find("widgets::PrimaryButton") != std::string::npos);

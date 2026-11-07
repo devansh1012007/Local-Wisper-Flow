@@ -573,6 +573,7 @@ void TransformsPage::DrawResetConfirm(float scale) {
         ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 24.0f * scale);
         ImGui::TextUnformatted(deleted.c_str());
         ImGui::PopTextWrapPos();
+        // Intentional native grid reuse: metrics::space_xs (4px) has no studio twin; this site alone keeps the native token.
         ImGui::Dummy(ImVec2(0.0f, metrics::space_xs * scale));
         ImGui::TextUnformatted("Polish and Prompt Engineer return to their defaults.");
         ImGui::PopFont();
