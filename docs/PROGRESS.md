@@ -299,3 +299,23 @@ Honest limits and really-left residuals (see `docs/STUDIO_PLAN.md` §15 and `doc
 - Migrations one-way via `.bak` (do not delete `.bak`); branch-internal rollback dual-reads v1+v2, pre-branch `0e655ec` rollback silently empties dictionary/snippets and throws on `transforms.json` (verified from the `0e655ec` loaders) — restore `.bak` for that rollback.
 - Follow-ups F-1 (dead `AtomicFile` + divergent `.bak`), F-2 (detached transform worker), F-3 (silent hotkey drop), F-4 (plaintext `api_keys.json`) remain tracked; F-5 (`HeatLevel`/`CalendarLevel`) is CLOSED by T-FINAL.
 - `docs/STUDIO_PLAN.md` header/§3 drifts corrected to shipped shapes in T-FINAL; AGENTS.md endpoint sentence + `check_no_network.sh` header OpenRouter prose is a small docs follow-up outside this commit.
+
+## ImGui `Dummy()` fix (2026-11-08)
+
+| id | title | status | commit | gates | manual-check | notes |
+|----|-------|--------|--------|-------|--------------|-------|
+| IMG-001 | Trailing cursor restore in dict/snippets/insights rows | DONE | `1fce2bc` + `c13f563` on `fix/blank-audio-and-dict-dummy` (replayed from `8773d94`/`d78fc42`) | ctest `lwf-tests` 1/1 (520 cases), hygiene OK, no-network OK; G3 zig pending | yes (hover last row, Windows) | R1 plain-Dummy REJECTED for +8px geometry drift; final compensated form (restore − ItemSpacing.y, then `Dummy`) delta-review APPROVE. Scratchpad parent-window restore pattern left as follow-up (unconfirmed) |
+
+## `[BLANK_AUDIO]` hallucination fix (2026-11-08)
+
+| id | title | status | commit | gates | manual-check | notes |
+|----|-------|--------|--------|-------|--------------|-------|
+| IMG-002 | Whisper hallucination filter wired into production | DONE | `092ff9f` + `02de5b2` on `fix/blank-audio-and-dict-dummy` | ctest `lwf-tests` 1/1 (528 cases incl. 3 whisperfilter), hygiene OK, no-network OK; G3 zig pending | yes (say hello near mic on Windows; mic-level fault still owed) | `WhisperText::FilterHallucinations` was never called in production; 1-word "hello" never reaches the LLM (`cleanup_min_words=4`). Marker-only → no injection via existing empty guard, incl. command-mode guard. Multi-segment streamed markers + dead `RunEngine` harness still leak (follow-ups) |
+
+## UI hierarchy & density — Full window (20261108-ui-hierarchy)
+
+| id | title | status | commit | gates | manual-check | notes |
+|----|-------|--------|--------|-------|--------------|-------|
+| UI-H1 | MainWindow + Studio pages/widgets same-value literal→token spelling (T-001/T-002) + literal-bypass test ban (T-004) | DONE | `e262309` + `eb54183` + `8f09615` on `ops/20261108-ui-hierarchy` (merged into current HEAD) | G1 target `lwf_tests` + full exe Built; G2 `ctest -R lwf-tests` 1/1 Passed 19.76s, later 19.97s/19.82s; G4 hygiene OK; no-network OK; G5 config_v0 in-suite green; G3 zig pending (no zig, docs/QUESTIONS.md #1) | no (screenshots P-006 pending) | 37 PushFont-digit → 6 allowlisted; ~20 Dummy/SameLine allowlisted; token values unchanged; dual-palette split documented, not recolored |
+| UI-H2 | Token gaps: 9 additive `studio_metrics::*` tokens + stage-2 `space_*→gap_*` + 15-font migration + empty ban table | DONE | `f3ba1e5` (9 tokens) + tr2 + `d088cf4` (2 pin flips) on `ops/20261108-ui-hierarchy` | G1 `lwf_tests` + full exe Built (link ok); G2 1/1 Passed 19.87s (520/520 per W2-IMPL-02: 518/520 → 520/520); G4 hygiene OK; no-network OK; G5 in-suite | no (P-006 screenshots 960×640/760×520 × DPI 1.0/1.5 + Scratchpad editor owed; manual Windows) | Full-9 chosen (D-W2-01); 1 documented `space_xs` reuse (Transforms:576, no 4px studio twin); semantic gaps `gap_micro/inline/compact/section/block`; fonts `font_card_title/heading/subheading/glyph`; structureals (40/rail/widths/`+28/+32`/`pill_h+18`/clamp) stay literal |
+| UI-R | Independent review: W1/W2 code+test APPROVE or APPROVE-WITH-CHANGES (0 BLOCKER/0 MAJOR at close) + final integration APPROVE-WITH-CHANGES | DONE | reviewers `W1-REV-01/W1-TREV-01/W2-REV-01/W2-TREV-01/W-DELTA-01` (all committed in `docs/agent-ops/20261108-ui-hierarchy/`) | gates `gate-w1-1/w1-2/w2-1` green (see run folder) | pending P-006 waiver or capture (F-001) | No BLOCKER/MAJOR open; deferred: RowList dead code, glob/file-list expansion, loophole class, CWD partial — Wave-2 follow-ups, not this tranche |
