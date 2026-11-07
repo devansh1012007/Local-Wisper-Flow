@@ -77,8 +77,10 @@ ctest --test-dir build
   `SettingsStore::BuildSchema()` (src/core/SettingsStore.cpp); keys are additive-only
   across releases and unknown keys are preserved on save. Cloud STT is opt-in:
   `stt_provider` (`local` default; `gnani` | `elevenlabs` | `muse`) needs
-  `stt_consent_accepted=true` plus the provider's key from the environment only
-  (`GNANI_API_KEY` / `ELEVENLABS_API_KEY` / `META_MODEL_API_KEY`, single source in
+  `stt_consent_accepted=true` plus the provider's key (store→env: an optional
+  `api_keys.json` entry next to `config.json`, never stored in `config.json`,
+  redacted and masked in the GUI, falling back to the environment
+  `GNANI_API_KEY` / `ELEVENLABS_API_KEY` / `META_MODEL_API_KEY`, single source in
   `src/core/ConsentGate.cpp`), never logs transcripts or keys, and only ever falls back
   cloud -> local (see `docs/STT_CLOUD.md`). The in-app consent surface is Settings >
   Cloud (S5); failed attempts keep a redacted error `detail` (lwf::RedactSecret/
@@ -169,5 +171,9 @@ vendor docs on 2026-11-04, NOT yet against the live APIs.
 - Never invent model URLs, SHA-256 values, vendor prices or API shapes: contracts come
   from vendor documentation pages and are recorded in src/stt/cloud/*Contract.h and
   docs/STT_CLOUD.md with the date they were checked.
-- Secrets (API keys) only ever cross the process boundary via the environment; they are
-  redacted from every stored log line (lwf::RedactSecret / RedactAuthValues).
+- Secrets (API keys) only ever cross the process boundary via `api_keys.json`
+  (store→env: file entry first, environment fallback, separate file, never `config.json`)
+  or the environment; masked in the GUI and redacted from every stored log line
+  (lwf::RedactSecret / RedactAuthValues). `llm_provider` defaults to `local`; the
+  only networked exception to the offline default is opt-in OpenRouter
+  (`llm_provider=openrouter`, D2) — it must be stated on the Privacy page + About.
