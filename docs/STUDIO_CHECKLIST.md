@@ -50,8 +50,9 @@ repo, so no pixel claim is made anywhere in this sweep).
 - T1-T6 (Transforms): MANUAL — editor, shortcut recorder, diff viewer (Win+Alt+O),
   opt-in dimming, reset confirm.
 - S1n-S5n (Scratchpad): MANUAL — editor lifecycle, dictation target, tab UX.
-- P1 (Privacy): MANUAL — delete-all two-step confirm on Windows; A4 delete-scope finding
-  (R-W4-002: history/logs kept, in-memory resurrection) remains OPEN — see report.
+- P1 (Privacy): MANUAL — delete-all two-step confirm on Windows. A4 delete-scope findings
+  R-W4-001/002/003/005/006/007 were FIXED by W4-IMPR-01 (98f7685); R-W4-004 (usage_count
+  dead) remains open.
 
 ## Gates
 
