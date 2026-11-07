@@ -15,6 +15,7 @@ void Modal::Open() {
 void Modal::Close() {
     open_ = false;
     armed_ = false;
+    visible_ = false;
 }
 
 bool Modal::IsOpen() const {
@@ -22,7 +23,8 @@ bool Modal::IsOpen() const {
 }
 
 bool Modal::Begin(const char* title, float scale) {
-    if (!open_) {
+    if (!open_ || title == nullptr) {
+        visible_ = false;
         return false;
     }
     if (armed_) {
@@ -36,6 +38,7 @@ bool Modal::Begin(const char* title, float scale) {
                         ImVec2(24.0f * scale, 24.0f * scale));
     const bool visible = ImGui::BeginPopupModal(title, &open_, ImGuiWindowFlags_NoResize);
     ImGui::PopStyleVar();
+    visible_ = visible;
     if (visible && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
         Close();
     }
@@ -43,6 +46,10 @@ bool Modal::Begin(const char* title, float scale) {
 }
 
 void Modal::End() {
+    if (!visible_) {
+        return;
+    }
+    visible_ = false;
     ImGui::EndPopup();
 }
 
@@ -54,6 +61,7 @@ void Sheet::Open() {
 void Sheet::Close() {
     open_ = false;
     armed_ = false;
+    visible_ = false;
 }
 
 bool Sheet::IsOpen() const {
@@ -61,7 +69,8 @@ bool Sheet::IsOpen() const {
 }
 
 bool Sheet::Begin(const char* title, float width, float scale) {
-    if (!open_) {
+    if (!open_ || title == nullptr) {
+        visible_ = false;
         return false;
     }
     if (armed_) {
@@ -78,6 +87,7 @@ bool Sheet::Begin(const char* title, float width, float scale) {
                                                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                                                     ImGuiWindowFlags_NoCollapse);
     ImGui::PopStyleVar();
+    visible_ = visible;
     if (visible && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
         Close();
     }
@@ -85,6 +95,10 @@ bool Sheet::Begin(const char* title, float width, float scale) {
 }
 
 void Sheet::End() {
+    if (!visible_) {
+        return;
+    }
+    visible_ = false;
     ImGui::EndPopup();
 }
 
@@ -138,12 +152,15 @@ void Toast::Draw(float scale) {
         ImGui::PopFont();
         const ImVec2 button_min(pos.x + 16.0f * scale + text_size.x + 8.0f * scale, pos.y);
         const ImVec2 button_size(action_size.x + 24.0f * scale, h);
+        const ImVec2 saved_cursor = ImGui::GetCursorScreenPos();
+        const std::string button_label = action_label_ + "##toast_action";
         ImGui::SetCursorScreenPos(button_min);
         ImGui::PushStyleColor(ImGuiCol_Text, Color(kStudioPalette.teal_300));
-        if (ImGui::Button(action_label_.c_str(), button_size)) {
+        if (ImGui::Button(button_label.c_str(), button_size)) {
             action_pending_ = true;
         }
         ImGui::PopStyleColor();
+        ImGui::SetCursorScreenPos(saved_cursor);
     }
 }
 

@@ -259,9 +259,12 @@ TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete s
         "src/ui/theme/ThemePalette.h",
         "src/ui/theme/ThemePalette.cpp",
         "src/ui/theme/ThemeStyle.h",
+        "src/ui/theme/StudioPalette.h",
         "src/ui/theme/StudioPalette.cpp",
+        "src/ui/widgets/Widgets.h",
         "src/ui/widgets/Buttons.cpp",
         "src/ui/widgets/Display.cpp",
+        "src/ui/widgets/Overlays.h",
         "src/ui/widgets/Overlays.cpp",
     };
     for (const std::string& path : font_sources) {
@@ -640,6 +643,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("font_card_title_px") != std::string::npos);
     CHECK(content.find("PersistPage();") != std::string::npos);
     CHECK(content.find("last_page") != std::string::npos);
+    CHECK(content.find("PageForRoute(settings_.GetString(\"last_page\"))") != std::string::npos);
     CHECK(content.find("void MainWindow::DrawSettingsPage") != std::string::npos);
     CHECK(content.find("void MainWindow::DrawGeneralPage") != std::string::npos);
     CHECK(content.find("void MainWindow::DrawInsightsPage") != std::string::npos);
@@ -676,7 +680,7 @@ TEST_CASE("studio palette keeps the provisional estimate token values") {
     CHECK(kStudioPalette.card_bg_white == 0xFFFFFFu);
     CHECK(kStudioPalette.border == 0xE7E4DEu);
     CHECK(kStudioPalette.ink == 0x1C1C1Cu);
-    CHECK(kStudioPalette.muted == 0x7A776Fu);
+    CHECK(kStudioPalette.muted == 0x6E6A62u);
     CHECK(kStudioPalette.teal_700 == 0x1E5E5Au);
     CHECK(kStudioPalette.teal_500 == 0x2F8077u);
     CHECK(kStudioPalette.teal_300 == 0x7DBFB7u);
@@ -693,6 +697,7 @@ TEST_CASE("studio palette layout tokens follow the shape scale") {
     CHECK(metrics::radius_input == 10.0f);
     CHECK(metrics::radius_button == 8.0f);
     CHECK(metrics::radius_chip == 6.0f);
+    CHECK(metrics::radius_pill == 999.0f);
     CHECK(metrics::page_padding == 32.0f);
     CHECK(metrics::gap == 24.0f);
     CHECK(metrics::row_height == 52.0f);
@@ -702,6 +707,8 @@ TEST_CASE("studio palette layout tokens follow the shape scale") {
     CHECK(metrics::font_page_title_px == 28.0f);
     CHECK(metrics::font_helper_px == 13.0f);
     CHECK(metrics::toast_dwell_ms == 5000);
+    CHECK(metrics::toast_dwell_s == 5.0f);
+    CHECK(metrics::toast_dwell_s * 1000.0f == static_cast<float>(metrics::toast_dwell_ms));
     CHECK(metrics::activity_cell == 14.0f);
     CHECK(metrics::activity_gap == 4.0f);
     CHECK(metrics::activity_corner == 3.0f);
@@ -709,7 +716,7 @@ TEST_CASE("studio palette layout tokens follow the shape scale") {
     CHECK(metrics::progress_height == 28.0f);
 }
 
-TEST_CASE("studio palette contrast passes on ink and teal pairs with provisional muted") {
+TEST_CASE("studio palette contrast passes on ink and teal pairs and muted on card fills") {
     using lwf::ui::ContrastRatio;
     using lwf::ui::kStudioPalette;
     CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.page_bg) >= 4.5);
@@ -724,10 +731,11 @@ TEST_CASE("studio palette contrast passes on ink and teal pairs with provisional
     CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.page_bg) >= 3.0);
     CHECK(ContrastRatio(kStudioPalette.teal_500, kStudioPalette.card_bg_white) >= 3.0);
     CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.teal_100) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.card_bg_white) >= 3.0);
-    CHECK(std::abs(ContrastRatio(kStudioPalette.muted, kStudioPalette.card_bg_white) - 4.47) < 0.02);
-    CHECK(std::abs(ContrastRatio(kStudioPalette.muted, kStudioPalette.page_bg) - 4.28) < 0.02);
-    CHECK(std::abs(ContrastRatio(kStudioPalette.muted, kStudioPalette.card_bg) - 4.00) < 0.02);
+    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.page_bg) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.rail_bg) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.card_bg) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.card_bg_white) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.banner_cream) >= 4.5);
     CHECK(ContrastRatio(kStudioPalette.border, kStudioPalette.page_bg) < 3.0);
     CHECK(ContrastRatio(kStudioPalette.border, kStudioPalette.card_bg_white) < 3.0);
 }
@@ -746,6 +754,12 @@ TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
     CHECK(HeatLevel(8, 10) == 4);
     CHECK(HeatLevel(10, 10) == 4);
     CHECK(HeatLevel(99, 10) == 4);
+    CHECK(HeatLevel(25, 100) == 1);
+    CHECK(HeatLevel(50, 100) == 2);
+    CHECK(HeatLevel(75, 100) == 3);
+    CHECK(HeatLevel(26, 100) == 2);
+    CHECK(HeatLevel(51, 100) == 3);
+    CHECK(HeatLevel(76, 100) == 4);
     CHECK(Clamp01(2.0f) == 1.0f);
     CHECK(Clamp01(-0.5f) == 0.0f);
     CHECK(Clamp01(0.5f) == 0.5f);
@@ -777,12 +791,41 @@ TEST_CASE("studio widgets respect the font mechanism and stay opt in") {
                                       std::istreambuf_iterator<char>());
     CHECK(buttons_content.find("PushFont(nullptr,") != std::string::npos);
     CHECK(buttons_content.find("InvisibleButton") != std::string::npos);
+    CHECK(buttons_content.find("safe_id") != std::string::npos);
+    CHECK(buttons_content.find("safe_label") != std::string::npos);
+    CHECK(buttons_content.find("safe_glyph") != std::string::npos);
+    CHECK(buttons_content.find("safe_tab") != std::string::npos);
+    std::ifstream display("src/ui/widgets/Display.cpp");
+    REQUIRE(static_cast<bool>(display));
+    const std::string display_content((std::istreambuf_iterator<char>(display)),
+                                      std::istreambuf_iterator<char>());
+    CHECK(display_content.find("safe_id") != std::string::npos);
+    CHECK(display_content.find("w * clamped") != std::string::npos);
+    CHECK(display_content.find("PushClipRect") != std::string::npos);
+    CHECK(display_content.find("std::string(safe_id)") != std::string::npos);
+    std::ifstream studio_cpp("src/ui/theme/StudioPalette.cpp");
+    REQUIRE(static_cast<bool>(studio_cpp));
+    const std::string studio_content((std::istreambuf_iterator<char>(studio_cpp)),
+                                     std::istreambuf_iterator<char>());
+    CHECK(studio_content.find("style = ImGuiStyle()") != std::string::npos);
+    CHECK(studio_content.find("preserved_font_scale_dpi") != std::string::npos);
+    std::ifstream overlays_h("src/ui/widgets/Overlays.h");
+    REQUIRE(static_cast<bool>(overlays_h));
+    const std::string overlays_h_content((std::istreambuf_iterator<char>(overlays_h)),
+                                         std::istreambuf_iterator<char>());
+    CHECK(overlays_h_content.find("bool visible_") != std::string::npos);
     std::ifstream overlays("src/ui/widgets/Overlays.cpp");
     REQUIRE(static_cast<bool>(overlays));
     const std::string overlays_content((std::istreambuf_iterator<char>(overlays)),
                                        std::istreambuf_iterator<char>());
     CHECK(overlays_content.find("BeginPopupModal") != std::string::npos);
     CHECK(overlays_content.find("ImGuiKey_Escape") != std::string::npos);
+    CHECK(overlays_content.find("##toast_action") != std::string::npos);
+    CHECK(overlays_content.find("Button(action_label_") == std::string::npos);
+    CHECK(overlays_content.find("GetCursorScreenPos()") != std::string::npos);
+    CHECK(overlays_content.find("SetCursorScreenPos(saved_cursor)") != std::string::npos);
+    CHECK(overlays_content.find("if (!visible_)") != std::string::npos);
+    CHECK(overlays_content.find("title == nullptr") != std::string::npos);
     std::ifstream main_window("src/ui/MainWindow.cpp");
     REQUIRE(static_cast<bool>(main_window));
     const std::string main_content((std::istreambuf_iterator<char>(main_window)),

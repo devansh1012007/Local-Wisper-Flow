@@ -105,10 +105,12 @@ bool OutlinePill(const char* id, const char* label, bool enabled, float scale) {
 }
 
 bool IconButton(const char* id, const char* glyph, float scale) {
+    const char* safe_id = id == nullptr ? "" : id;
+    const char* safe_glyph = glyph == nullptr ? "" : glyph;
     const float hit = studio_metrics::hit_size * scale;
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const bool pressed =
-        ImGui::InvisibleButton(id, ImVec2(hit, hit), ImGuiButtonFlags_EnableNav);
+        ImGui::InvisibleButton(safe_id, ImVec2(hit, hit), ImGuiButtonFlags_EnableNav);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     if (ImGui::IsItemHovered()) {
         draw.AddRectFilled(pos, ImVec2(pos.x + hit, pos.y + hit),
@@ -119,18 +121,19 @@ bool IconButton(const char* id, const char* glyph, float scale) {
         DrawFocusRing(pos, ImVec2(pos.x + hit, pos.y + hit), scale);
     }
     ImGui::PushFont(nullptr, 24.0f);
-    const ImVec2 text_size = ImGui::CalcTextSize(glyph);
+    const ImVec2 text_size = ImGui::CalcTextSize(safe_glyph);
     draw.AddText(ImVec2(pos.x + (hit - text_size.x) * 0.5f, pos.y + (hit - text_size.y) * 0.5f),
-                 Pack(kStudioPalette.ink), glyph);
+                 Pack(kStudioPalette.ink), safe_glyph);
     ImGui::PopFont();
     return pressed;
 }
 
 bool ToggleSwitch(const char* id, bool value, float scale) {
+    const char* safe_id = id == nullptr ? "" : id;
     const float w = 52.0f * scale;
     const float h = 28.0f * scale;
     const ImVec2 p = ImGui::GetCursorScreenPos();
-    const bool toggled = ImGui::InvisibleButton(id, ImVec2(w, h), ImGuiButtonFlags_EnableNav);
+    const bool toggled = ImGui::InvisibleButton(safe_id, ImVec2(w, h), ImGuiButtonFlags_EnableNav);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     if (ImGui::IsItemFocused()) {
         DrawFocusRing(p, ImVec2(p.x + w, p.y + h), scale);
@@ -146,8 +149,9 @@ bool ToggleSwitch(const char* id, bool value, float scale) {
 }
 
 void Keycap(const char* label, float scale) {
+    const char* safe_label = label == nullptr ? "" : label;
     ImGui::PushFont(nullptr, 13.0f);
-    const ImVec2 text_size = ImGui::CalcTextSize(label);
+    const ImVec2 text_size = ImGui::CalcTextSize(safe_label);
     ImGui::PopFont();
     const float pad_x = 12.0f * scale;
     const float h = studio_metrics::hit_size * scale;
@@ -160,20 +164,22 @@ void Keycap(const char* label, float scale) {
                studio_metrics::radius_chip * scale, scale, kStudioPalette.border);
     ImGui::PushFont(nullptr, 13.0f);
     draw.AddText(ImVec2(pos.x + pad_x, pos.y + (size.y - text_size.y) * 0.5f),
-                 Pack(kStudioPalette.ink), label);
+                 Pack(kStudioPalette.ink), safe_label);
     ImGui::PopFont();
     ImGui::Dummy(size);
 }
 
 bool Chip(const char* id, const char* label, bool selected, float scale) {
+    const char* safe_id = id == nullptr ? "" : id;
+    const char* safe_label = label == nullptr ? "" : label;
     ImGui::PushFont(nullptr, 13.0f);
-    const ImVec2 text_size = ImGui::CalcTextSize(label);
+    const ImVec2 text_size = ImGui::CalcTextSize(safe_label);
     ImGui::PopFont();
     const float pad_x = 14.0f * scale;
     const float h = studio_metrics::hit_size * scale;
     const ImVec2 size(text_size.x + pad_x * 2.0f, h);
     const ImVec2 pos = ImGui::GetCursorScreenPos();
-    const bool pressed = ImGui::InvisibleButton(id, size, ImGuiButtonFlags_EnableNav);
+    const bool pressed = ImGui::InvisibleButton(safe_id, size, ImGuiButtonFlags_EnableNav);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     if (selected) {
         draw.AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
@@ -188,7 +194,8 @@ bool Chip(const char* id, const char* label, bool selected, float scale) {
     }
     ImGui::PushFont(nullptr, 13.0f);
     const std::uint32_t text = selected ? kStudioPalette.teal_700 : kStudioPalette.ink;
-    draw.AddText(ImVec2(pos.x + pad_x, pos.y + (size.y - text_size.y) * 0.5f), Pack(text), label);
+    draw.AddText(ImVec2(pos.x + pad_x, pos.y + (size.y - text_size.y) * 0.5f), Pack(text),
+                 safe_label);
     ImGui::PopFont();
     return pressed;
 }
@@ -222,12 +229,14 @@ void TabRow(const char* id, const char* const* tabs, int count, int* selected, f
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const float row_w = ImGui::GetContentRegionAvail().x;
     ImDrawList& draw = *ImGui::GetWindowDrawList();
+    const std::string base = id == nullptr ? std::string() : std::string(id);
     for (int i = 0; i < count; ++i) {
         if (i > 0) {
             ImGui::SameLine(0.0f, 0.0f);
         }
-        const std::string tab_id = std::string(id) + "_" + std::to_string(i);
-        const ImVec2 text_size = ImGui::CalcTextSize(tabs[i]);
+        const std::string tab_id = base + "_" + std::to_string(i);
+        const char* safe_tab = tabs[i] == nullptr ? "" : tabs[i];
+        const ImVec2 text_size = ImGui::CalcTextSize(safe_tab);
         const bool pressed =
             ImGui::InvisibleButton(tab_id.c_str(), ImVec2(text_size.x + 12.0f * scale, hit),
                                    ImGuiButtonFlags_EnableNav);
@@ -241,7 +250,7 @@ void TabRow(const char* id, const char* const* tabs, int count, int* selected, f
         const std::uint32_t color =
             active ? kStudioPalette.ink : (hovered ? kStudioPalette.ink : kStudioPalette.muted);
         draw.AddText(ImVec2(min.x + 6.0f * scale, min.y + (hit - text_size.y) * 0.5f),
-                     Pack(color), tabs[i]);
+                     Pack(color), safe_tab);
         if (active) {
             draw.AddLine(ImVec2(min.x + 2.0f * scale, max.y - 1.0f * scale),
                          ImVec2(max.x - 2.0f * scale, max.y - 1.0f * scale),

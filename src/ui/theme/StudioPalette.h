@@ -28,7 +28,7 @@ inline constexpr StudioPalette kStudioPalette{
     0xFFFFFF,
     0xE7E4DE,
     0x1C1C1C,
-    0x7A776F,
+    0x6E6A62,
     0x1E5E5A,
     0x2F8077,
     0x7DBFB7,
@@ -57,8 +57,8 @@ inline constexpr float font_caps_px = 12.0f;
 inline constexpr float font_page_title_px = 28.0f;
 inline constexpr float font_helper_px = 13.0f;
 
-inline constexpr float toast_dwell_s = 5.0f;
 inline constexpr int toast_dwell_ms = 5000;
+inline constexpr float toast_dwell_s = toast_dwell_ms / 1000.0f;
 
 inline constexpr float activity_cell = 14.0f;
 inline constexpr float activity_gap = 4.0f;

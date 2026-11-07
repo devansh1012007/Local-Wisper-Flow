@@ -37,10 +37,11 @@ std::uint32_t HeatColor(int level) {
 }
 
 void RowList(const char* id, const std::vector<RowListItem>& rows, float scale) {
+    const char* safe_id = id == nullptr ? "" : id;
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kStudioPalette.card_bg_white));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, studio_metrics::radius_row * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::BeginChild(id, ImVec2(0.0f, 0.0f),
+    ImGui::BeginChild(safe_id, ImVec2(0.0f, 0.0f),
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
@@ -90,11 +91,12 @@ void RowList(const char* id, const std::vector<RowListItem>& rows, float scale) 
 
 void StatCard(const char* id, const char* title, const char* value, const char* subtitle,
               float width, float scale) {
+    const char* safe_id = id == nullptr ? "" : id;
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kStudioPalette.card_bg_white));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, studio_metrics::radius_card * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
                         ImVec2(16.0f * scale, 16.0f * scale));
-    ImGui::BeginChild(id, ImVec2(width * scale, 0.0f),
+    ImGui::BeginChild(safe_id, ImVec2(width * scale, 0.0f),
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
@@ -159,7 +161,7 @@ void ProgressPill(const char* id, float value, const char* label, float scale) {
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     draw.AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), Pack(kStudioPalette.teal_100),
                        studio_metrics::radius_pill * scale);
-    const float fill_w = (w - 4.0f * scale) * clamped + 4.0f * scale;
+    const float fill_w = w * clamped;
     draw.AddRectFilled(pos, ImVec2(pos.x + fill_w, pos.y + h), Pack(kStudioPalette.teal_500),
                        studio_metrics::radius_pill * scale);
     ImGui::PushFont(nullptr, 13.0f);
@@ -176,8 +178,6 @@ void ProgressPill(const char* id, float value, const char* label, float scale) {
         ImGui::PopFont();
     } else {
         ImGui::PushFont(nullptr, 13.0f);
-        draw.AddText(ImVec2(pos.x + 12.0f * scale, pos.y + (h - text_size.y) * 0.5f),
-                     Pack(kStudioPalette.teal_700), label == nullptr ? "" : label);
         const ImVec2 badge_size = ImGui::CalcTextSize(percent_buf);
         const float badge_w = badge_size.x + 20.0f * scale;
         const float badge_h = 20.0f * scale;
@@ -189,6 +189,12 @@ void ProgressPill(const char* id, float value, const char* label, float scale) {
         draw.AddText(ImVec2(badge_pos.x + 10.0f * scale,
                             badge_pos.y + (badge_h - badge_size.y) * 0.5f),
                      Pack(kStudioPalette.teal_700), percent_buf);
+        const float label_max_x = badge_pos.x - 4.0f * scale;
+        draw.PushClipRect(ImVec2(pos.x + 12.0f * scale, pos.y), ImVec2(label_max_x, pos.y + h),
+                         true);
+        draw.AddText(ImVec2(pos.x + 12.0f * scale, pos.y + (h - text_size.y) * 0.5f),
+                     Pack(kStudioPalette.teal_700), label == nullptr ? "" : label);
+        draw.PopClipRect();
         ImGui::PopFont();
     }
     (void)id;
@@ -228,6 +234,7 @@ void Banner(const char* id, const char* headline, const char* body, bool* open, 
     if (open != nullptr && !*open) {
         return;
     }
+    const char* safe_id = id == nullptr ? "" : id;
     const float w = ImGui::GetContentRegionAvail().x;
     const float pad = 16.0f * scale;
     ImGui::PushFont(nullptr, studio_metrics::font_banner_px);
@@ -257,14 +264,14 @@ void Banner(const char* id, const char* headline, const char* body, bool* open, 
                      Pack(kStudioPalette.ink), body);
         ImGui::PopFont();
     }
-    const float hit = studio_metrics::hit_size * scale;
-    ImGui::SetCursorScreenPos(ImVec2(pos.x + w - hit - 8.0f * scale, pos.y + 8.0f * scale));
-    if (IconButton((std::string(id) + "_close").c_str(), "x", scale)) {
-        if (open != nullptr) {
+    if (open != nullptr) {
+        const float hit = studio_metrics::hit_size * scale;
+        ImGui::SetCursorScreenPos(ImVec2(pos.x + w - hit - 8.0f * scale, pos.y + 8.0f * scale));
+        if (IconButton((std::string(safe_id) + "_close").c_str(), "x", scale)) {
             *open = false;
         }
+        ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + h));
     }
-    ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + h));
 }
 
 }

@@ -14,6 +14,7 @@ struct Modal {
 private:
     bool open_ = false;
     bool armed_ = false;
+    bool visible_ = false;
 };
 
 struct Sheet {
@@ -26,6 +27,7 @@ struct Sheet {
 private:
     bool open_ = false;
     bool armed_ = false;
+    bool visible_ = false;
 };
 
 struct Toast {

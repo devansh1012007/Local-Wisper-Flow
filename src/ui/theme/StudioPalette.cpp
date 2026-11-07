@@ -19,6 +19,15 @@ void ApplyStudioStyle(const StudioPalette& palette, float scale) {
     const bool applies = ImGui::GetCurrentContext() != g_studio_last_context ||
                          scale != g_studio_last_scale;
     if (applies) {
+        const float preserved_font_scale_dpi = style.FontScaleDpi;
+        const float preserved_alpha = style.Alpha;
+        const float preserved_disabled_alpha = style.DisabledAlpha;
+        const float preserved_font_size_base = style.FontSizeBase;
+        style = ImGuiStyle();
+        style.FontScaleDpi = preserved_font_scale_dpi;
+        style.Alpha = preserved_alpha;
+        style.DisabledAlpha = preserved_disabled_alpha;
+        style.FontSizeBase = preserved_font_size_base;
         g_studio_last_context = ImGui::GetCurrentContext();
         g_studio_last_scale = scale;
         style.WindowRounding = studio_metrics::radius_card;
