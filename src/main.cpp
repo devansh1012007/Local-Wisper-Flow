@@ -42,6 +42,7 @@
 #include "core/UiBus.h"
 #include "core/UnavailableProviders.h"
 #include "llm/LocalLlamaProvider.h"
+#include "llm/OpenRouterProvider.h"
 #include "os/ActiveWindow.h"
 #include "os/CrashHandler.h"
 #include "os/DataDir.h"
@@ -366,24 +367,68 @@ int main() {
 
         PassthroughLlm passthrough_llm;
         std::optional<LocalLlamaProvider> llama_provider;
+        std::optional<OpenRouterProvider> openrouter_provider;
+        WindowsHttpClient openrouter_http;
         ILlmProvider* llm = &passthrough_llm;
         bool cleanup_llm_available = false;
-        const std::string llm_model_path = ResolveModelPath(config.LlmModelPath());
-        if (!llm_model_path.empty()) {
-            try {
-                llama_provider.emplace(llm_model_path);
-                llm = &*llama_provider;
-                cleanup_llm_available = true;
-                lwf::Log::Info("llm model loaded: " + llm_model_path);
-            } catch (const std::bad_alloc&) {
-                lwf::Log::Error("llm model load ran out of memory");
-                startup_errors.emplace_back(
-                    ErrorCode::ModelLoadFailed,
-                    "not enough memory to load the language model; pick a smaller model in Settings");
-            } catch (const std::exception& e) {
-                lwf::Log::Warning(std::string("llm disabled: ") + e.what());
+        const std::string llm_provider_name = config.Store().GetString("llm_provider");
+        if (llm_provider_name == OpenRouterContract::kApiKeyProvider) {
+            std::string openrouter_key = api_keys.Get(OpenRouterContract::kApiKeyProvider);
+            if (openrouter_key.empty()) {
+                const char* env_key = std::getenv(OpenRouterContract::kApiKeyEnv);
+                if (env_key != nullptr) {
+                    openrouter_key = env_key;
+                }
+            }
+            const std::string openrouter_model = config.Store().GetString("openrouter_model");
+            if (openrouter_key.empty() || openrouter_model.empty()) {
+                lwf::Log::Warning("llm_provider=openrouter ignored: api key or openrouter_model "
+                                  "is missing; cleanup is disabled");
                 startup_errors.emplace_back(ErrorCode::ModelMissing,
-                                            "language model is missing; cleanup is disabled");
+                                            "openrouter api key or model is missing; cleanup is disabled");
+            } else {
+                try {
+                    OpenRouterSettings openrouter_settings;
+                    openrouter_settings.api_key = openrouter_key;
+                    openrouter_settings.model = openrouter_model;
+                    openrouter_settings.timeout_ms = OpenRouterContract::kDefaultTimeoutMs;
+                    openrouter_provider.emplace(openrouter_http, openrouter_settings);
+                    llm = &*openrouter_provider;
+                    cleanup_llm_available = true;
+                    lwf::Log::Info("llm provider openrouter enabled (model " + openrouter_model +
+                                   ")");
+                } catch (const std::bad_alloc&) {
+                    lwf::Log::Error("openrouter provider setup ran out of memory");
+                    startup_errors.emplace_back(
+                        ErrorCode::ModelLoadFailed,
+                        "not enough memory to set up the openrouter provider; cleanup is disabled");
+                } catch (const std::exception& e) {
+                    lwf::Log::Warning(std::string("llm disabled: ") + e.what());
+                    startup_errors.emplace_back(ErrorCode::ModelMissing,
+                                                "language model is missing; cleanup is disabled");
+                }
+            }
+        } else {
+            if (!llm_provider_name.empty() && llm_provider_name != "local") {
+                lwf::Log::Warning("unknown llm_provider '" + llm_provider_name + "'; using local");
+            }
+            const std::string llm_model_path = ResolveModelPath(config.LlmModelPath());
+            if (!llm_model_path.empty()) {
+                try {
+                    llama_provider.emplace(llm_model_path);
+                    llm = &*llama_provider;
+                    cleanup_llm_available = true;
+                    lwf::Log::Info("llm model loaded: " + llm_model_path);
+                } catch (const std::bad_alloc&) {
+                    lwf::Log::Error("llm model load ran out of memory");
+                    startup_errors.emplace_back(
+                        ErrorCode::ModelLoadFailed,
+                        "not enough memory to load the language model; pick a smaller model in Settings");
+                } catch (const std::exception& e) {
+                    lwf::Log::Warning(std::string("llm disabled: ") + e.what());
+                    startup_errors.emplace_back(ErrorCode::ModelMissing,
+                                                "language model is missing; cleanup is disabled");
+                }
             }
         }
 

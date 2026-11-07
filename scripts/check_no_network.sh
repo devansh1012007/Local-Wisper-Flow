@@ -17,7 +17,7 @@ if [ -n "$network_hits" ]; then
     fail "network APIs outside the allowlist (GrpcInferenceProvider, WindowsDownloader, WindowsHttpClient)" "$network_hits"
 fi
 
-endpoint_hits=$(grep -rnE 'api\.(vachana\.ai|elevenlabs\.io|meta\.ai)' src --include='*.cpp' --include='*.h' 2>/dev/null | grep -v '^src/stt/cloud/' || true)
+endpoint_hits=$(grep -rnE 'api\.(vachana\.ai|elevenlabs\.io|meta\.ai)|openrouter\.ai' src --include='*.cpp' --include='*.h' 2>/dev/null | grep -vE '^(src/stt/cloud/|src/llm/OpenRouter)' || true)
 if [ -n "$endpoint_hits" ]; then
     fail "cloud endpoints outside src/stt/cloud/" "$endpoint_hits"
 fi
