@@ -44,6 +44,13 @@
 - Improvement: W1-IMPR-01 (Transforms tokens, general) + W1-IMPR-02 (scanner negative test, coder), disjoint files, then re-gate + delta review. 1 of 2 cycles used.
 - Improvement results: W1-IMPR-01 code 1f7a71d (Transforms 3 sites same-value), W1-IMPR-02 code bbc8a14 (6 CHECKs negative scanner test, neutered-scanner probe 3/6 fail proven). Gate w1-2 green (ctest 1/1 Passed 19.97s). Delta W1-DELTA-01 APPROVE (fdf5892). Wave 1 CLOSED 2026-11-08. Remain deferred to Wave 2: code R-W1-002 (RowList dead code), test R-W1-002..006 (mapping pins, glob, loopholes, CWD), plus token-gap allowlist 26 sites. Screenshots P-006 still pending.
 
+## Wave 2 decisions (orchestrator, from W2-PLAN-01 critique, 2026-11-08)
+- D-W2-01 token set: FULL 9 tokens (4 fonts + 5 gaps). Stage-2 spacing migration ships IN tranche 2 (not deferred), staged commits code-then-tests. done criteria: grep metrics::font_ over 8 files → 0, metrics::space_* → 0 or documented reuse sentence if descoped mid-flight (no silent mix).
+- D-W2-02 inventory: implementer MUST generate exhaustive grep list (metrics:: plus all allowlisted values) at implementation time; design tables are illustrative, grep→0 is the verification. Transforms font_body/card lists (~45 hits) migrate exhaustively.
+- D-W2-03 qualification: broaden has_studio_font to accept studio_metrics::font_ AND lwf::ui::studio_metrics::font_ (mirror has_metrics two-spelling precedent). Add CHECK(has_metrics_font(MainWindow)) 3-line native proof.
+- D-W2-04 rollback order: canonical "revert tests→code, never code alone" (git revert <test> <code> in that order). Recorded as record; tranche ships code-test pair reverting together.
+- Wave 2 tranche is SINGLE dedicated agent (design §8.1 §8.2 serialization reason) owning StudioPalette.h + 9 .cpp (incl MainWindow 14 hoist) + tests/test_overlay_settings_ui.cpp.
+
 ## Orchestrator recovery note 2026-11-08
 - Wave 1 plan commit landed on main (572ec21) instead of ops branch; ORCH cherry-picked it to ops as 81b82db to restore single-branch invariant. Main is now 1 ahead with same docs. No code involved. Verify with git branch -vv before Wave 1.
 - Review branch anomaly: W1-REV-01 found HEAD on fix/dict-rows-imgui-error with foreign dirty tree (Dummy fix). Foreign commit 8773d94 exists on fix branch, NOT on ops. ORCH preserved W1-REV-01 report via fix-branch docs commits 570072c/dd83222, cherry-picked to ops as 1c101a7/40c748e. Foreign plan file docs/plans/2026-11-08-dict-rows-imgui-dummy.md left untracked, untouched. ops branch is working branch.
