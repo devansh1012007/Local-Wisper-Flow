@@ -62,6 +62,7 @@
 #include "ui/pages/DictionaryPage.h"
 #include "ui/pages/InsightsPage.h"
 #include "ui/pages/ScratchpadPage.h"
+#include "ui/pages/SnippetsPage.h"
 #include "ui/pages/TransformsPage.h"
 
 #include <atomic>
@@ -539,6 +540,19 @@ int main() {
                                                                           &transforms_diff_source));
         full.SetScratchpadPage(
             std::make_unique<ScratchpadPage>(notes, config.Store(), ui_bus));
+        full.SetSnippetsPage(std::make_unique<lwf::ui::pages::SnippetsPage>(snippets));
+        {
+            MainWindow::DataResetStores reset_stores;
+            reset_stores.dictionary = &dictionary_store;
+            reset_stores.snippets = &snippets;
+            reset_stores.stats = &usage_stats;
+            reset_stores.transforms = &transforms;
+            reset_stores.notes = &notes;
+            reset_stores.api_keys = &api_keys;
+            reset_stores.history = &history;
+            reset_stores.dictionary_legacy = &dictionary;
+            full.SetDataResetStores(reset_stores);
+        }
         if (!full.Init()) {
             lwf::Log::Error("full window init failed");
             tray.Stop();

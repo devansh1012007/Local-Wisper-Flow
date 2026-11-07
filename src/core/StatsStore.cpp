@@ -188,6 +188,13 @@ std::map<std::string, DayStats> StatsStore::Snapshot() const {
     return days_;
 }
 
+void StatsStore::Clear() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    days_.clear();
+    (void)PersistLocked();
+    generation_.fetch_add(1);
+}
+
 std::uint64_t StatsStore::Generation() const noexcept {
     return generation_.load();
 }

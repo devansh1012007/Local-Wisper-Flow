@@ -2,11 +2,19 @@
 
 #include "audio/MiniaudioCapture.h"
 #include "core/AppVersion.h"
+#include "core/ApiKeyStore.h"
+#include "core/DictionaryStore.h"
+#include "core/HistoryStore.h"
 #include "core/HotkeyBinding.h"
 #include "core/Languages.h"
+#include "core/NotesStore.h"
 #include "core/Onboarding.h"
+#include "core/PersonalDictionary.h"
 #include "core/SettingsStore.h"
 #include "core/SettingsUiModel.h"
+#include "core/SnippetStore.h"
+#include "core/StatsStore.h"
+#include "core/TransformStore.h"
 #include "core/UiBus.h"
 #include "os/DataDir.h"
 #include "os/FileDialogs.h"
@@ -237,6 +245,15 @@ void MainWindow::SetLearnedHotkey(const std::string& target_key, const std::stri
     if (target_key == "hotkey_ptt") {
         detected_hotkey_ = chord;
     }
+    if (target_key == "hotkey_handsfree") {
+        hotkey_handsfree_field_.seeded = false;
+    } else if (target_key == "hotkey_cancel") {
+        hotkey_cancel_field_.seeded = false;
+    } else if (target_key == "hotkey_command") {
+        hotkey_command_field_.seeded = false;
+    } else if (target_key == "hotkey_paste_last") {
+        hotkey_paste_last_field_.seeded = false;
+    }
     if (learn_error_target_ == target_key) {
         learn_error_.clear();
         learn_error_target_.clear();
@@ -273,6 +290,10 @@ void MainWindow::SetScratchpadPage(std::unique_ptr<ScratchpadPage> page) {
 
 void MainWindow::SetSnippetsPage(std::unique_ptr<lwf::ui::pages::SnippetsPage> page) {
     snippets_page_ = std::move(page);
+}
+
+void MainWindow::SetDataResetStores(DataResetStores stores) {
+    reset_stores_ = stores;
 }
 
 bool MainWindow::FirstRunNeeded() const {
@@ -643,6 +664,31 @@ void MainWindow::StringFieldRow(const char* key, TextField& field, const char* i
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::InputText(id, field.buffer, sizeof(field.buffer));
     if (ImGui::IsItemDeactivatedAfterEdit()) {
+        const auto role = HotkeyBinding::RoleForConfigKey(key);
+        if (role.has_value()) {
+            const std::string candidate = field.buffer;
+            const std::size_t first = candidate.find_first_not_of(" \t");
+            if (first == std::string::npos) {
+                field.buffer[0] = '\0';
+                settings_.SetString(key, "");
+                validation_error_.clear();
+                if (restart) {
+                    restart_needed_ = true;
+                }
+                ApplyAndSave();
+                return;
+            }
+            const std::vector<Binding> registry = LoadBindings(settings_);
+            const std::string error =
+                HotkeyBinding::ValidateRecorderChord(candidate, registry, *role);
+            if (!error.empty()) {
+                validation_error_ = error;
+                std::snprintf(field.buffer, sizeof(field.buffer), "%s",
+                              settings_.GetString(key).c_str());
+                return;
+            }
+            validation_error_.clear();
+        }
         settings_.SetString(key, field.buffer);
         if (restart) {
             restart_needed_ = true;
@@ -660,6 +706,43 @@ void MainWindow::DeleteLocalData() {
     std::filesystem::remove(base / "transforms.json", ec);
     std::filesystem::remove_all(base / "notes", ec);
     std::filesystem::remove(base / "api_keys.json", ec);
+    std::filesystem::remove(base / "history.jsonl", ec);
+    std::filesystem::remove(base / "stats.json.bak", ec);
+    std::filesystem::remove(base / "dictionary.json.bak", ec);
+    std::filesystem::remove(base / "snippets.json.bak", ec);
+    std::filesystem::remove(base / "transforms.json.bak", ec);
+    std::filesystem::remove(base / "api_keys.json.bak", ec);
+    std::filesystem::remove(base / "stats.json.tmp", ec);
+    std::filesystem::remove(base / "dictionary.json.tmp", ec);
+    std::filesystem::remove(base / "snippets.json.tmp", ec);
+    std::filesystem::remove(base / "transforms.json.tmp", ec);
+    std::filesystem::remove(base / "api_keys.json.tmp", ec);
+    std::filesystem::remove(base / "history.jsonl.tmp", ec);
+    if (reset_stores_.dictionary != nullptr) {
+        reset_stores_.dictionary->Clear();
+    }
+    if (reset_stores_.dictionary_legacy != nullptr) {
+        reset_stores_.dictionary_legacy->SetWords({});
+        reset_stores_.dictionary_legacy->SetReplacements({});
+    }
+    if (reset_stores_.snippets != nullptr) {
+        reset_stores_.snippets->SetEntries({});
+    }
+    if (reset_stores_.stats != nullptr) {
+        reset_stores_.stats->Clear();
+    }
+    if (reset_stores_.transforms != nullptr) {
+        (void)reset_stores_.transforms->Reload();
+    }
+    if (reset_stores_.notes != nullptr) {
+        (void)reset_stores_.notes->Reload();
+    }
+    if (reset_stores_.api_keys != nullptr) {
+        reset_stores_.api_keys->Reload();
+    }
+    if (reset_stores_.history != nullptr) {
+        reset_stores_.history->Clear();
+    }
     delete_data_armed_ = false;
 }
 
@@ -780,6 +863,15 @@ void MainWindow::DrawGeneralHotkeyRow(const std::string& config_key, const char*
         const std::string clear_id = "Clear##" + config_key;
         if (ImGui::Button(clear_id.c_str())) {
             settings_.SetString(config_key, "");
+            if (config_key == "hotkey_handsfree") {
+                hotkey_handsfree_field_.seeded = false;
+            } else if (config_key == "hotkey_cancel") {
+                hotkey_cancel_field_.seeded = false;
+            } else if (config_key == "hotkey_command") {
+                hotkey_command_field_.seeded = false;
+            } else if (config_key == "hotkey_paste_last") {
+                hotkey_paste_last_field_.seeded = false;
+            }
             ApplyAndSave();
         }
         if (buttons_disabled) {
@@ -1253,13 +1345,12 @@ void MainWindow::DrawPrivacyPage(float scale) {
             if (ImGui::Button("Delete all local data")) {
                 delete_data_armed_ = true;
             }
-            ImGui::TextDisabled("Removes statistics, dictionary, snippets, transforms, notes and saved API keys. Settings are kept.");
+            ImGui::TextDisabled("Removes statistics, dictionary, snippets, transforms, notes, history and saved API keys. Settings are kept.");
         } else {
             ImGui::TextColored(Color(kDarkPalette.err),
                                "This cannot be undone. The app keeps running; restart to reseed empty files.");
             if (ImGui::Button("Confirm delete")) {
                 DeleteLocalData();
-                ShowSaved();
             }
             ImGui::SameLine();
             if (ImGui::Button("Cancel")) {
@@ -1423,6 +1514,9 @@ void MainWindow::DrawGeneralPage(float scale) {
         ImGui::TextUnformatted("Paste last");
         StringFieldRow("hotkey_paste_last", hotkey_paste_last_field_, "##hotkey_paste_last", false);
         ImGui::TextDisabled("Chords as text, e.g. Ctrl+Shift+T.");
+        if (!validation_error_.empty()) {
+            ImGui::TextColored(Color(kDarkPalette.err), "%s", validation_error_.c_str());
+        }
     }
     EndCard(scale);
 

@@ -14,6 +14,14 @@ class MiniaudioCapture;
 class SettingsStore;
 class UiBus;
 class ScratchpadPage;
+class DictionaryStore;
+class SnippetStore;
+class StatsStore;
+class TransformStore;
+class NotesStore;
+class ApiKeyStore;
+class HistoryStore;
+class PersonalDictionary;
 
 namespace lwf::ui::pages {
 class DictionaryPage;
@@ -110,6 +118,19 @@ public:
     void SetScratchpadPage(std::unique_ptr<ScratchpadPage> page);
     void SetSnippetsPage(std::unique_ptr<lwf::ui::pages::SnippetsPage> page);
 
+    struct DataResetStores {
+        DictionaryStore* dictionary = nullptr;
+        SnippetStore* snippets = nullptr;
+        StatsStore* stats = nullptr;
+        TransformStore* transforms = nullptr;
+        NotesStore* notes = nullptr;
+        ApiKeyStore* api_keys = nullptr;
+        HistoryStore* history = nullptr;
+        PersonalDictionary* dictionary_legacy = nullptr;
+    };
+
+    void SetDataResetStores(DataResetStores stores);
+
     bool FirstRunNeeded() const;
 
 private:
@@ -197,6 +218,7 @@ private:
     std::unique_ptr<lwf::ui::insights::InsightsPage> insights_page_;
     std::unique_ptr<lwf::ui::TransformsPage> transforms_page_;
     std::unique_ptr<ScratchpadPage> scratchpad_page_;
+    DataResetStores reset_stores_;
     std::string learn_target_;
     std::string learn_error_target_;
     std::string learn_error_;

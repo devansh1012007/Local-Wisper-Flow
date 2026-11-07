@@ -175,7 +175,8 @@ inline bool SubmitUpdate(DictionaryStore& store, PersonalDictionary* dict, std::
     return true;
 }
 
-inline bool CommitPendingDelete(DictionaryStore& store, DictionaryPageState& state) {
+inline bool CommitPendingDelete(DictionaryStore& store, DictionaryPageState& state,
+                                PersonalDictionary* dict) {
     if (!state.pending_delete) {
         return true;
     }
@@ -184,14 +185,26 @@ inline bool CommitPendingDelete(DictionaryStore& store, DictionaryPageState& sta
     const bool saved = store.Save();
     state.pending_delete = false;
     state.delete_at = -1.0f;
+    if (removed && saved && dict != nullptr) {
+        (void)dict->Reload();
+    }
     return removed && saved;
 }
 
-inline bool CommitExpiredPending(DictionaryStore& store, DictionaryPageState& state, float now) {
+inline bool CommitPendingDelete(DictionaryStore& store, DictionaryPageState& state) {
+    return CommitPendingDelete(store, state, nullptr);
+}
+
+inline bool CommitExpiredPending(DictionaryStore& store, DictionaryPageState& state,
+                                 PersonalDictionary* dict, float now) {
     if (!state.pending_delete || now < state.delete_at) {
         return false;
     }
-    return CommitPendingDelete(store, state);
+    return CommitPendingDelete(store, state, dict);
+}
+
+inline bool CommitExpiredPending(DictionaryStore& store, DictionaryPageState& state, float now) {
+    return CommitExpiredPending(store, state, nullptr, now);
 }
 
 inline void UndoPendingDelete(DictionaryPageState& state) {
@@ -199,8 +212,8 @@ inline void UndoPendingDelete(DictionaryPageState& state) {
     state.delete_at = -1.0f;
 }
 
-inline bool RequestDelete(DictionaryStore& store, DictionaryPageState& state, std::int64_t id,
-                          float now) {
+inline bool RequestDelete(DictionaryStore& store, DictionaryPageState& state,
+                          PersonalDictionary* dict, std::int64_t id, float now) {
     bool found = false;
     for (const DictionaryStore::Entry& entry : store.Entries()) {
         if (entry.id == id) {
@@ -213,10 +226,11 @@ inline bool RequestDelete(DictionaryStore& store, DictionaryPageState& state, st
     }
     if (state.pending_delete) {
         const std::int64_t previous_id = state.pending_entry.id;
-        if (!store.Remove(previous_id)) {
-            return false;
-        }
+        const bool previous_removed = store.Remove(previous_id);
         (void)store.Save();
+        if (previous_removed && dict != nullptr) {
+            (void)dict->Reload();
+        }
         state.pending_delete = false;
         state.delete_at = -1.0f;
     }
@@ -229,6 +243,11 @@ inline bool RequestDelete(DictionaryStore& store, DictionaryPageState& state, st
     state.pending_delete = true;
     state.delete_at = now + studio_metrics::toast_dwell_s;
     return true;
+}
+
+inline bool RequestDelete(DictionaryStore& store, DictionaryPageState& state, std::int64_t id,
+                          float now) {
+    return RequestDelete(store, state, nullptr, id, now);
 }
 
 class DictionaryPage {

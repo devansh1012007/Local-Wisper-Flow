@@ -29,6 +29,7 @@ public:
     bool Load();
     bool Reload();
     bool Save();
+    void Clear();
 
     std::vector<Entry> Entries() const;
     std::vector<Entry> Search(const std::string& query) const;

@@ -124,7 +124,7 @@ void DictionaryPage::Draw(float scale) {
         if (toast_.TakeAction()) {
             UndoPendingDelete(state_);
         } else if (!toast_.IsVisible()) {
-            (void)CommitExpiredPending(store_, state_, ImGui::GetTime());
+            (void)CommitExpiredPending(store_, state_, dict_, ImGui::GetTime());
         }
     }
     DrawHeader(scale);
@@ -321,7 +321,7 @@ void DictionaryPage::DrawRows(float scale) {
             const std::string delete_id =
                 std::string("dict_delete_") + std::to_string(entry.id);
             if (widgets::LightButton(delete_id.c_str(), "Delete", scale)) {
-                if (RequestDelete(store_, state_, entry.id, ImGui::GetTime())) {
+                if (RequestDelete(store_, state_, dict_, entry.id, ImGui::GetTime())) {
                     toast_.Show(std::string("Deleted \"") + entry.phrase + "\"", "Undo");
                 }
             }

@@ -34,6 +34,7 @@ public:
 
     explicit StatsStore(std::string path, bool enabled = true);
     void Record(const DictationRecord& record);
+    void Clear();
     void SetUsageStatsEnabled(bool enabled);
     bool UsageStatsEnabled() const;
     std::map<std::string, DayStats> Snapshot() const;

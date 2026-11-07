@@ -405,6 +405,15 @@ bool DictionaryStore::Reload() {
     return Load();
 }
 
+void DictionaryStore::Clear() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries_.clear();
+    next_id_ = 1;
+    migrated_ = false;
+    bak_pending_ = false;
+    loaded_ = true;
+}
+
 bool DictionaryStore::Save() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (path_.empty()) {

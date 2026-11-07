@@ -555,6 +555,21 @@ bool TransformStore::Save() const {
     return Save(path);
 }
 
+bool TransformStore::Reload() {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        path = path_;
+    }
+    if (path.empty()) {
+        SeedDefaults();
+        std::lock_guard<std::mutex> lock(mutex_);
+        loaded_ = true;
+        return true;
+    }
+    return Load(path);
+}
+
 std::vector<TransformStore::Entry> TransformStore::Entries() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return entries_;
