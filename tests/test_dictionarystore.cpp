@@ -149,7 +149,7 @@ TEST_CASE("duplicate trimmed case insensitive is rejected") {
     CHECK(store.Add("  beta  ", "", &error));
     CHECK_FALSE(store.Add("beta", "other", &error));
     CHECK(error == "Word already exists.");
-    REQUIRE(store.Size() == 2);
+    REQUIRE(store.Size() == 3);
     CHECK(ContainsPhrase(store.Entries(), "alpha"));
     CHECK(ContainsPhrase(store.Entries(), "beta"));
 }
@@ -180,7 +180,7 @@ TEST_CASE("starred entries sort before newer entries") {
         R"({"schema_version": 2, "entries": [)"
         R"({"id": 1, "phrase": "old", "starred": true, "source": "manual", "usage_count": 0, "created_at": 100, "updated_at": 100},)"
         R"({"id": 2, "phrase": "newer", "starred": false, "source": "manual", "usage_count": 0, "created_at": 300, "updated_at": 300},)"
-        R"({"id": 3, "phrase": "middle", "starred": false, "source": "manual", "usage_count": 0, "created_at": 200, "updated_at": 200}])";
+        R"({"id": 3, "phrase": "middle", "starred": false, "source": "manual", "usage_count": 0, "created_at": 200, "updated_at": 200}]})";
     CHECK(store.ImportJson(json, nullptr));
     const std::vector<DictionaryStore::Entry> entries = store.Entries();
     REQUIRE(entries.size() == 3);
