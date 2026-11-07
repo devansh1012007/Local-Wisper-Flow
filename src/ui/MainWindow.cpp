@@ -8,6 +8,7 @@
 #include "core/SettingsUiModel.h"
 #include "core/UiBus.h"
 #include "os/DataDir.h"
+#include "os/FileDialogs.h"
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
 
@@ -20,6 +21,7 @@
 
 #ifdef _WIN32
 extern "C" __declspec(dllimport) int __stdcall ShellExecuteA(void*, const char*, const char*, const char*, const char*, int);
+extern "C" void* glfwGetWin32Window(GLFWwindow* window);
 #endif
 
 #include <algorithm>
@@ -556,6 +558,40 @@ void MainWindow::PersistPage() {
     settings_.Save();
 }
 
+#ifdef _WIN32
+namespace {
+
+void* DialogOwnerHwnd(GLFWwindow* window) {
+    return window != nullptr ? glfwGetWin32Window(window) : nullptr;
+}
+
+}  // namespace
+
+#endif
+
+bool MainWindow::PickAndApplyModelPath(char* buffer, std::size_t buffer_size,
+                                       const char* setting_key, std::string& error) {
+    const std::string picked =
+#ifdef _WIN32
+        FileDialogs::PickModelFile(buffer, DialogOwnerHwnd(window_));
+#else
+        FileDialogs::PickModelFile(buffer);
+#endif
+    if (picked.empty()) {
+        return false;
+    }
+    const std::string normalized = FileDialogs::NormalizeModelPath(picked);
+    std::snprintf(buffer, buffer_size, "%s", normalized.c_str());
+    error = SettingsUiModel::ValidateModelPath(buffer);
+    if (!error.empty()) {
+        return false;
+    }
+    settings_.SetString(setting_key, buffer);
+    restart_needed_ = true;
+    ApplyAndSave();
+    return true;
+}
+
 void MainWindow::DrawRestartBanner(float scale) {
     if (!restart_needed_) {
         return;
@@ -735,7 +771,9 @@ void MainWindow::DrawSpeechPage(float scale) {
             const std::string current = settings_.GetString("whisper_model_path");
             std::snprintf(model_path_buffer_, sizeof(model_path_buffer_), "%s", current.c_str());
         }
-        ImGui::SetNextItemWidth(-1.0f);
+        const float browse_width = ImGui::CalcTextSize("Browse...").x +
+                                   ImGui::GetStyle().FramePadding.x * 2.0f;
+        ImGui::SetNextItemWidth(-(browse_width + ImGui::GetStyle().ItemSpacing.x));
         ImGui::InputText("##model_path", model_path_buffer_, sizeof(model_path_buffer_));
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             validation_error_ = SettingsUiModel::ValidateModelPath(model_path_buffer_);
@@ -745,10 +783,42 @@ void MainWindow::DrawSpeechPage(float scale) {
                 ApplyAndSave();
             }
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Browse...##browse_whisper")) {
+            PickAndApplyModelPath(model_path_buffer_, sizeof(model_path_buffer_),
+                                 "whisper_model_path", validation_error_);
+        }
         if (!validation_error_.empty()) {
             ImGui::TextColored(Color(kDarkPalette.err), "%s", validation_error_.c_str());
         }
         ImGui::TextDisabled("Restart is needed after changing the model path.");
+        ImGui::Separator();
+        ImGui::TextUnformatted("Cleanup model");
+        if (llm_model_path_buffer_[0] == '\0') {
+            const std::string current = settings_.GetString("llm_model_path");
+            std::snprintf(llm_model_path_buffer_, sizeof(llm_model_path_buffer_), "%s",
+                          current.c_str());
+        }
+        ImGui::SetNextItemWidth(-(browse_width + ImGui::GetStyle().ItemSpacing.x));
+        ImGui::InputText("##llm_model_path", llm_model_path_buffer_,
+                         sizeof(llm_model_path_buffer_));
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            llm_model_error_ = SettingsUiModel::ValidateModelPath(llm_model_path_buffer_);
+            if (llm_model_error_.empty()) {
+                settings_.SetString("llm_model_path", llm_model_path_buffer_);
+                restart_needed_ = true;
+                ApplyAndSave();
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Browse...##browse_llm")) {
+            PickAndApplyModelPath(llm_model_path_buffer_, sizeof(llm_model_path_buffer_),
+                                 "llm_model_path", llm_model_error_);
+        }
+        if (!llm_model_error_.empty()) {
+            ImGui::TextColored(Color(kDarkPalette.err), "%s", llm_model_error_.c_str());
+        }
+        ImGui::TextDisabled("Leave empty to turn off cleanup.");
     }
     EndCard(scale);
 
@@ -1060,6 +1130,7 @@ void MainWindow::DrawSettingsPage(float scale) {
         if (pressed) {
             settings_tab_ = item.tab;
             validation_error_.clear();
+            llm_model_error_.clear();
         }
         const bool active = settings_tab_ == item.tab;
         const bool hovered = ImGui::IsItemHovered();
@@ -1162,6 +1233,32 @@ void MainWindow::DrawWelcomePage(float scale) {
             }
             ImGui::TextWrapped("%s",
                                "Files are verified against the listed SHA-256 checksums.");
+            if (model_path_buffer_[0] == '\0') {
+                const std::string current = settings_.GetString("whisper_model_path");
+                std::snprintf(model_path_buffer_, sizeof(model_path_buffer_), "%s",
+                              current.c_str());
+            }
+            const float browse_width = ImGui::CalcTextSize("Browse...").x +
+                                       ImGui::GetStyle().FramePadding.x * 2.0f;
+            ImGui::SetNextItemWidth(-(browse_width + ImGui::GetStyle().ItemSpacing.x));
+            ImGui::InputText("##welcome_model_path", model_path_buffer_,
+                             sizeof(model_path_buffer_));
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                validation_error_ = SettingsUiModel::ValidateModelPath(model_path_buffer_);
+                if (validation_error_.empty()) {
+                    settings_.SetString("whisper_model_path", model_path_buffer_);
+                    restart_needed_ = true;
+                    ApplyAndSave();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Browse...##browse_welcome")) {
+                PickAndApplyModelPath(model_path_buffer_, sizeof(model_path_buffer_),
+                                     "whisper_model_path", validation_error_);
+            }
+            if (!validation_error_.empty()) {
+                ImGui::TextColored(Color(kDarkPalette.err), "%s", validation_error_.c_str());
+            }
             if (ImGui::Button("Skip (I have models)")) {
                 welcome_step_ = 4;
             }

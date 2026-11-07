@@ -2,6 +2,7 @@
 
 #include "core/DictationFSM.h"
 
+#include <cstddef>
 #include <string>
 
 struct GLFWwindow;
@@ -122,6 +123,8 @@ private:
     void DrawRestartBanner(float scale);
     void DrawHotkeyChips(const std::string& chord, float scale);
     void PersistPage();
+    bool PickAndApplyModelPath(char* buffer, std::size_t buffer_size, const char* setting_key,
+                               std::string& error);
 
     enum class SettingsTab { General, Speech, Cloud, Cleanup, Privacy, About };
 
@@ -148,5 +151,7 @@ private:
     std::string last_transcript_;
     std::string detected_hotkey_;
     std::string validation_error_;
+    std::string llm_model_error_;
     char model_path_buffer_[512] = {};
+    char llm_model_path_buffer_[512] = {};
 };
