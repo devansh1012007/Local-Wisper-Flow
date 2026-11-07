@@ -102,9 +102,9 @@ float KeycapRowWidth(const std::vector<std::string>& tokens, float scale) {
     float width = 0.0f;
     for (std::size_t i = 0; i < tokens.size(); ++i) {
         if (i > 0) {
-            width += 8.0f * scale;
+            width += metrics::space_s * scale;
         }
-        ImGui::PushFont(nullptr, metrics::font_body_px);
+        ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
         const float text_w = ImGui::CalcTextSize(tokens[i].c_str()).x;
         ImGui::PopFont();
         width += text_w + 24.0f * scale;
@@ -186,8 +186,8 @@ void TransformsPage::DrawHeader(float scale) {
         view_w = ImGui::CalcTextSize("View changes").x + 28.0f * scale;
         ImGui::PopFont();
     }
-    const float cluster_w = label_w + 10.0f * scale + info_w + 8.0f * scale + toggle_w +
-                            12.0f * scale + caps_w + 8.0f * scale + caption_w +
+    const float cluster_w = label_w + 10.0f * scale + info_w + metrics::space_s * scale + toggle_w +
+                            12.0f * scale + caps_w + metrics::space_s * scale + caption_w +
                             (HasDiff() ? (12.0f * scale + view_w) : 0.0f);
     const float avail = ImGui::GetContentRegionAvail().x;
     const float cluster_x = start.x + std::max(0.0f, avail - cluster_w);
