@@ -107,7 +107,7 @@ TEST_CASE("mixed runs of whitespace tokenize to the same words") {
 }
 
 TEST_CASE("non-breaking space separates tokens") {
-    const lwf::DiffResult result = lwf::Diff("a\xC2\xA0b", "a b");
+    const lwf::DiffResult result = lwf::Diff("a\xC2\xA0" "b", "a b");
     CHECK(result.replaced == 0);
     CHECK(result.inserted == 0);
     CHECK(result.deleted == 0);
