@@ -138,6 +138,7 @@ add_executable(lwf_tests
     src/os/ActiveWindow.cpp
     src/os/CrashHandler.cpp
     src/os/DataDir.cpp
+    src/os/FileDialogs.cpp
     src/os/WindowStyles.cpp
     tests/main.cpp
     tests/test_cleanup.cpp
@@ -159,6 +160,10 @@ add_executable(lwf_tests
     tests/test_history.cpp
     tests/test_hotkey.cpp
     tests/test_insights.cpp
+    tests/test_dictionary_page.cpp
+    tests/test_insights_page.cpp
+    tests/test_scratchpad_page.cpp
+    tests/test_transforms_page.cpp
     tests/test_languages.cpp
     tests/test_errors.cpp
     tests/test_log.cpp
@@ -348,6 +353,7 @@ if(LWF_BUILD_FULL)
         target_sources(local-wisper-flow PRIVATE
             src/os/ActiveWindow.cpp
             src/os/DataDir.cpp
+            src/os/FileDialogs.cpp
             src/os/SingleInstance.cpp
             src/os/WindowsDownloader.cpp
             src/os/WindowsHotkeyListener.cpp
@@ -356,6 +362,11 @@ if(LWF_BUILD_FULL)
             src/os/WindowsTray.cpp
             src/ui/MainWindow.cpp
             src/ui/Overlay.cpp
+            src/ui/ScratchpadWindow.cpp
+            src/ui/pages/DictionaryPage.cpp
+            src/ui/pages/InsightsPage.cpp
+            src/ui/pages/ScratchpadPage.cpp
+            src/ui/pages/TransformsPage.cpp
             src/ui/theme/ThemePalette.cpp
             src/ui/theme/StudioPalette.cpp
             src/ui/widgets/Buttons.cpp

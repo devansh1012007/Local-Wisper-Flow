@@ -6,6 +6,7 @@
 #include "ui/theme/StudioPalette.h"
 #include "ui/theme/ThemePalette.h"
 
+#include <algorithm>
 #include <doctest/doctest.h>
 #include <cmath>
 #include <filesystem>
@@ -266,6 +267,16 @@ TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete s
         "src/ui/widgets/Display.cpp",
         "src/ui/widgets/Overlays.h",
         "src/ui/widgets/Overlays.cpp",
+        "src/ui/pages/DictionaryPage.h",
+        "src/ui/pages/DictionaryPage.cpp",
+        "src/ui/pages/InsightsPage.h",
+        "src/ui/pages/InsightsPage.cpp",
+        "src/ui/pages/TransformsPage.h",
+        "src/ui/pages/TransformsPage.cpp",
+        "src/ui/pages/ScratchpadPage.h",
+        "src/ui/pages/ScratchpadPage.cpp",
+        "src/ui/ScratchpadWindow.h",
+        "src/ui/ScratchpadWindow.cpp",
     };
     for (const std::string& path : font_sources) {
         std::ifstream file(path);
@@ -836,4 +847,53 @@ TEST_CASE("studio widgets respect the font mechanism and stay opt in") {
     const std::string overlay_content((std::istreambuf_iterator<char>(overlay)),
                                       std::istreambuf_iterator<char>());
     CHECK(overlay_content.find("ApplyStudioStyle") == std::string::npos);
+}
+
+TEST_CASE("every schema key has a control or a documented carve-out") {
+    const std::vector<std::string> carve_outs = {"mini_x", "mini_y", "schema_version", "first_run"};
+    std::ifstream main_window("src/ui/MainWindow.cpp");
+    REQUIRE(static_cast<bool>(main_window));
+    const std::string content((std::istreambuf_iterator<char>(main_window)),
+                              std::istreambuf_iterator<char>());
+    for (const SettingsStore::SchemaEntry& entry : SettingsStore::Schema()) {
+        const std::string key = entry.key;
+        INFO(key);
+        bool carve_out = false;
+        for (const std::string& candidate : carve_outs) {
+            if (candidate == key) {
+                carve_out = true;
+            }
+        }
+        if (!carve_out) {
+            CHECK(content.find("\"" + key + "\"") != std::string::npos);
+        }
+    }
+}
+
+TEST_CASE("new A4 schema keys default and clamp through the store") {
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_a4_settings.json").string();
+    {
+        std::ofstream file(path, std::ios::trunc);
+        file << "{}";
+    }
+    SettingsStore store(path);
+    CHECK(store.HasKey("quiet_speech_boost"));
+    CHECK(store.GetBool("quiet_speech_boost") == false);
+    CHECK(store.HasKey("llm_provider"));
+    CHECK(store.GetString("llm_provider") == "local");
+    CHECK(store.IsHotApply("quiet_speech_boost"));
+    CHECK(store.IsHotApply("llm_provider"));
+    store.SetBool("quiet_speech_boost", false);
+    store.SetString("llm_provider", "openrouter");
+    store.Save();
+    SettingsStore reloaded(path);
+    CHECK(reloaded.GetBool("quiet_speech_boost") == false);
+    CHECK(reloaded.GetString("llm_provider") == "openrouter");
+    store.SetInt("min_hold_ms", 999999);
+    CHECK(store.GetInt("min_hold_ms") == 5000);
+    store.SetDouble("vad_threshold", 9.0);
+    CHECK(store.GetDouble("vad_threshold") == 1.0);
+    store.SetInt("hotkey_code", -4);
+    CHECK(store.GetInt("hotkey_code") == 0);
 }

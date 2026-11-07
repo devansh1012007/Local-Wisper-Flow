@@ -10,6 +10,10 @@
 #include "core/UiBus.h"
 #include "os/DataDir.h"
 #include "os/FileDialogs.h"
+#include "ui/pages/DictionaryPage.h"
+#include "ui/pages/InsightsPage.h"
+#include "ui/pages/ScratchpadPage.h"
+#include "ui/pages/TransformsPage.h"
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
 
@@ -248,6 +252,22 @@ void MainWindow::SetRecorderError(const std::string& target_key, const std::stri
         learn_error_.clear();
         learn_error_target_.clear();
     }
+}
+
+void MainWindow::SetDictionaryPage(std::unique_ptr<lwf::ui::pages::DictionaryPage> page) {
+    dictionary_page_ = std::move(page);
+}
+
+void MainWindow::SetInsightsPage(std::unique_ptr<lwf::ui::insights::InsightsPage> page) {
+    insights_page_ = std::move(page);
+}
+
+void MainWindow::SetTransformsPage(std::unique_ptr<lwf::ui::TransformsPage> page) {
+    transforms_page_ = std::move(page);
+}
+
+void MainWindow::SetScratchpadPage(std::unique_ptr<ScratchpadPage> page) {
+    scratchpad_page_ = std::move(page);
 }
 
 bool MainWindow::FirstRunNeeded() const {
@@ -1267,11 +1287,19 @@ void MainWindow::DrawAboutPage(float scale) {
 }
 
 void MainWindow::DrawInsightsPage(float scale) {
+    if (insights_page_) {
+        insights_page_->Draw(scale);
+        return;
+    }
     DrawPageChrome("Insights", "Your dictation at a glance.", scale);
     ImGui::TextDisabled("Not available yet.");
 }
 
 void MainWindow::DrawDictionaryPage(float scale) {
+    if (dictionary_page_) {
+        dictionary_page_->Draw(scale);
+        return;
+    }
     DrawPageChrome("Dictionary", "Words the app corrects.", scale);
     ImGui::TextDisabled("Not available yet.");
 }
@@ -1282,11 +1310,19 @@ void MainWindow::DrawSnippetsPage(float scale) {
 }
 
 void MainWindow::DrawTransformsPage(float scale) {
+    if (transforms_page_) {
+        transforms_page_->Draw(scale);
+        return;
+    }
     DrawPageChrome("Transforms", "Rewrite selected text.", scale);
     ImGui::TextDisabled("Not available yet.");
 }
 
 void MainWindow::DrawScratchpadPage(float scale) {
+    if (scratchpad_page_) {
+        scratchpad_page_->Draw(scale);
+        return;
+    }
     DrawPageChrome("Scratchpad", "A scratch space for notes.", scale);
     ImGui::TextDisabled("Not available yet.");
 }

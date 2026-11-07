@@ -37,6 +37,7 @@
 #include "core/AppVersion.h"
 #include "core/ConsentGate.h"
 #include "core/CrashReporter.h"
+#include "core/DictionaryStore.h"
 #include "core/SttRouter.h"
 #include "core/UiBus.h"
 #include "core/UnavailableProviders.h"
@@ -56,7 +57,12 @@
 #include "stt/GrpcInferenceProvider.h"
 #include "stt/LocalWhisperProvider.h"
 #include "ui/MainWindow.h"
+#include "ui/ScratchpadWindow.h"
 #include "ui/Overlay.h"
+#include "ui/pages/DictionaryPage.h"
+#include "ui/pages/InsightsPage.h"
+#include "ui/pages/ScratchpadPage.h"
+#include "ui/pages/TransformsPage.h"
 
 #include <atomic>
 #include <chrono>
@@ -305,6 +311,11 @@ int main() {
         ApiKeyStore api_keys(data_dir + "\\api_keys.json");
         NotesStore notes(data_dir);
 
+        ScratchpadWindow scratchpad_editor(notes, config.Store());
+        if (!scratchpad_editor.Init()) {
+            lwf::Log::Warning("scratchpad window init failed; continuing without it");
+        }
+
         UiBus ui_bus;
         AttentionBox attention;
         Overlay overlay;
@@ -338,6 +349,8 @@ int main() {
             local_stt ? static_cast<IInferenceProvider&>(*local_stt)
                       : static_cast<IInferenceProvider&>(unavailable_stt);
         WindowsTextInjector injector;
+        lwf::ui::scratchpad::ScratchpadRouteInjector scratchpad_router(
+            injector, scratchpad_editor.DictationBuffer(), scratchpad_editor.DictationActiveFlag());
 
         AppContextResolver app_context;
         if (!app_context.Load(data_dir + "\\app_profiles.json")) {
@@ -375,6 +388,7 @@ int main() {
 
         PersonalDictionary dictionary;
         dictionary.Load(data_dir + "\\dictionary.json");
+        DictionaryStore dictionary_store(data_dir + "\\dictionary.json");
         SnippetStore snippets;
         if (!snippets.Load(data_dir + "\\snippets.json")) {
             snippets.SetEntries({});
@@ -493,7 +507,7 @@ int main() {
         });
         RealClock clock;
         IVadProvider* vad = nullptr;
-        DictationEngine engine(audio, vad, stt_router, pipeline, injector, fsm,
+        DictationEngine engine(audio, vad, stt_router, pipeline, scratchpad_router, fsm,
                                clock, bridge, settings);
         engine.SetToneFeedback(&tone_player);
         engine.SetCommandController(&command_controller);
@@ -517,6 +531,14 @@ int main() {
         tray.Start();
 
         MainWindow full(fsm, audio, config.Store(), ui_bus);
+        full.SetDictionaryPage(
+            std::make_unique<lwf::ui::pages::DictionaryPage>(dictionary_store, &dictionary));
+        full.SetInsightsPage(std::make_unique<lwf::ui::insights::InsightsPage>(usage_stats));
+        lwf::ui::EngineDiffSource transforms_diff_source(&engine);
+        full.SetTransformsPage(std::make_unique<lwf::ui::TransformsPage>(transforms, &ui_bus,
+                                                                          &transforms_diff_source));
+        full.SetScratchpadPage(
+            std::make_unique<ScratchpadPage>(notes, config.Store(), ui_bus));
         if (!full.Init()) {
             lwf::Log::Error("full window init failed");
             tray.Stop();
@@ -571,9 +593,15 @@ int main() {
                     case UiCommandType::SetEnabled:
                         config.Store().SetBool("dictation_enabled", command.payload == "1");
                         break;
-                    case UiCommandType::StartLearnHotkey:
-                        hotkey.BeginLearnMode();
+                    case UiCommandType::StartLearnHotkey: {
+                        const std::string target = UiBus::ParseStartLearnTarget(command.payload);
+                        if (HotkeyBinding::IsConfigHotkeyKey(target)) {
+                            hotkey.BeginLearnMode(target);
+                        } else {
+                            lwf::Log::Warning("learn: unknown target ignored");
+                        }
                         break;
+                    }
                     case UiCommandType::ApplySettings:
                         config.Save();
                         {
@@ -614,17 +642,36 @@ int main() {
                     }
                     case UiCommandType::OpenScratchpad:
                         lwf::Log::Info("scratchpad open requested");
-                        full.SetVisible(true);
+                        if (command.payload.empty()) {
+                            scratchpad_editor.OpenNewNote();
+                        } else {
+                            scratchpad_editor.OpenNote(command.payload);
+                        }
                         break;
                 }
             }
 
             std::string learned;
-            if (hotkey.TryTakeLearnedBinding(learned)) {
-                config.Store().SetString("hotkey_ptt", learned);
-                config.Save();
-                hotkey.UpdateBindings(LoadBindings(config.Store()));
-                full.SetDetectedHotkey(learned);
+            std::string target;
+            if (hotkey.TryTakeLearnedBinding(learned, target)) {
+                if (!HotkeyBinding::IsConfigHotkeyKey(target)) {
+                    lwf::Log::Warning("learn: unknown target ignored");
+                } else {
+                    const auto role = HotkeyBinding::RoleForConfigKey(target);
+                    const std::vector<Binding> registry = LoadBindings(config.Store());
+                    const std::string error =
+                        HotkeyBinding::ValidateRecorderChord(learned, registry, *role);
+                    if (!error.empty()) {
+                        full.SetRecorderError(target, error);
+                    } else {
+                        config.Store().SetString(target, learned);
+                        config.Save();
+                        const std::vector<Binding> bindings = LoadBindings(config.Store());
+                        hotkey.UpdateBindings(bindings);
+                        transforms.SetHotkeyBindings(bindings);
+                        full.SetLearnedHotkey(target, learned);
+                    }
+                }
             }
 
             EngineEvent event;
@@ -678,6 +725,9 @@ int main() {
             full.RunOnce(1.0f / 60.0f);
             full.TakeCloseRequest();  // close hides; the tray owns Quit
             overlay.RenderFrame(1.0f / 60.0f);
+            engine.SetScratchpadTarget(scratchpad_editor.IsDictationActive());
+            scratchpad_editor.RenderFrame(1.0f / 60.0f);
+            scratchpad_editor.TakeCloseRequest();
             std::this_thread::sleep_for(std::chrono::milliseconds(8));
         }
 
@@ -686,6 +736,7 @@ int main() {
         tray.Stop();
         tone_player.Shutdown();
         overlay.Shutdown();
+        scratchpad_editor.Shutdown();
         full.Shutdown();
         glfwTerminate();
         lwf::Log::Info("shutdown complete");

@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <memory>
 #include <string>
 
 struct GLFWwindow;
@@ -12,6 +13,17 @@ struct ImGuiContext;
 class MiniaudioCapture;
 class SettingsStore;
 class UiBus;
+class ScratchpadPage;
+
+namespace lwf::ui::pages {
+class DictionaryPage;
+}
+namespace lwf::ui::insights {
+class InsightsPage;
+}
+namespace lwf::ui {
+class TransformsPage;
+}
 
 // The Full window: rail navigation plus pages (Home, Insights, Dictionary,
 // Snippets, Transforms, Scratchpad, Settings, and the first-run Welcome).
@@ -91,6 +103,10 @@ public:
     void SetDetectedHotkey(const std::string& chord);
     void SetLearnedHotkey(const std::string& target_key, const std::string& chord);
     void SetRecorderError(const std::string& target_key, const std::string& message);
+    void SetDictionaryPage(std::unique_ptr<lwf::ui::pages::DictionaryPage> page);
+    void SetInsightsPage(std::unique_ptr<lwf::ui::insights::InsightsPage> page);
+    void SetTransformsPage(std::unique_ptr<lwf::ui::TransformsPage> page);
+    void SetScratchpadPage(std::unique_ptr<ScratchpadPage> page);
 
     bool FirstRunNeeded() const;
 
@@ -174,6 +190,10 @@ private:
 
     std::string last_transcript_;
     std::string detected_hotkey_;
+    std::unique_ptr<lwf::ui::pages::DictionaryPage> dictionary_page_;
+    std::unique_ptr<lwf::ui::insights::InsightsPage> insights_page_;
+    std::unique_ptr<lwf::ui::TransformsPage> transforms_page_;
+    std::unique_ptr<ScratchpadPage> scratchpad_page_;
     std::string learn_target_;
     std::string learn_error_target_;
     std::string learn_error_;
