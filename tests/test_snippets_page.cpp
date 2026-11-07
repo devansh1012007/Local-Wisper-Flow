@@ -24,6 +24,26 @@ std::string ReadFile(const std::string& path) {
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 
+std::string ReadSourceFrom(const std::string& root, const std::string& relative) {
+    std::ifstream file(root + "/" + relative);
+    if (!file.is_open()) {
+        file.open(relative);
+    }
+    return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+}
+
+// T-004: LWF_SOURCE_DIR first with a bare-relative fallback (pattern from
+// tests/test_transforms_page.cpp:30-44) for source scans, so they work from
+// the repo root and from build/ alike; temp-file tests above keep using the
+// bare ReadFile because their paths are absolute.
+std::string ReadSource(const std::string& relative) {
+#ifdef LWF_SOURCE_DIR
+    return ReadSourceFrom(LWF_SOURCE_DIR, relative);
+#else
+    return ReadSourceFrom(".", relative);
+#endif
+}
+
 void StoreWith(SnippetStore& store,
                std::initializer_list<std::pair<const char*, const char*>> entries) {
     std::vector<SnippetStore::Entry> items;
@@ -294,12 +314,8 @@ TEST_CASE("snippets page save and load roundtrip keeps ids and shape") {
 }
 
 TEST_CASE("snippets page sources stay off the font scale ban and carry the brief copy") {
-    std::ifstream header_file("src/ui/pages/SnippetsPage.h");
-    std::ifstream impl_file("src/ui/pages/SnippetsPage.cpp");
-    const std::string header((std::istreambuf_iterator<char>(header_file)),
-                             std::istreambuf_iterator<char>());
-    const std::string impl((std::istreambuf_iterator<char>(impl_file)),
-                           std::istreambuf_iterator<char>());
+    const std::string header = ReadSource("src/ui/pages/SnippetsPage.h");
+    const std::string impl = ReadSource("src/ui/pages/SnippetsPage.cpp");
     REQUIRE_FALSE(header.empty());
     REQUIRE_FALSE(impl.empty());
     for (const std::string& text : {header, impl}) {
@@ -312,8 +328,19 @@ TEST_CASE("snippets page sources stay off the font scale ban and carry the brief
     }
     CHECK(header.find("#include \"imgui.h\"") == std::string::npos);
     CHECK(header.find("PushFont") == std::string::npos);
-    CHECK(impl.find("PushFont(nullptr,") != std::string::npos);
-    CHECK(impl.find("PushFont(metrics") == std::string::npos);
+    // T-004 pin flip (P-005): typography must go through design-px tokens. The
+    // 15px row text maps to metrics::font_card_title_px and the 13px detail
+    // text to studio_metrics::font_helper_px (same-value tokens), so the old
+    // metrics ban is reversed and both vocabularies are required. Anchored
+    // form: a loose "metrics::font_" substring would match studio_metrics::
+    // alone and prove nothing.
+    CHECK(impl.find("PushFont(nullptr, studio_metrics::") != std::string::npos);
+    const bool has_metrics_font =
+        impl.find("PushFont(nullptr, metrics::font_") != std::string::npos ||
+        impl.find("PushFont(nullptr, lwf::ui::metrics::font_") != std::string::npos;
+    CHECK(has_metrics_font);
+    CHECK(impl.find("PushFont(nullptr, 15.0f)") == std::string::npos);
+    CHECK(impl.find("PushFont(nullptr, 13.0f)") == std::string::npos);
     CHECK(header.find("my booking link") != std::string::npos);
     CHECK(header.find("https://example.com/book") != std::string::npos);
     CHECK(header.find("Add new snippet") != std::string::npos);

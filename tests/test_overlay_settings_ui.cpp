@@ -1054,3 +1054,275 @@ TEST_CASE("F9 copy lint bans internal terms and exclamation in display strings")
         }
     }
 }
+
+namespace {
+
+// W1-IMPL-03 (T-004 / P-005): literal-bypass ban over the Full-window layout
+// sources. ReadSource tries LWF_SOURCE_DIR first with a bare-relative fallback
+// (pattern from tests/test_transforms_page.cpp:30-44) so the scan behaves the
+// same under ctest (WORKING_DIRECTORY = source dir) and when the exe is
+// invoked from build/ — bare ifstream paths return empty elsewhere and would
+// mask the CWD trap behind the REQUIRE_FALSE(content.empty()) guard.
+std::string ReadSourceFrom(const std::string& root, const std::string& relative) {
+    std::ifstream file(root + "/" + relative);
+    if (!file.is_open()) {
+        file.open(relative);
+    }
+    return std::string((std::istreambuf_iterator<char>(file)),
+                       std::istreambuf_iterator<char>());
+}
+
+std::string ReadSource(const std::string& relative) {
+#ifdef LWF_SOURCE_DIR
+    return ReadSourceFrom(LWF_SOURCE_DIR, relative);
+#else
+    return ReadSourceFrom(".", relative);
+#endif
+}
+
+// Parses an optionally signed decimal literal starting at pos (leading spaces
+// skipped). Returns false when no number starts there (identifier, token
+// reference, closing paren). Every matched value here is a short decimal that
+// is exactly representable in binary (integers and 0.5), so the exact
+// equality checks in ScanLayoutLiterals are safe.
+bool ParseNumberAt(const std::string& line, std::size_t pos, double& value) {
+    while (pos < line.size() && (line[pos] == ' ' || line[pos] == '\t')) {
+        ++pos;
+    }
+    bool negative = false;
+    if (pos < line.size() && line[pos] == '-') {
+        negative = true;
+        ++pos;
+    }
+    bool any_digit = false;
+    double whole = 0.0;
+    while (pos < line.size() && line[pos] >= '0' && line[pos] <= '9') {
+        whole = whole * 10.0 + static_cast<double>(line[pos] - '0');
+        any_digit = true;
+        ++pos;
+    }
+    double frac = 0.0;
+    double divisor = 1.0;
+    if (pos < line.size() && line[pos] == '.') {
+        ++pos;
+        while (pos < line.size() && line[pos] >= '0' && line[pos] <= '9') {
+            frac = frac * 10.0 + static_cast<double>(line[pos] - '0');
+            divisor *= 10.0;
+            any_digit = true;
+            ++pos;
+        }
+    }
+    if (!any_digit) {
+        return false;
+    }
+    value = negative ? -(whole + frac / divisor) : (whole + frac / divisor);
+    return true;
+}
+
+// One token-gap allowance: the (file, API, value) ceiling for digit literals
+// that have NO same-value token in either palette (W0-INV-02 §1.4). Any
+// literal outside this table, or above its cap, fails the ban. Caps are
+// ceilings, not targets: tokenizing a gap site (or hoisting it to a named
+// constant) only lowers the count and keeps the test green. Wave 2 T-003
+// owns the token decisions for every entry below; do not remap them to a
+// nearest-value token (that would shift rendered pixels under a green test).
+struct BanAllowance {
+    const char* file;
+    const char* api;
+    double value;
+    std::size_t cap;
+};
+
+const BanAllowance kBanAllowances[] = {
+    // Headings with no type token anywhere (24/17/10).
+    {"src/ui/pages/InsightsPage.cpp", "PushFont", 10.0, 2},
+    {"src/ui/pages/InsightsPage.cpp", "PushFont", 24.0, 2},
+    {"src/ui/pages/ScratchpadPage.cpp", "PushFont", 17.0, 1},
+    {"src/ui/widgets/Buttons.cpp", "PushFont", 24.0, 1},
+    // Section/row gaps with no spacing token (12/10/6).
+    {"src/ui/pages/DictionaryPage.cpp", "DummyHeight", 12.0, 3},
+    {"src/ui/pages/InsightsPage.cpp", "DummyHeight", 12.0, 1},
+    {"src/ui/pages/SnippetsPage.cpp", "DummyHeight", 12.0, 2},
+    {"src/ui/pages/ScratchpadPage.cpp", "DummyHeight", 12.0, 1},
+    {"src/ui/pages/ScratchpadPage.cpp", "DummyHeight", 10.0, 2},
+    {"src/ui/pages/TransformsPage.cpp", "DummyHeight", 12.0, 2},
+    {"src/ui/pages/InsightsPage.cpp", "SameLine", 6.0, 2},
+    {"src/ui/pages/TransformsPage.cpp", "SameLine", 12.0, 6},
+    {"src/ui/pages/TransformsPage.cpp", "SameLine", 10.0, 1},
+    // Rail status-dot indent (no native 14px token; shared with chip pad).
+    {"src/ui/MainWindow.cpp", "DummyWidth", 14.0, 2},
+    // Structural input widths with no token (the -1.0f fill-width sentinel
+    // is handled as a universal value in the scanner, not via this table).
+    {"src/ui/pages/DictionaryPage.cpp", "SetNextItemWidth", 240.0, 1},
+    {"src/ui/pages/DictionaryPage.cpp", "SetNextItemWidth", 360.0, 2},
+    {"src/ui/pages/ScratchpadPage.cpp", "SetNextItemWidth", 240.0, 1},
+};
+
+// Scans one scoped source file for digit literals in the P-005 layout APIs:
+// PushFont(nullptr, N), Dummy(ImVec2(0.0f, N)) (height gap), Dummy(ImVec2(N,
+// ...)) (width), SameLine(0.0f, N), SetNextItemWidth(N), where N is a numeric
+// literal outside the universal geometric factors {0, 0.5, 1, 2} (plus the
+// -1.0f fill-width sentinel for SetNextItemWidth). Lines carrying a token
+// reference (metrics::/studio_metrics::) are exempt by construction, as are
+// identifier / named-constant arguments (e.g. button_gap, kRowButtonGap):
+// the lexical shape deliberately leaves named-constant hoisting as the
+// spelling-only escape for gap values with no token in this wave. Excluded
+// from scope: ThemePalette.cpp / StudioPalette.cpp (frozen token internals),
+// Overlay.cpp (Mini window), ScratchpadWindow.cpp (second OS window).
+// Generic ImVec2 geometry outside Dummy (PushStyleVar padding, Button
+// extents) is not one of the P-005 APIs and is deliberately not scanned.
+std::vector<std::string> ScanLayoutLiterals(const std::string& path,
+                                            const std::string& content) {
+    std::vector<std::string> violations;
+    const std::size_t allowance_total =
+        sizeof(kBanAllowances) / sizeof(kBanAllowances[0]);
+    std::vector<std::size_t> allowance_counts(allowance_total, 0);
+    std::size_t begin = 0;
+    std::size_t line_no = 1;
+    while (begin <= content.size()) {
+        const std::size_t end = content.find('\n', begin);
+        const std::string line =
+            content.substr(begin, end == std::string::npos
+                                      ? std::string::npos
+                                      : end - begin);
+        // Whole-line comments and token-carrying lines are never violations.
+        const std::size_t first = line.find_first_not_of(" \t\r");
+        const bool comment_line = first != std::string::npos && line[first] == '/' &&
+                                  first + 1 < line.size() && line[first + 1] == '/';
+        const bool tokened = line.find("metrics::") != std::string::npos ||
+                             line.find("studio_metrics::") != std::string::npos;
+        if (!comment_line && !tokened) {
+            const auto scan_anchor = [&violations, &allowance_counts, &allowance_total,
+                                      &line, &line_no, &path](const std::string& anchor,
+                                                             const std::string& api) {
+                std::size_t from = 0;
+                while (true) {
+                    const std::size_t hit = line.find(anchor, from);
+                    if (hit == std::string::npos) {
+                        break;
+                    }
+                    double value = 0.0;
+                    if (ParseNumberAt(line, hit + anchor.size(), value)) {
+                        // Universal geometric factors + the width sentinel.
+                        const bool universal = value == 0.0 || value == 0.5 ||
+                                               value == 1.0 || value == 2.0 ||
+                                               (api == "SetNextItemWidth" &&
+                                                value == -1.0);
+                        if (!universal) {
+                            bool matched = false;
+                            for (std::size_t i = 0; i < allowance_total; ++i) {
+                                const BanAllowance& entry = kBanAllowances[i];
+                                if (path == entry.file && api == entry.api &&
+                                    value == entry.value) {
+                                    allowance_counts[i] += 1;
+                                    matched = true;
+                                    break;
+                                }
+                            }
+                            if (!matched) {
+                                violations.push_back(
+                                    path + ":" + std::to_string(line_no) + ": " +
+                                    api + " digit literal must use metrics::/" +
+                                    "studio_metrics::: " +
+                                    line);
+                            }
+                        }
+                    }
+                    from = hit + anchor.size();
+                }
+            };
+            scan_anchor("PushFont(nullptr,", "PushFont");
+            scan_anchor("Dummy(ImVec2(0.0f,", "DummyHeight");
+            scan_anchor("Dummy(ImVec2(", "DummyWidth");
+            scan_anchor("SameLine(0.0f,", "SameLine");
+            scan_anchor("SetNextItemWidth(", "SetNextItemWidth");
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        begin = end + 1;
+        ++line_no;
+    }
+    for (std::size_t i = 0; i < allowance_total; ++i) {
+        const BanAllowance& entry = kBanAllowances[i];
+        if (path == entry.file && allowance_counts[i] > entry.cap) {
+            violations.push_back(path + ": " + entry.api +
+                                 " token-gap allowance exceeded (" +
+                                 std::to_string(allowance_counts[i]) + " > cap " +
+                                 std::to_string(entry.cap) + ")");
+        }
+    }
+    return violations;
+}
+
+}  // namespace
+
+TEST_CASE(
+    "full window layout APIs use tokens not digit literals outside the token-gap "
+    "allowlist") {
+    // P-005 ban (W1-IMPL-03 / W0-INV-03 §5): digit literals in PushFont /
+    // Dummy / SameLine / SetNextItemWidth across the scoped Full-window
+    // sources must route through metrics::/studio_metrics::, except the
+    // capped token-gap allowlist (Wave 2 T-003). Red until T-001/T-002 land;
+    // the ban, not a count, is what stops the 37-literal PushFont drift from
+    // returning while the page tests stayed green.
+    const std::vector<std::string> layout_sources = {
+        "src/ui/MainWindow.cpp",
+        "src/ui/pages/DictionaryPage.cpp",
+        "src/ui/pages/InsightsPage.cpp",
+        "src/ui/pages/SnippetsPage.cpp",
+        "src/ui/pages/TransformsPage.cpp",
+        "src/ui/pages/ScratchpadPage.cpp",
+        "src/ui/widgets/Buttons.cpp",
+        "src/ui/widgets/Display.cpp",
+        "src/ui/widgets/Overlays.cpp",
+    };
+    for (const std::string& path : layout_sources) {
+        const std::string content = ReadSource(path);
+        INFO(path);
+        REQUIRE_FALSE(content.empty());
+        const std::vector<std::string> violations =
+            ScanLayoutLiterals(path, content);
+        for (const std::string& violation : violations) {
+            INFO(violation);
+        }
+        CHECK(violations.empty());
+    }
+
+    // Brief §3 flip: the studio pages must now push token fonts. The metrics
+    // requirement is anchored to the PushFont call in the unqualified or the
+    // fully qualified spelling — a loose "metrics::font_" substring would
+    // pass on studio_metrics:: alone and prove nothing.
+    const auto has_metrics_font = [](const std::string& text) {
+        return text.find("PushFont(nullptr, metrics::font_") != std::string::npos ||
+               text.find("PushFont(nullptr, lwf::ui::metrics::font_") !=
+                   std::string::npos;
+    };
+    const auto has_studio_font = [](const std::string& text) {
+        return text.find("PushFont(nullptr, studio_metrics::font_") !=
+               std::string::npos;
+    };
+    const std::string dictionary = ReadSource("src/ui/pages/DictionaryPage.cpp");
+    const std::string insights = ReadSource("src/ui/pages/InsightsPage.cpp");
+    const std::string snippets = ReadSource("src/ui/pages/SnippetsPage.cpp");
+    const std::string transforms = ReadSource("src/ui/pages/TransformsPage.cpp");
+    const std::string scratchpad = ReadSource("src/ui/pages/ScratchpadPage.cpp");
+    REQUIRE_FALSE(dictionary.empty());
+    REQUIRE_FALSE(insights.empty());
+    REQUIRE_FALSE(snippets.empty());
+    REQUIRE_FALSE(transforms.empty());
+    REQUIRE_FALSE(scratchpad.empty());
+    INFO("DictionaryPage.cpp");
+    CHECK(has_metrics_font(dictionary));
+    INFO("InsightsPage.cpp");
+    CHECK(has_metrics_font(insights));
+    INFO("SnippetsPage.cpp");
+    CHECK(has_metrics_font(snippets));
+    CHECK(has_studio_font(snippets));
+    INFO("TransformsPage.cpp");
+    CHECK(has_metrics_font(transforms));
+    INFO("ScratchpadPage.cpp");
+    const bool has_token_font =
+        has_metrics_font(scratchpad) || has_studio_font(scratchpad);
+    CHECK(has_token_font);
+}

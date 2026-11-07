@@ -25,13 +25,23 @@ std::filesystem::path ScratchDir(const char* name) {
     return dir;
 }
 
-std::string ReadSource(const std::string& path) {
-    const std::filesystem::path full = std::filesystem::path(LWF_SOURCE_DIR) / path;
-    std::ifstream file(full.string());
+std::string ReadSourceFrom(const std::string& root, const std::string& relative) {
+    std::ifstream file(root + "/" + relative);
     if (!file.is_open()) {
-        return {};
+        file.open(relative);
     }
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+}
+
+// T-004: LWF_SOURCE_DIR first with a bare-relative fallback (pattern from
+// tests/test_transforms_page.cpp:30-44) so source scans work from the repo
+// root and from build/ alike; previously this helper had no fallback.
+std::string ReadSource(const std::string& path) {
+#ifdef LWF_SOURCE_DIR
+    return ReadSourceFrom(LWF_SOURCE_DIR, path);
+#else
+    return ReadSourceFrom(".", path);
+#endif
 }
 
 std::size_t CountHits(const std::string& haystack, const std::string& needle) {
@@ -340,8 +350,17 @@ TEST_CASE("scratchpad page source wires shell widgets and notes store") {
     CHECK(page_cpp.find("Undo") != std::string::npos);
     CHECK(page_cpp.find("IconButton") != std::string::npos);
     CHECK(page_cpp.find("LightButton") != std::string::npos);
-    CHECK(page_cpp.find("PushFont(nullptr, 17.0f)") != std::string::npos);
-    CHECK(page_cpp.find("PushFont(nullptr, 15.0f)") != std::string::npos);
+    // T-004 pin flip (P-005): PushFont must go through design-px tokens, not
+    // digit literals. 15px has a same-value token (metrics::font_card_title_px)
+    // so it must be gone; 17px has no token in either palette and stays
+    // allowlisted (capped at HEAD count 1) in the overlay ban for Wave 2 T-003.
+    const bool has_token_font =
+        page_cpp.find("PushFont(nullptr, studio_metrics::") != std::string::npos ||
+        page_cpp.find("PushFont(nullptr, metrics::") != std::string::npos ||
+        page_cpp.find("PushFont(nullptr, lwf::ui::metrics::") != std::string::npos;
+    CHECK(has_token_font);
+    CHECK(page_cpp.find("PushFont(nullptr, 15.0f)") == std::string::npos);
+    CHECK(CountHits(page_cpp, "PushFont(nullptr, 17.0f)") <= 1);
     CHECK(page_cpp.find("SetWindowFontScale") == std::string::npos);
     CHECK(page_cpp.find("ImGui::CreateContext") == std::string::npos);
 }
