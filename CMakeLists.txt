@@ -60,6 +60,7 @@ endif()
 
 set(LWF_CORE_SOURCES
     src/core/AppContextResolver.cpp
+    src/core/AtomicFile.cpp
     src/core/AudioGain.cpp
     src/core/CommandModeController.cpp
     src/core/ConfigManager.cpp
@@ -83,29 +84,35 @@ set(LWF_CORE_SOURCES
     src/core/DictationEngine.cpp
     src/core/CrashReporter.cpp
     src/core/DictationFSM.cpp
+    src/core/DictionaryStore.cpp
     src/core/ErrorCode.cpp
     src/core/HotkeyBinding.cpp
     src/core/HotkeyTracker.cpp
     src/core/HistoryStore.cpp
     src/core/IClock.cpp
     src/core/InjectorDecorators.cpp
+    src/core/InsightsModel.cpp
     src/core/Languages.cpp
     src/core/Log.cpp
+    src/core/NotesStore.cpp
     src/core/PersonalDictionary.cpp
     src/core/OverlayModel.cpp
     src/core/PathResolver.cpp
     src/core/ProviderRouter.cpp
     src/core/RateLimiter.cpp
     src/core/SpokenCommandProcessor.cpp
+    src/core/StatsStore.cpp
     src/core/Onboarding.cpp
     src/core/StreamingDictation.cpp
     src/core/SettingsStore.cpp
     src/core/SettingsUiModel.cpp
     src/core/Sha256.cpp
     src/core/SnippetStore.cpp
+    src/core/TextDiff.cpp
     src/core/TextPipeline.cpp
     src/core/ToneGenerator.cpp
     src/core/TransformManager.cpp
+    src/core/TransformStore.cpp
     src/core/UiBus.cpp
     src/audio/TonePlayer.cpp
 )
@@ -134,6 +141,7 @@ add_executable(lwf_tests
     tests/main.cpp
     tests/test_cleanup.cpp
     tests/test_appcontext.cpp
+    tests/test_atomicfile.cpp
     tests/test_config_compat.cpp
     tests/consent_test.cpp
     tests/secrets_redaction_test.cpp
@@ -149,21 +157,28 @@ add_executable(lwf_tests
     tests/test_gain.cpp
     tests/test_history.cpp
     tests/test_hotkey.cpp
+    tests/test_insights.cpp
     tests/test_languages.cpp
     tests/test_errors.cpp
     tests/test_log.cpp
     tests/test_dictionary.cpp
+    tests/test_dictionarystore.cpp
+    tests/test_notesstore.cpp
     tests/test_onboarding.cpp
     tests/test_overlay_settings_ui.cpp
     tests/test_resilience.cpp
     tests/test_privacy.cpp
     tests/test_router.cpp
     tests/test_spoken.cpp
+    tests/test_statsstore.cpp
     tests/test_streaming.cpp
     tests/test_settings.cpp
     tests/test_snippets.cpp
+    tests/test_snippetstore_v2.cpp
+    tests/test_textdiff.cpp
     tests/test_tones.cpp
     tests/test_transform.cpp
+    tests/test_transformstore.cpp
     tests/test_uibus.cpp
 )
 target_include_directories(lwf_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}")
