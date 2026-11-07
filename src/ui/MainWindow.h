@@ -3,6 +3,7 @@
 #include "core/DictationFSM.h"
 
 #include <cstddef>
+#include <cstdio>
 #include <string>
 
 struct GLFWwindow;
@@ -88,6 +89,8 @@ public:
     // Fed from the main loop.
     void SetLastTranscript(const std::string& text);
     void SetDetectedHotkey(const std::string& chord);
+    void SetLearnedHotkey(const std::string& target_key, const std::string& chord);
+    void SetRecorderError(const std::string& target_key, const std::string& message);
 
     bool FirstRunNeeded() const;
 
@@ -122,9 +125,30 @@ private:
     void ShowSaved();
     void DrawRestartBanner(float scale);
     void DrawHotkeyChips(const std::string& chord, float scale);
+    void DrawGeneralHotkeyRow(const std::string& config_key, const char* label,
+                              const char* helper, float scale);
     void PersistPage();
     bool PickAndApplyModelPath(char* buffer, std::size_t buffer_size, const char* setting_key,
                                std::string& error);
+    void DeleteLocalData();
+
+    struct TextField {
+        char buffer[512] = {};
+        bool seeded = false;
+        void Seed(const std::string& value) {
+            if (!seeded) {
+                std::snprintf(buffer, sizeof(buffer), "%s", value.c_str());
+                seeded = true;
+            }
+        }
+    };
+
+    void IntRow(const char* key, const char* id, int min_value, int max_value,
+                const char* format);
+    void DoubleRow(const char* key, const char* id, float min_value, float max_value,
+                   const char* format);
+    void BoolRow(const char* key, const char* label, const char* helper, float scale);
+    void StringFieldRow(const char* key, TextField& field, const char* id, bool restart);
 
     enum class SettingsTab { General, Speech, Cloud, Cleanup, Privacy, About };
 
@@ -150,8 +174,20 @@ private:
 
     std::string last_transcript_;
     std::string detected_hotkey_;
+    std::string learn_target_;
+    std::string learn_error_target_;
+    std::string learn_error_;
     std::string validation_error_;
     std::string llm_model_error_;
+    bool delete_data_armed_ = false;
     char model_path_buffer_[512] = {};
     char llm_model_path_buffer_[512] = {};
+    TextField hotkey_handsfree_field_;
+    TextField hotkey_cancel_field_;
+    TextField hotkey_command_field_;
+    TextField hotkey_paste_last_field_;
+    TextField remote_endpoint_field_;
+    TextField stt_language_field_;
+    TextField cleanup_language_policy_field_;
+    TextField mic_device_field_;
 };

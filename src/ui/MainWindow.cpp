@@ -2,6 +2,7 @@
 
 #include "audio/MiniaudioCapture.h"
 #include "core/AppVersion.h"
+#include "core/HotkeyBinding.h"
 #include "core/Languages.h"
 #include "core/Onboarding.h"
 #include "core/SettingsStore.h"
@@ -28,6 +29,7 @@ extern "C" void* glfwGetWin32Window(GLFWwindow* window);
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -218,6 +220,34 @@ void MainWindow::SetLastTranscript(const std::string& text) {
 
 void MainWindow::SetDetectedHotkey(const std::string& chord) {
     detected_hotkey_ = chord;
+    if (learn_target_ == "hotkey_ptt") {
+        learn_target_.clear();
+    }
+}
+
+void MainWindow::SetLearnedHotkey(const std::string& target_key, const std::string& chord) {
+    if (learn_target_ == target_key) {
+        learn_target_.clear();
+    }
+    if (target_key == "hotkey_ptt") {
+        detected_hotkey_ = chord;
+    }
+    if (learn_error_target_ == target_key) {
+        learn_error_.clear();
+        learn_error_target_.clear();
+    }
+}
+
+void MainWindow::SetRecorderError(const std::string& target_key, const std::string& message) {
+    if (learn_target_ == target_key) {
+        learn_target_.clear();
+    }
+    learn_error_target_ = target_key;
+    learn_error_ = message;
+    if (message.empty()) {
+        learn_error_.clear();
+        learn_error_target_.clear();
+    }
 }
 
 bool MainWindow::FirstRunNeeded() const {
@@ -550,6 +580,64 @@ void MainWindow::ShowSaved() {
     saved_until_ = static_cast<float>(ImGui::GetTime()) + metrics::saved_dwell;
 }
 
+void MainWindow::IntRow(const char* key, const char* id, int min_value, int max_value,
+                        const char* format) {
+    int value = settings_.GetInt(key);
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::SliderInt(id, &value, min_value, max_value, format);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        validation_error_ = SettingsUiModel::ValidateInt(key, value, min_value, max_value);
+        if (validation_error_.empty()) {
+            settings_.SetInt(key, value);
+            ApplyAndSave();
+        }
+    }
+}
+
+void MainWindow::DoubleRow(const char* key, const char* id, float min_value, float max_value,
+                           const char* format) {
+    float value = static_cast<float>(settings_.GetDouble(key));
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::SliderFloat(id, &value, min_value, max_value, format);
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        settings_.SetDouble(key, static_cast<double>(value));
+        ApplyAndSave();
+    }
+}
+
+void MainWindow::BoolRow(const char* key, const char* label, const char* helper, float scale) {
+    const bool value = settings_.GetBool(key);
+    if (ToggleRow(label, value, helper, scale)) {
+        settings_.SetBool(key, !value);
+        ApplyAndSave();
+    }
+}
+
+void MainWindow::StringFieldRow(const char* key, TextField& field, const char* id, bool restart) {
+    field.Seed(settings_.GetString(key));
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputText(id, field.buffer, sizeof(field.buffer));
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        settings_.SetString(key, field.buffer);
+        if (restart) {
+            restart_needed_ = true;
+        }
+        ApplyAndSave();
+    }
+}
+
+void MainWindow::DeleteLocalData() {
+    const std::filesystem::path base(GetDataDir());
+    std::error_code ec;
+    std::filesystem::remove(base / "stats.json", ec);
+    std::filesystem::remove(base / "dictionary.json", ec);
+    std::filesystem::remove(base / "snippets.json", ec);
+    std::filesystem::remove(base / "transforms.json", ec);
+    std::filesystem::remove_all(base / "notes", ec);
+    std::filesystem::remove(base / "api_keys.json", ec);
+    delete_data_armed_ = false;
+}
+
 void MainWindow::PersistPage() {
     if (page_ == Page::Welcome) {
         return;
@@ -854,6 +942,24 @@ void MainWindow::DrawSpeechPage(float scale) {
             settings_.SetBool("quiet_speech_boost", !boost);
             ApplyAndSave();
         }
+        ImGui::Separator();
+        DoubleRow("vad_threshold", "##vad_threshold", 0.0f, 1.0f, "sensitivity %.2f");
+        IntRow("min_hold_ms", "##min_hold_ms", 50, 5000, "hold at least %d ms");
+        IntRow("max_recording_ms", "##max_recording_ms", 1000, 120000, "record at most %d ms");
+        IntRow("hands_free_silence_ms", "##hands_free_silence_ms", 0, 10000, "stop after %d ms silence");
+        IntRow("double_tap_window_ms", "##double_tap_window_ms", 100, 2000, "double-tap %d ms");
+        BoolRow("avoid_altgr_conflict", "Avoid AltGr conflict", "Skip AltGr chords that conflict with Windows", scale);
+    }
+    EndCard(scale);
+
+    BeginCard("##card_streaming", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Streaming");
+        ImGui::PopFont();
+        BoolRow("streaming_stt", "Stream speech", "Transcribe while you talk", scale);
+        IntRow("streaming_min_segment_ms", "##streaming_min_segment_ms", 1000, 30000, "segment %d ms");
+        IntRow("streaming_pause_ms", "##streaming_pause_ms", 300, 5000, "pause %d ms");
     }
     EndCard(scale);
 }
@@ -888,6 +994,23 @@ void MainWindow::DrawCloudPage(float scale) {
         ImGui::TextWrapped("Local Whisper keeps every recording on this machine. A cloud "
                            "provider sends recordings to that provider's servers for "
                            "transcription.");
+        ImGui::Separator();
+        ImGui::TextUnformatted("Cloud language");
+        StringFieldRow("stt_language", stt_language_field_, "##stt_language", false);
+        ImGui::TextDisabled("ISO language, or a comma list (e.g. hi,en).");
+        IntRow("stt_timeout_ms", "##stt_timeout_ms", 1000, 60000, "wait at most %d ms");
+        IntRow("stt_max_clips", "##stt_max_clips", 1, 200, "at most %d clips");
+    }
+    EndCard(scale);
+
+    BeginCard("##card_remote_engine", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Remote engine");
+        ImGui::PopFont();
+        BoolRow("use_remote", "Use remote engine", "Send audio to a local gRPC engine", scale);
+        StringFieldRow("remote_endpoint", remote_endpoint_field_, "##remote_endpoint", false);
+        ImGui::TextDisabled("Host and port of the remote engine.");
     }
     EndCard(scale);
 
@@ -958,8 +1081,56 @@ void MainWindow::DrawCleanupPage(float scale) {
             settings_.SetBool("spoken_commands_aggressive", !aggressive);
             ApplyAndSave();
         }
+        BoolRow("dictionary_fuzzy", "Fuzzy dictionary matching", "Correct near-misses", scale);
+        IntRow("command_timeout_ms", "##command_timeout_ms", 500, 60000, "command %d ms");
+        IntRow("inject_delay_ms", "##inject_delay_ms", 0, 500, "wait %d ms before typing");
+        StringFieldRow("cleanup_language_policy", cleanup_language_policy_field_,
+                       "##cleanup_language_policy", false);
+        ImGui::TextDisabled("Language policy for cleanup (e.g. keep).");
+        {
+            static const char* kSnippetItems[] = {"whole", "contains"};
+            const std::string mode = settings_.GetString("snippet_mode");
+            int mode_index = mode == "contains" ? 1 : 0;
+            if (ImGui::BeginCombo("##snippet_mode", kSnippetItems[mode_index])) {
+                for (int item = 0; item < 2; ++item) {
+                    if (ImGui::Selectable(kSnippetItems[item], item == mode_index)) {
+                        settings_.SetString("snippet_mode", kSnippetItems[item]);
+                        ApplyAndSave();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::TextDisabled("When snippets expand.");
+        }
         if (!validation_error_.empty()) {
             ImGui::TextColored(Color(kDarkPalette.err), "%s", validation_error_.c_str());
+        }
+    }
+    EndCard(scale);
+
+    BeginCard("##card_cleanup_backend", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Cleanup backend");
+        ImGui::PopFont();
+        static const char* kLlmItems[] = {"local", "openrouter"};
+        const std::string backend = settings_.GetString("llm_provider");
+        int backend_index = backend == "openrouter" ? 1 : 0;
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::BeginCombo("##llm_provider", kLlmItems[backend_index])) {
+            for (int item = 0; item < 2; ++item) {
+                if (ImGui::Selectable(kLlmItems[item], item == backend_index)) {
+                    settings_.SetString("llm_provider", kLlmItems[item]);
+                    ApplyAndSave();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (settings_.GetString("llm_provider") == "openrouter") {
+            ImGui::TextColored(Color(kDarkPalette.warn),
+                               "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
+        } else {
+            ImGui::TextDisabled("Local cleanup runs on this machine.");
         }
     }
     EndCard(scale);
@@ -987,7 +1158,42 @@ void MainWindow::DrawPrivacyPage(float scale) {
                                "WARNING: dictated text will be written to the local log.");
         }
         ImGui::Separator();
+        BoolRow("history_enabled", "Keep history", "Save a local history of dictations", scale);
+        BoolRow("keep_raw_in_history", "Keep raw text in history", "Store the text before cleanup", scale);
+        IntRow("history_max_entries", "##history_max_entries", 10, 100000, "keep %d entries");
+        IntRow("history_max_age_days", "##history_max_age_days", 1, 3650, "delete after %d days");
+        BoolRow("keep_usage_stats", "Keep usage statistics", "Used by Insights", scale);
+        if (settings_.GetString("llm_provider") == "openrouter") {
+            ImGui::TextColored(Color(kDarkPalette.warn),
+                               "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
+        }
+        ImGui::Separator();
         ImGui::TextWrapped("%s", "No telemetry. No network calls except explicit model downloads.");
+    }
+    EndCard(scale);
+
+    BeginCard("##card_delete_data", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Local data");
+        ImGui::PopFont();
+        if (!delete_data_armed_) {
+            if (ImGui::Button("Delete all local data")) {
+                delete_data_armed_ = true;
+            }
+            ImGui::TextDisabled("Removes statistics, dictionary, snippets, transforms, notes and saved API keys. Settings are kept.");
+        } else {
+            ImGui::TextColored(Color(kDarkPalette.err),
+                               "This cannot be undone. The app keeps running; restart to reseed empty files.");
+            if (ImGui::Button("Confirm delete")) {
+                DeleteLocalData();
+                ShowSaved();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) {
+                delete_data_armed_ = false;
+            }
+        }
     }
     EndCard(scale);
 }
@@ -1004,6 +1210,11 @@ void MainWindow::DrawAboutPage(float scale) {
         ImGui::TextWrapped("%s",
                            "Local-first voice dictation. Whisper STT, optional local LLM cleanup, "
                            "clipboard injection. All processing stays on this machine.");
+        if (settings_.GetString("llm_provider") == "openrouter") {
+            ImGui::TextColored(Color(kDarkPalette.warn),
+                               "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
+        }
+        ImGui::Text("Config version: %d", settings_.GetInt("schema_version"));
     }
     EndCard(scale);
 }
@@ -1061,12 +1272,10 @@ void MainWindow::DrawGeneralPage(float scale) {
             settings_.SetBool("sound_enabled", !sound);
             ApplyAndSave();
         }
-        const std::string device = settings_.GetString("mic_device");
-        if (device.empty()) {
-            ImGui::TextDisabled("Microphone: default device.");
-        } else {
-            ImGui::TextWrapped("Microphone: %s", device.c_str());
-        }
+        DoubleRow("sound_volume", "##sound_volume", 0.0f, 1.0f, "volume %.2f");
+        ImGui::TextUnformatted("Microphone");
+        StringFieldRow("mic_device", mic_device_field_, "##mic_device", true);
+        ImGui::TextDisabled("Empty means the system default device. Applies after restart.");
     }
     EndCard(scale);
 
@@ -1095,6 +1304,34 @@ void MainWindow::DrawGeneralPage(float scale) {
         } else {
             ImGui::Text("Mini window position: %d, %d", mini_x, mini_y);
         }
+        ImGui::TextDisabled("Set by dragging the mini window.");
+        BoolRow("scratchpad_flow_bar", "Scratchpad bar", "Show the scratchpad bar on the mini window", scale);
+    }
+    EndCard(scale);
+
+    BeginCard("##card_general_other_hotkeys", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Other hotkeys");
+        ImGui::PopFont();
+        ImGui::TextUnformatted("Hands-free");
+        StringFieldRow("hotkey_handsfree", hotkey_handsfree_field_, "##hotkey_handsfree", false);
+        ImGui::TextUnformatted("Cancel");
+        StringFieldRow("hotkey_cancel", hotkey_cancel_field_, "##hotkey_cancel", false);
+        ImGui::TextUnformatted("Command mode");
+        StringFieldRow("hotkey_command", hotkey_command_field_, "##hotkey_command", false);
+        ImGui::TextUnformatted("Paste last");
+        StringFieldRow("hotkey_paste_last", hotkey_paste_last_field_, "##hotkey_paste_last", false);
+        ImGui::TextDisabled("Chords as text, e.g. Ctrl+Shift+T.");
+    }
+    EndCard(scale);
+
+    BeginCard("##card_general_legacy", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Legacy");
+        ImGui::PopFont();
+        IntRow("hotkey_code", "##hotkey_code", 0, 255, "legacy key code %d");
     }
     EndCard(scale);
 }

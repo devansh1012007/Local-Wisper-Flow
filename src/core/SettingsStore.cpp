@@ -65,6 +65,8 @@ const std::vector<SettingsStore::SchemaEntry>& BuildSchema() {
         {"scratchpad_flow_bar", SettingsStore::Type::Bool, 0, "", 0, 0, true},
         {"keep_usage_stats", SettingsStore::Type::Bool, 1, "", 0, 0, true},
         {"last_page", SettingsStore::Type::String, 0, "Home", 0, 0, true},
+        {"quiet_speech_boost", SettingsStore::Type::Bool, 0, "", 0, 0, true},
+        {"llm_provider", SettingsStore::Type::String, 0, "local", 0, 0, true},
     };
     return schema;
 }
