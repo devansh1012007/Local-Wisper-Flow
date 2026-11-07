@@ -507,6 +507,7 @@ int main() {
 
         std::vector<Binding> hotkey_bindings = LoadBindings(config.Store());
         transforms.SetHotkeyBindings(hotkey_bindings);
+        engine.Start();
         HotkeyTracker::Options hotkey_options;
         hotkey_options.avoid_altgr_conflict = config.Store().GetBool("avoid_altgr_conflict");
         hotkey_options.double_tap_window_ms = config.Store().GetInt("double_tap_window_ms");
@@ -575,13 +576,18 @@ int main() {
                         break;
                     case UiCommandType::ApplySettings:
                         config.Save();
-                        hotkey.UpdateBindings(LoadBindings(config.Store()));
+                        {
+                            const std::vector<Binding> bindings = LoadBindings(config.Store());
+                            hotkey.UpdateBindings(bindings);
+                            transforms.SetHotkeyBindings(bindings);
+                        }
                         settings.min_hold_ms = config.Store().GetInt("min_hold_ms");
                         settings.quiet_speech_boost = config.Store().GetBool("quiet_speech_boost");
                         settings.sound_enabled = config.Store().GetBool("sound_enabled");
                         settings.streaming_stt = config.Store().GetBool("streaming_stt");
                         settings.streaming_min_segment_ms = config.Store().GetInt("streaming_min_segment_ms");
                         settings.streaming_pause_ms = config.Store().GetInt("streaming_pause_ms");
+                        engine.SetSettings(settings);
                         spoken.SetAggressive(config.Store().GetBool("spoken_commands_aggressive"));
                         snippets.SetMode(config.Store().GetString("snippet_mode"));
                         overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));

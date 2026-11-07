@@ -6,6 +6,21 @@
 #include <fstream>
 #include <utility>
 
+namespace {
+
+void QuarantineFile(const std::string& path) {
+    std::error_code ec;
+    std::filesystem::rename(path, path + ".bad", ec);
+    if (ec) {
+        std::error_code remove_ec;
+        std::filesystem::remove(path + ".bad", remove_ec);
+        ec.clear();
+        std::filesystem::rename(path, path + ".bad", ec);
+    }
+}
+
+}  // namespace
+
 ApiKeyStore::ApiKeyStore(std::string path) : path_(std::move(path)) {
     std::lock_guard<std::mutex> lock(mutex_);
     LoadLocked();
@@ -76,15 +91,13 @@ void ApiKeyStore::LoadLocked() {
         file >> json;
     } catch (const std::exception&) {
         file.close();
-        std::error_code ec;
-        std::filesystem::rename(path_, path_ + ".bad", ec);
+        QuarantineFile(path_);
         keys_.clear();
         return;
     }
     if (!json.is_object()) {
         file.close();
-        std::error_code ec;
-        std::filesystem::rename(path_, path_ + ".bad", ec);
+        QuarantineFile(path_);
         keys_.clear();
         return;
     }

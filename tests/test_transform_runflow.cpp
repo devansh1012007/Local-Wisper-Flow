@@ -1,6 +1,7 @@
 #include "EngineHarness.h"
 
 #include "core/CommandModeController.h"
+#include "core/StatsStore.h"
 #include "core/TextDiff.h"
 #include "core/TransformStore.h"
 #include "core/UiBus.h"
@@ -8,11 +9,15 @@
 #include <doctest/doctest.h>
 
 #include <chrono>
+#include <condition_variable>
+#include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -103,6 +108,47 @@ public:
     std::string response = "hooked result";
     std::function<void()> during;
 };
+
+class ThrowingCapture final : public ISelectionCapture {
+public:
+    std::optional<std::string> CaptureSelection() override {
+        ++capture_count;
+        throw std::runtime_error("capture race");
+    }
+
+    void RestoreClipboard() override {
+        ++restore_count;
+    }
+
+    int capture_count = 0;
+    int restore_count = 0;
+};
+
+class HungLlm final : public ILlmProvider {
+public:
+    std::string Process(const std::string&, const std::string&) override {
+        std::unique_lock<std::mutex> lock(mutex_);
+        released_.wait(lock, [this] { return cancel_requested_; });
+        throw std::runtime_error("cancelled");
+    }
+
+    void RequestCancel() override {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            cancel_requested_ = true;
+        }
+        released_.notify_all();
+    }
+
+private:
+    std::mutex mutex_;
+    std::condition_variable released_;
+    bool cancel_requested_ = false;
+};
+
+std::string StatsPathForRunflow() {
+    return (std::filesystem::temp_directory_path() / "lwf_transform_stats.json").string();
+}
 
 }
 
@@ -234,6 +280,65 @@ TEST_CASE("transform validation rejects empty preamble and oversize results") {
         CHECK(fx.h.injector.LastInjected() == std::string(205, 'x'));
         CHECK(fx.clipboard.clipboard == "clipboard-original");
     }
+    SUBCASE("surely prefix is valid text") {
+        TransformFixture fx(true);
+        fx.clipboard.selection = "some words here";
+        fx.llm.response = "Surely this is fine";
+        fx.Run(1);
+        REQUIRE(fx.h.injector.InjectionCount() == 1);
+        CHECK(fx.h.injector.LastInjected() == "Surely this is fine");
+        CHECK(fx.clipboard.clipboard == "clipboard-original");
+    }
+    SUBCASE("here is contraction is valid text") {
+        TransformFixture fx(true);
+        fx.clipboard.selection = "some words here";
+        fx.llm.response = "Here's the thing";
+        fx.Run(1);
+        REQUIRE(fx.h.injector.InjectionCount() == 1);
+        CHECK(fx.h.injector.LastInjected() == "Here's the thing");
+        CHECK(fx.clipboard.clipboard == "clipboard-original");
+    }
+    SUBCASE("lowercase sure preamble is rejected") {
+        TransformFixture fx(true);
+        fx.clipboard.selection = "some words here";
+        fx.llm.response = "sure thing";
+        fx.Run(1);
+        CHECK_FALSE(fx.h.injector.HasInjected());
+        CHECK(fx.clipboard.clipboard == "clipboard-original");
+        CHECK(HasError(fx.h.sink.error_details, "Transform failed. Nothing was changed."));
+    }
+    SUBCASE("bare sure at end of string is rejected") {
+        TransformFixture fx(true);
+        fx.clipboard.selection = "some words here";
+        fx.llm.response = "sure";
+        fx.Run(1);
+        CHECK_FALSE(fx.h.injector.HasInjected());
+        CHECK(fx.clipboard.clipboard == "clipboard-original");
+    }
+    SUBCASE("certainly with colon is rejected") {
+        TransformFixture fx(true);
+        fx.clipboard.selection = "some words here";
+        fx.llm.response = "CERTAINLY: polished text";
+        fx.Run(1);
+        CHECK_FALSE(fx.h.injector.HasInjected());
+        CHECK(fx.clipboard.clipboard == "clipboard-original");
+    }
+    SUBCASE("sure with sentence end is rejected") {
+        TransformFixture fx(true);
+        fx.clipboard.selection = "some words here";
+        fx.llm.response = "Sure. Polished text";
+        fx.Run(1);
+        CHECK_FALSE(fx.h.injector.HasInjected());
+        CHECK(fx.clipboard.clipboard == "clipboard-original");
+    }
+    SUBCASE("sure with question mark is rejected") {
+        TransformFixture fx(true);
+        fx.clipboard.selection = "some words here";
+        fx.llm.response = "Sure? Polished text";
+        fx.Run(1);
+        CHECK_FALSE(fx.h.injector.HasInjected());
+        CHECK(fx.clipboard.clipboard == "clipboard-original");
+    }
 }
 
 TEST_CASE("transform opt-in off touches no clipboard and never calls llm") {
@@ -358,6 +463,15 @@ TEST_CASE("transform restores clipboard on every branch") {
         CHECK(fx.clipboard.restore_count == 1);
         CHECK(fx.clipboard.clipboard == "clipboard-original");
     }
+    {
+        TransformFixture fx(true);
+        fx.clipboard.selection = "alpha beta";
+        fx.llm.response = "gamma delta";
+        fx.h.injector.fail_inject = true;
+        fx.Run(1);
+        CHECK(fx.clipboard.restore_count == 1);
+        CHECK(fx.clipboard.clipboard == "clipboard-original");
+    }
 }
 
 TEST_CASE("transform request returns fast while llm blocks and uibus poll is unaffected") {
@@ -394,4 +508,156 @@ TEST_CASE("transform request returns fast while llm blocks and uibus poll is una
     CHECK(fx.clipboard.restore_count == 1);
     CHECK(fx.clipboard.clipboard == "clipboard-original");
     CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(completed).count() >= 500);
+}
+
+TEST_CASE("transform success never records stats") {
+    const std::string path = StatsPathForRunflow();
+    std::filesystem::remove(path);
+    TransformFixture fx(true);
+    StatsStore stats(path, true);
+    fx.engine->SetStatsStore(&stats);
+    fx.clipboard.selection = "hello wrld";
+    fx.llm.response = "hello world";
+
+    fx.Run(1);
+
+    REQUIRE(fx.h.injector.InjectionCount() == 1);
+    CHECK(fx.h.injector.LastInjected() == "hello world");
+    CHECK(stats.Generation() == 0);
+    CHECK(stats.Snapshot().empty());
+}
+
+TEST_CASE("transform injector throw restores clipboard and reports inject failure") {
+    TransformFixture fx(true);
+    fx.clipboard.selection = "alpha beta";
+    fx.llm.response = "gamma delta";
+    fx.h.injector.fail_inject = true;
+
+    fx.Run(1);
+
+    CHECK(fx.clipboard.restore_count == 1);
+    CHECK(fx.clipboard.clipboard == "clipboard-original");
+    REQUIRE(fx.h.sink.errors.size() == 1);
+    CHECK(fx.h.sink.errors[0] == ErrorCode::InjectFailed);
+    CHECK(HasError(fx.h.sink.error_details, "Transform failed. Nothing was changed."));
+    CHECK_FALSE(fx.engine->HasTransformDiff());
+}
+
+TEST_CASE("transform whitespace only selection restores clipboard") {
+    TransformFixture fx(true);
+    fx.clipboard.selection = "   ";
+
+    fx.Run(1);
+
+    CHECK(fx.clipboard.capture_count == 1);
+    CHECK(fx.clipboard.restore_count == 1);
+    CHECK(fx.clipboard.clipboard == "clipboard-original");
+    CHECK(fx.llm.CallCount() == 0);
+    CHECK_FALSE(fx.h.injector.HasInjected());
+    CHECK(HasStatus(fx.h.sink.statuses, "Select some text first"));
+    CHECK_FALSE(fx.engine->HasTransformDiff());
+}
+
+TEST_CASE("transform oversize selection is rejected before llm and diff") {
+    TransformFixture fx(true);
+    fx.clipboard.selection = std::string(8001, 'x');
+    fx.llm.response = "short";
+
+    fx.Run(1);
+
+    CHECK(fx.clipboard.restore_count == 1);
+    CHECK(fx.clipboard.clipboard == "clipboard-original");
+    CHECK(fx.llm.CallCount() == 0);
+    CHECK_FALSE(fx.h.injector.HasInjected());
+    REQUIRE(fx.h.sink.errors.size() == 1);
+    CHECK(fx.h.sink.errors[0] == ErrorCode::LlmFailed);
+    CHECK_FALSE(fx.engine->HasTransformDiff());
+}
+
+TEST_CASE("transform hung llm times out and engine keeps processing") {
+    TransformFixture fx(true);
+    HungLlm hung;
+    fx.engine->SetTransformLlm(&hung);
+    fx.engine->SetTransformLlmTimeoutMs(300);
+    fx.clipboard.selection = "polish this text";
+
+    const auto begin = std::chrono::steady_clock::now();
+    fx.Run(1);
+    const auto elapsed = std::chrono::steady_clock::now() - begin;
+
+    CHECK(fx.clipboard.restore_count == 1);
+    CHECK(fx.clipboard.clipboard == "clipboard-original");
+    CHECK_FALSE(fx.h.injector.HasInjected());
+    REQUIRE(fx.h.sink.errors.size() == 1);
+    CHECK(fx.h.sink.errors[0] == ErrorCode::LlmTimeout);
+    CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() < 5000);
+    CHECK(fx.h.fsm.GetCurrentState() == State::IDLE);
+
+    fx.h.stt.transcript = "still alive";
+    PressAndSpeak(fx.h, *fx.engine);
+    CHECK(fx.h.injector.InjectionCount() == 1);
+    CHECK(fx.h.injector.LastInjected() == "still alive");
+}
+
+TEST_CASE("transform without llm or capture reports model missing") {
+    Harness h;
+    TransformStore store;
+    store.SetEnabled(true);
+    auto engine = MakeEngine(h);
+    engine->SetTransformStore(&store);
+
+    engine->RequestTransform(1);
+    engine->ProcessOne(0);
+
+    REQUIRE(h.sink.errors.size() == 1);
+    CHECK(h.sink.errors[0] == ErrorCode::ModelMissing);
+    CHECK_FALSE(h.injector.HasInjected());
+}
+
+TEST_CASE("transform while dictation in progress reports busy") {
+    TransformFixture fx(true);
+    fx.clipboard.selection = "polish this text";
+    fx.engine->PostEvent(EngineEventType::PttPress);
+    fx.engine->ProcessOne(0);
+    REQUIRE(fx.h.fsm.GetCurrentState() == State::ARMED);
+
+    fx.Run(1);
+
+    CHECK(fx.clipboard.capture_count == 0);
+    CHECK(fx.llm.CallCount() == 0);
+    CHECK_FALSE(fx.h.injector.HasInjected());
+    CHECK(HasStatus(fx.h.sink.statuses, "dictation busy"));
+}
+
+TEST_CASE("transform capture throw restores clipboard and reports select first") {
+    TransformFixture fx(true);
+    ThrowingCapture throwing;
+    fx.engine->SetSelectionCapture(&throwing);
+    fx.clipboard.selection = "never captured";
+
+    fx.Run(1);
+
+    CHECK(throwing.capture_count == 1);
+    CHECK(throwing.restore_count == 1);
+    CHECK(fx.llm.CallCount() == 0);
+    CHECK_FALSE(fx.h.injector.HasInjected());
+    CHECK(HasStatus(fx.h.sink.statuses, "Select some text first"));
+}
+
+TEST_CASE("engine Start worker pumps transform without ProcessOne") {
+    TransformFixture fx(true);
+    fx.clipboard.selection = "hello wrld";
+    fx.llm.response = "hello world";
+    fx.engine->Start();
+
+    fx.engine->RequestTransform(1);
+    for (int i = 0; i < 500 && fx.h.injector.InjectionCount() == 0; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    fx.engine->Stop();
+
+    CHECK(fx.h.injector.InjectionCount() == 1);
+    CHECK(fx.h.injector.LastInjected() == "hello world");
+    CHECK(fx.clipboard.restore_count == 1);
+    CHECK(fx.clipboard.clipboard == "clipboard-original");
 }

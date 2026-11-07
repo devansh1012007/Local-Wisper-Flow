@@ -74,7 +74,9 @@ public:
     void SetScratchpadTarget(bool enabled);
     void SetTransformStore(const TransformStore* store);
     void SetTransformLlm(ILlmProvider* llm);
+    void SetTransformLlmTimeoutMs(int timeout_ms);
     void SetSelectionCapture(ISelectionCapture* capture);
+    void SetSettings(const EngineSettings& settings);
     void RequestTransform(int slot);
     bool HasTransformDiff() const;
     lwf::TransformDiff TransformDiffSnapshot() const;
@@ -93,6 +95,7 @@ private:
     void HandlePasteLast();
     void HandleTransform(int slot);
     void PumpTransform();
+    EngineSettings SettingsSnapshot() const;
     void EmitError(ErrorCode code, const std::string& detail);
     void PlayTone(const ToneGenerator::ToneSpec& spec);
     void DiscardCapture(const char* reason);
@@ -129,14 +132,16 @@ private:
     StatsStore* stats_ = nullptr;
     IActiveWindow* active_window_ = nullptr;
     AppContextResolver* app_context_ = nullptr;
-    bool scratchpad_target_ = false;
+    std::atomic<bool> scratchpad_target_{false};
     ActiveWindowInfo capture_app_;
     const TransformStore* transform_store_ = nullptr;
     ILlmProvider* transform_llm_ = nullptr;
+    int transform_llm_timeout_ms_ = 8000;
     ISelectionCapture* selection_ = nullptr;
     std::atomic<int> pending_transform_slot_{-1};
     lwf::TransformDiffStore transform_diffs_;
 
+    mutable std::mutex settings_mutex_;
     std::int64_t press_ms_ = 0;
     std::int64_t capture_start_ms_ = 0;
     std::int64_t last_speech_ms_ = 0;

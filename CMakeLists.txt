@@ -179,6 +179,7 @@ add_executable(lwf_tests
     tests/test_textdiff.cpp
     tests/test_tones.cpp
     tests/test_transform.cpp
+    tests/test_transform_runflow.cpp
     tests/test_transformstore.cpp
     tests/test_uibus.cpp
     tests/test_apikeystore.cpp

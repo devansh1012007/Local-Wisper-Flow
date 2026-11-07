@@ -1,5 +1,6 @@
 #include "core/ApiKeyStore.h"
 #include "core/ConsentGate.h"
+#include "core/Log.h"
 #include "core/Redact.h"
 
 #include <doctest/doctest.h>
@@ -8,6 +9,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <optional>
 #include <string>
 
 namespace {
@@ -40,7 +43,31 @@ void ClearAllEnvs() {
     ClearEnv("GNANI_API_KEY");
     ClearEnv("ELEVENLABS_API_KEY");
     ClearEnv("META_MODEL_API_KEY");
+    ClearEnv("OPENROUTER_API_KEY");
 }
+
+struct EnvGuard {
+    EnvGuard() {
+        for (const char* name : {"GNANI_API_KEY", "ELEVENLABS_API_KEY", "META_MODEL_API_KEY",
+                                 "OPENROUTER_API_KEY"}) {
+            const char* value = std::getenv(name);
+            saved_[name] = value != nullptr ? std::optional<std::string>(value) : std::nullopt;
+        }
+    }
+
+    ~EnvGuard() {
+        for (const auto& entry : saved_) {
+            const char* name = entry.first.c_str();
+            if (entry.second.has_value()) {
+                SetEnvVar(name, entry.second->c_str());
+            } else {
+                ClearEnv(name);
+            }
+        }
+    }
+
+    std::map<std::string, std::optional<std::string>> saved_;
+};
 
 std::string ReadFile(const std::string& path) {
     std::ifstream file(path);
@@ -130,6 +157,7 @@ TEST_CASE("apikeystore set has remove round trip persists") {
 }
 
 TEST_CASE("apikeystore openrouter reserved has no env fallback") {
+    const EnvGuard env_guard;
     ClearAllEnvs();
     const std::string dir = TestDir("openrouter");
     const std::string path = (std::filesystem::path(dir) / "api_keys.json").string();
@@ -197,6 +225,7 @@ TEST_CASE("apikeystore unknown keys survive save") {
 }
 
 TEST_CASE("apikeystore redaction removes key bytes from log lines") {
+    const EnvGuard env_guard;
     ClearAllEnvs();
     const std::string dir = TestDir("redact");
     const std::string path = (std::filesystem::path(dir) / "api_keys.json").string();
@@ -213,6 +242,20 @@ TEST_CASE("apikeystore redaction removes key bytes from log lines") {
         const std::string masked = lwf::RedactAuthValues(header_line);
         CHECK(masked.find(key) == std::string::npos);
         CHECK(masked.find("[redacted]") != std::string::npos);
+        const std::string twice = "first " + key + " second " + key;
+        const std::string twice_redacted = lwf::RedactSecret(twice, key);
+        CHECK(twice_redacted.find(key) == std::string::npos);
+        CHECK(twice_redacted.find(key.substr(0, 4)) == std::string::npos);
+        CHECK(twice_redacted.find("[redacted]") != std::string::npos);
+        CHECK(twice_redacted.rfind("[redacted]") != twice_redacted.find("[redacted]"));
+        lwf::Log::Init(dir);
+        lwf::Log::Info("cloud provider gnani enabled key=" + redacted);
+        lwf::Log::Info("Authorization: Bearer " + masked);
+        const std::string log_text = ReadFile((std::filesystem::path(dir) / "lwf.log").string());
+        REQUIRE_FALSE(log_text.empty());
+        CHECK(log_text.find(key) == std::string::npos);
+        CHECK(log_text.find(key.substr(0, 4)) == std::string::npos);
+        CHECK(log_text.find("[redacted]") != std::string::npos);
     }
     ClearAllEnvs();
 }

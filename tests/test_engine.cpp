@@ -624,3 +624,54 @@ TEST_CASE("engine works with no stats store attached") {
     CHECK(h.injector.Injected()[0] == "hello world");
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
 }
+
+TEST_CASE("stats whitespace only final text records nothing") {
+    const std::string path = StatsPath("whitespacefinal");
+    std::filesystem::remove(path);
+    StatsStore store(path, true);
+    Harness h;
+    h.stt.transcript = "   ";
+    auto engine = MakeEngine(h);
+    engine->SetStatsStore(&store);
+
+    PressAndSpeak(h, *engine);
+
+    CHECK_FALSE(h.injector.HasInjected());
+    CHECK(store.Generation() == 0);
+    CHECK(store.Snapshot().empty());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats negative duration clamps to zero and still records") {
+    const std::string path = StatsPath("negativeduration");
+    std::filesystem::remove(path);
+    StatsStore store(path, true);
+    DictationRecord record;
+    record.timestamp_local = 0;
+    record.duration_ms = -100;
+    record.final_text = "hello world";
+    record.raw_text = "hello world";
+
+    store.Record(record);
+
+    REQUIRE(store.Generation() == 1);
+    REQUIRE(store.Snapshot().size() == 1);
+    CHECK(store.Snapshot().begin()->second.speaking_ms == 0);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("engine settings hot apply changes armed timeout") {
+    Harness h;
+    auto engine = MakeEngine(h);
+    engine->PostEvent(EngineEventType::PttPress);
+    engine->ProcessOne(0);
+    REQUIRE(h.fsm.GetCurrentState() == State::ARMED);
+
+    EngineSettings updated = h.settings;
+    updated.max_recording_ms = 0;
+    engine->SetSettings(updated);
+    engine->Tick();
+
+    CHECK(HasStatus(h.sink.statuses, "no speech detected, stopped"));
+    CHECK(h.fsm.GetCurrentState() == State::IDLE);
+}

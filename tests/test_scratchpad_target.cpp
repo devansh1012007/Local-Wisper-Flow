@@ -1,5 +1,6 @@
 #include "EngineHarness.h"
 
+#include "core/CommandModeController.h"
 #include "core/NotesStore.h"
 #include "core/SettingsStore.h"
 #include "core/StatsStore.h"
@@ -11,6 +12,7 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -25,12 +27,28 @@ std::string TestDir(const char* name) {
 }
 
 std::string ReadSource(const std::string& path) {
-    std::ifstream file(path);
+    const std::filesystem::path full = std::filesystem::path(LWF_SOURCE_DIR) / path;
+    std::ifstream file(full.string());
     if (!file.is_open()) {
         return {};
     }
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
+
+class CountingSelectionCapture final : public ISelectionCapture {
+public:
+    std::optional<std::string> CaptureSelection() override {
+        ++capture_count;
+        return std::nullopt;
+    }
+
+    void RestoreClipboard() override {
+        ++restore_count;
+    }
+
+    int capture_count = 0;
+    int restore_count = 0;
+};
 
 }
 
@@ -50,6 +68,10 @@ TEST_CASE("scratchpad buffer appends lines and clears") {
     CHECK(buffer.Text().empty());
     buffer.Append("fresh");
     CHECK(buffer.Text() == "fresh");
+    buffer.Append("trail\n");
+    CHECK(buffer.Text() == "fresh\ntrail\n");
+    buffer.Append("next");
+    CHECK(buffer.Text() == "fresh\ntrail\nnext");
 }
 
 TEST_CASE("scratchpad injector writes only to the buffer") {
@@ -67,13 +89,17 @@ TEST_CASE("scratchpad injector writes only to the buffer") {
 
 TEST_CASE("scratchpad target receives engine dictation nowhere else") {
     Harness h;
+    CountingSelectionCapture capture_spy;
     ScratchpadBuffer buffer;
     ScratchpadInjector injector(buffer);
     auto engine = std::make_unique<DictationEngine>(h.capture, &h.vad, h.stt, h.pipeline, injector,
                                                     h.fsm, h.clock, h.sink, h.settings);
+    engine->SetSelectionCapture(&capture_spy);
     PressAndSpeak(h, *engine);
     CHECK(h.injector.InjectionCount() == 0);
     CHECK(buffer.Text() == "hello world");
+    CHECK(capture_spy.capture_count == 0);
+    CHECK(capture_spy.restore_count == 0);
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
     CHECK(engine->LastText() == "hello world");
     CHECK(HasStatus(h.sink.statuses, "injected"));
@@ -81,6 +107,8 @@ TEST_CASE("scratchpad target receives engine dictation nowhere else") {
     PressAndSpeak(h, *engine);
     CHECK(h.injector.InjectionCount() == 0);
     CHECK(buffer.Text() == "hello world\nsecond line");
+    CHECK(capture_spy.capture_count == 0);
+    CHECK(capture_spy.restore_count == 0);
 }
 
 TEST_CASE("scratchpad target suppresses stats record through engine flag") {
