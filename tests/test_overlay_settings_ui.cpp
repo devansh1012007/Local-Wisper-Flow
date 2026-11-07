@@ -259,6 +259,10 @@ TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete s
         "src/ui/theme/ThemePalette.h",
         "src/ui/theme/ThemePalette.cpp",
         "src/ui/theme/ThemeStyle.h",
+        "src/ui/theme/StudioPalette.cpp",
+        "src/ui/widgets/Buttons.cpp",
+        "src/ui/widgets/Display.cpp",
+        "src/ui/widgets/Overlays.cpp",
     };
     for (const std::string& path : font_sources) {
         std::ifstream file(path);
