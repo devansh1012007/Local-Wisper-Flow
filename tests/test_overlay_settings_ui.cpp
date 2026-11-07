@@ -1326,3 +1326,47 @@ TEST_CASE(
         has_metrics_font(scratchpad) || has_studio_font(scratchpad);
     CHECK(has_token_font);
 }
+
+TEST_CASE("layout literal ban fires on violations and cap-exceeds") {
+    // R-W1-001 negative direction: ScanLayoutLiterals must prove it fires.
+    // Synthetic strings only; no real source files are read or edited here.
+    // Display.cpp has no PushFont allowance, so a plain digit fires.
+    const std::vector<std::string> digit_violation = ScanLayoutLiterals(
+        "src/ui/widgets/Display.cpp",
+        "ImGui::PushFont(nullptr, 13.0f);\n");
+    CHECK_FALSE(digit_violation.empty());
+
+    // Buttons.cpp PushFont 24.0 cap is 1; two hits exceed it.
+    const std::vector<std::string> cap_exceed = ScanLayoutLiterals(
+        "src/ui/widgets/Buttons.cpp",
+        "ImGui::PushFont(nullptr, 24.0f);\n"
+        "ImGui::PushFont(nullptr, 24.0f);\n");
+    CHECK_FALSE(cap_exceed.empty());
+
+    // Universal geometric factors never violate.
+    const std::vector<std::string> universals = ScanLayoutLiterals(
+        "src/ui/widgets/Display.cpp",
+        "ImGui::SameLine(0.0f, 0.5f);\n"
+        "ImGui::SameLine(0.0f, 1.0f);\n"
+        "ImGui::SameLine(0.0f, 2.0f);\n"
+        "ImGui::SameLine(0.0f, 0.0f);\n");
+    CHECK(universals.empty());
+
+    // The -1.0f sentinel exemption is SetNextItemWidth-only.
+    const std::vector<std::string> sentinel_pushfont = ScanLayoutLiterals(
+        "src/ui/widgets/Display.cpp",
+        "ImGui::PushFont(nullptr, -1.0f);\n");
+    CHECK_FALSE(sentinel_pushfont.empty());
+    const std::vector<std::string> sentinel_width = ScanLayoutLiterals(
+        "src/ui/widgets/Display.cpp",
+        "ImGui::SetNextItemWidth(-1.0f);\n");
+    CHECK(sentinel_width.empty());
+
+    // Dummy double-anchor safety: DummyWidth sees the 0.0f first component
+    // (universal, skipped), DummyHeight sees the 12.0f height within the
+    // DictionaryPage cap of 3, so a single gap line is not a violation.
+    const std::vector<std::string> dummy_safe = ScanLayoutLiterals(
+        "src/ui/pages/DictionaryPage.cpp",
+        "ImGui::Dummy(ImVec2(0.0f, 12.0f));\n");
+    CHECK(dummy_safe.empty());
+}
