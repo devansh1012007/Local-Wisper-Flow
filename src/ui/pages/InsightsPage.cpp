@@ -292,6 +292,7 @@ void InsightsPage::DrawCardD(float width, float scale) {
         widgets::ProgressPill(pill_id.c_str(), row.fraction,
                               PillLabel(row.words, row.display_label).c_str(), scale);
         ImGui::SetCursorScreenPos(ImVec2(row_pos.x, row_pos.y + row_h + 8.0f * scale));
+        ImGui::Dummy(ImVec2(0.0f, 0.0f));
     }
     EndCard();
 }

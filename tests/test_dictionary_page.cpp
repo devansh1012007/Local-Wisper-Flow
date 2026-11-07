@@ -339,3 +339,28 @@ TEST_CASE("dictionary page sources stay off the font scale ban and carry no copi
     CHECK(impl.find("Chip") != std::string::npos);
     CHECK(impl.find("\xE2\x86\x92") != std::string::npos);
 }
+
+TEST_CASE("dictionary rows submit Dummy after trailing cursor restore") {
+    const std::string dict = ReadFile("src/ui/pages/DictionaryPage.cpp");
+    const std::string snips = ReadFile("src/ui/pages/SnippetsPage.cpp");
+    const std::string insights = ReadFile("src/ui/pages/InsightsPage.cpp");
+    REQUIRE_FALSE(dict.empty());
+    REQUIRE_FALSE(snips.empty());
+    REQUIRE_FALSE(insights.empty());
+    const std::string dummy = "ImGui::Dummy(ImVec2(0.0f, 0.0f))";
+    const std::string dict_restore = "ImGui::SetCursorScreenPos(saved_cursor);";
+    const std::string insights_restore =
+        "ImGui::SetCursorScreenPos(ImVec2(row_pos.x, row_pos.y + row_h + 8.0f * scale));";
+    const std::size_t dict_pos = dict.find(dict_restore);
+    const std::size_t snips_pos = snips.find(dict_restore);
+    const std::size_t insights_pos = insights.find(insights_restore);
+    REQUIRE(dict_pos != std::string::npos);
+    REQUIRE(snips_pos != std::string::npos);
+    REQUIRE(insights_pos != std::string::npos);
+    const std::size_t dict_dummy = dict.find(dummy, dict_pos + dict_restore.size());
+    const std::size_t snips_dummy = snips.find(dummy, snips_pos + dict_restore.size());
+    const std::size_t insights_dummy = insights.find(dummy, insights_pos + insights_restore.size());
+    CHECK(dict_dummy != std::string::npos);
+    CHECK(snips_dummy != std::string::npos);
+    CHECK(insights_dummy != std::string::npos);
+}
