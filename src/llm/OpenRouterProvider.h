@@ -21,6 +21,7 @@ enum class OpenRouterError {
     InvalidRequest,
     Malformed,
     Cancelled,
+    Busy,
     Disabled,
 };
 
@@ -46,6 +47,8 @@ inline const char* ToString(OpenRouterError error) {
             return "malformed";
         case OpenRouterError::Cancelled:
             return "cancelled";
+        case OpenRouterError::Busy:
+            return "busy";
         case OpenRouterError::Disabled:
             return "disabled";
     }

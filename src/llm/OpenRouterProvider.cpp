@@ -65,13 +65,13 @@ OpenRouterError StatusToCategory(int status) {
     if (status == 401 || status == 403 || status == 402) {
         return OpenRouterError::Auth;
     }
-    if (status == 408) {
+    if (status == 408 || status == 504) {
         return OpenRouterError::Timeout;
     }
     if (status == 429) {
         return OpenRouterError::RateLimited;
     }
-    if (status == 413) {
+    if (status == 413 || status == 412) {
         return OpenRouterError::InvalidRequest;
     }
     if (status >= 500) {
@@ -271,6 +271,17 @@ std::string OpenRouterProvider::ParseSuccessBody(const HttpResponse& response,
         outcome.detail = RedactDetail("choice is not a JSON object");
         return {};
     }
+    if (choice.contains(OpenRouterContract::kErrorField) &&
+        !choice.at(OpenRouterContract::kErrorField).is_null()) {
+        nlohmann::json wrapper;
+        wrapper[OpenRouterContract::kErrorField] = choice.at(OpenRouterContract::kErrorField);
+        const std::string type = ExtractErrorType(wrapper);
+        const OpenRouterError typed = ErrorTypeToCategory(type);
+        outcome.error = typed != OpenRouterError::Unknown ? typed : StatusToCategory(response.status);
+        const std::string vendor = ExtractErrorDetail(wrapper);
+        outcome.detail = RedactDetail(vendor.empty() ? "provider error" : vendor);
+        return {};
+    }
     if (choice.contains(OpenRouterContract::kMessageField) &&
         choice.at(OpenRouterContract::kMessageField).is_object()) {
         const nlohmann::json& message = choice.at(OpenRouterContract::kMessageField);
@@ -297,7 +308,15 @@ std::string OpenRouterProvider::ParseSuccessBody(const HttpResponse& response,
 }
 
 std::string OpenRouterProvider::Process(const std::string& text, const std::string& system_prompt) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        OpenRouterOutcome outcome;
+        outcome.error = OpenRouterError::Busy;
+        outcome.detail = RedactDetail("previous request still in flight");
+        StoreOutcome(outcome);
+        LogOutcome(outcome);
+        return {};
+    }
     cancel_requested_.store(false);
     if (text.empty()) {
         OpenRouterOutcome outcome;
@@ -313,7 +332,24 @@ std::string OpenRouterProvider::Process(const std::string& text, const std::stri
         LogOutcome(outcome);
         return {};
     }
-    HttpRequest request = BuildRequest(text, system_prompt);
+    HttpRequest request;
+    try {
+        request = BuildRequest(text, system_prompt);
+    } catch (const std::exception& error) {
+        OpenRouterOutcome outcome;
+        outcome.error = OpenRouterError::Malformed;
+        outcome.detail = RedactDetail(error.what() != nullptr ? error.what() : "request serialization failed");
+        StoreOutcome(outcome);
+        LogOutcome(outcome);
+        return {};
+    } catch (...) {
+        OpenRouterOutcome outcome;
+        outcome.error = OpenRouterError::Malformed;
+        outcome.detail = RedactDetail("request serialization failed");
+        StoreOutcome(outcome);
+        LogOutcome(outcome);
+        return {};
+    }
     OpenRouterOutcome outcome;
     outcome.bytes_sent = request.body.size();
     const auto started = std::chrono::steady_clock::now();

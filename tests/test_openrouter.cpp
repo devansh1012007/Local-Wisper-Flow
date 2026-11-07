@@ -90,33 +90,6 @@ private:
     std::vector<HttpRequest> requests_;
 };
 
-class TrackingTransport final : public IHttpTransport {
-public:
-    HttpResponse Post(const HttpRequest& request) override {
-        const int current = ++in_flight_;
-        int seen = max_in_flight_.load();
-        while (current > seen && !max_in_flight_.compare_exchange_weak(seen, current)) {
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        --in_flight_;
-        requests_.push_back(request);
-        HttpResponse response;
-        response.status = 200;
-        const std::string body =
-            R"({"id":"gen-t","choices":[{"message":{"role":"assistant","content":"ok text here"},"finish_reason":"stop"}]})";
-        response.body.assign(body.begin(), body.end());
-        return response;
-    }
-
-    int MaxInFlight() const { return max_in_flight_.load(); }
-    std::size_t RequestCount() const { return requests_.size(); }
-
-private:
-    std::atomic<int> in_flight_{0};
-    std::atomic<int> max_in_flight_{0};
-    std::vector<HttpRequest> requests_;
-};
-
 OpenRouterSettings TestSettings() {
     OpenRouterSettings settings;
     settings.api_key = "or-secret-key-123";
@@ -211,9 +184,11 @@ TEST_CASE("openrouter maps vendor statuses to typed outcomes") {
         {502, R"({"error":{"code":502,"message":"model down"}})", OpenRouterError::Server},
         {503, R"({"error":{"code":503,"message":"no provider"}})", OpenRouterError::Server},
         {500, R"({"error":{"code":500,"message":"Internal error"}})", OpenRouterError::Server},
+        {504, R"({"error":{"code":504,"message":"timed out"}})", OpenRouterError::Timeout},
         {400, R"({"error":{"code":400,"message":"bad request"}})", OpenRouterError::InvalidRequest},
         {404, R"({"error":{"code":404,"message":"not found"}})", OpenRouterError::InvalidRequest},
         {413, R"({"error":{"code":413,"message":"too large"}})", OpenRouterError::InvalidRequest},
+        {412, R"({"error":{"code":412,"message":"precondition failed"}})", OpenRouterError::InvalidRequest},
     };
     for (const Case& entry : cases) {
         ScriptedStep step;
@@ -246,6 +221,35 @@ TEST_CASE("openrouter treats 200 with error object as failure") {
     OpenRouterProvider provider(transport, TestSettings());
     CHECK(provider.Process("some dictation text here", "sys").empty());
     CHECK(provider.LastOutcome().error == OpenRouterError::RateLimited);
+}
+
+TEST_CASE("openrouter treats choice error as failure even with partial content") {
+    ScriptedStep step;
+    step.status = 200;
+    step.body = R"({"id":"gen-p","choices":[{"message":{"role":"assistant","content":"partial output..."},"finish_reason":"error","error":{"code":502,"message":"Provider disconnected mid-stream","metadata":{"error_type":"provider_unavailable"}}}]})";
+    ScriptedTransport transport({step});
+    OpenRouterProvider provider(transport, TestSettings());
+    CHECK(provider.Process("some dictation text here", "sys").empty());
+    CHECK(provider.LastOutcome().error == OpenRouterError::Server);
+}
+
+TEST_CASE("openrouter treats choice error without content as typed failure") {
+    ScriptedStep step;
+    step.status = 200;
+    step.body = R"({"id":"gen-p2","choices":[{"message":{"role":"assistant","content":null},"finish_reason":"error","error":{"code":429,"message":"Rate limit exceeded","metadata":{"error_type":"rate_limit_exceeded"}}}]})";
+    ScriptedTransport transport({step});
+    OpenRouterProvider provider(transport, TestSettings());
+    CHECK(provider.Process("some dictation text here", "sys").empty());
+    CHECK(provider.LastOutcome().error == OpenRouterError::RateLimited);
+}
+
+TEST_CASE("openrouter serialization failure is malformed outcome not a throw") {
+    ScriptedTransport transport({ScriptedStep()});
+    OpenRouterProvider provider(transport, TestSettings());
+    const std::string bad = std::string("hello \xFF world");
+    CHECK(provider.Process(bad, "sys").empty());
+    CHECK(provider.LastOutcome().error == OpenRouterError::Malformed);
+    CHECK(transport.Requests().empty());
 }
 
 TEST_CASE("openrouter classifies malformed success bodies") {
@@ -363,18 +367,50 @@ TEST_CASE("openrouter cancel during post is observed") {
 }
 
 TEST_CASE("openrouter serializes concurrent process calls") {
-    TrackingTransport transport;
+    GateTransport transport(
+        200,
+        R"({"id":"gen-s","choices":[{"message":{"role":"assistant","content":"ok text here"},"finish_reason":"stop"}]})");
     OpenRouterProvider provider(transport, TestSettings());
     std::string first;
     std::string second;
     std::thread one([&] { first = provider.Process("first dictation text here", "sys"); });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!transport.Entered() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    REQUIRE(transport.Entered());
     std::thread two([&] { second = provider.Process("second dictation text here", "sys"); });
-    one.join();
     two.join();
+    CHECK(second.empty());
+    transport.Release();
+    one.join();
     CHECK(first == "ok text here");
-    CHECK(second == "ok text here");
-    CHECK(transport.RequestCount() == 2);
-    CHECK(transport.MaxInFlight() == 1);
+    CHECK(transport.RequestCount() == 1);
+}
+
+TEST_CASE("openrouter second process does not wedge while first post is hung") {
+    GateTransport transport(
+        200,
+        R"({"id":"gen-h","choices":[{"message":{"role":"assistant","content":"cleaned text"},"finish_reason":"stop"}]})");
+    OpenRouterProvider provider(transport, TestSettings());
+    std::string first;
+    std::thread worker([&] { first = provider.Process("some dictation text here", "sys"); });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!transport.Entered() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    REQUIRE(transport.Entered());
+    const auto start = std::chrono::steady_clock::now();
+    const std::string second = provider.Process("another dictation text here", "sys");
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start);
+    CHECK(second.empty());
+    CHECK(provider.LastOutcome().error == OpenRouterError::Busy);
+    CHECK(elapsed < std::chrono::milliseconds(5000));
+    CHECK(transport.RequestCount() == 1);
+    transport.Release();
+    worker.join();
+    CHECK(first == "cleaned text");
 }
 
 TEST_CASE("openrouter success flows through dictation cleanup") {

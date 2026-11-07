@@ -1335,7 +1335,9 @@ void MainWindow::DrawPrivacyPage(float scale) {
         }
         ImGui::Separator();
         ImGui::TextWrapped("%s", "No telemetry. By default no network calls except explicit model "
-                                 "downloads. OpenRouter cleanup is the only opt-in exception.");
+                                 "downloads. Cloud speech transcription and OpenRouter cleanup "
+                                 "are the only opt-in exceptions, both off by default. Each sends "
+                                 "only what its feature needs, and only while you have it enabled.");
     }
     EndCard(scale);
 
@@ -1375,8 +1377,8 @@ void MainWindow::DrawAboutPage(float scale) {
         ImGui::Separator();
         ImGui::TextWrapped("%s",
                            "Local-first voice dictation. On-device speech recognition and optional "
-                           "text cleanup, clipboard injection. All processing stays on this "
-                           "machine unless OpenRouter cleanup is enabled.");
+                           "text cleanup, clipboard injection. Processing stays on this machine "
+                           "unless you opt into cloud speech transcription or OpenRouter cleanup.");
         if (settings_.GetString("llm_provider") == "openrouter") {
             ImGui::TextColored(Color(kDarkPalette.warn),
                                "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
