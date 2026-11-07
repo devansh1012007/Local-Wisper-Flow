@@ -53,6 +53,8 @@ using lwf::ui::Color;
 using lwf::ui::kDarkPalette;
 using lwf::ui::Pack;
 
+// Rail is 220 on purpose: metrics::rail_width (208) is intentionally
+// unused until the rail/token drift is resolved (mission D-rail).
 constexpr float kRailWidth = 220.0f;
 
 std::vector<std::string> SplitChord(const std::string& chord) {
@@ -81,7 +83,7 @@ std::vector<std::string> SplitChord(const std::string& chord) {
 // A switch in the mockup's shape: pill track, round knob, accent when on.
 bool ToggleSwitch(const char* id, bool value, float scale) {
     const float w = 52.0f * scale;
-    const float h = 32.0f * scale;
+    const float h = metrics::control_min_height * scale;
     const ImVec2 p = ImGui::GetCursorScreenPos();
     const bool toggled = ImGui::InvisibleButton(id, ImVec2(w, h), ImGuiButtonFlags_EnableNav);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
@@ -95,7 +97,7 @@ bool ToggleSwitch(const char* id, bool value, float scale) {
                        value ? Pack(kDarkPalette.accent) : Pack(kDarkPalette.text, 0.15f),
                        h * 0.5f);
     const float knob = 24.0f * scale;
-    const float pad = 4.0f * scale;
+    const float pad = metrics::space_xs * scale;
     const float x = value ? p.x + w - pad - knob : p.x + pad;
     draw.AddCircleFilled(ImVec2(x + knob * 0.5f, p.y + h * 0.5f), knob * 0.5f,
                          Pack(kDarkPalette.surface));
@@ -528,7 +530,8 @@ void MainWindow::DrawRail(float scale) {
         // Rail bottom: live status and the way back to mini.
         const float line = ImGui::GetTextLineHeightWithSpacing();
         const float bottom_h =
-            2.0f * metrics::space_m * scale + 3.0f * line + 8.0f * scale + 32.0f * scale;
+            2.0f * metrics::space_m * scale + 3.0f * line + metrics::space_s * scale +
+            metrics::control_min_height * scale;
         if (ImGui::GetContentRegionAvail().y > bottom_h) {
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
                                  ImGui::GetContentRegionAvail().y - bottom_h);
@@ -593,7 +596,7 @@ bool MainWindow::ToggleRow(const char* label, bool value, const char* helper, fl
     const float line = ImGui::GetTextLineHeightWithSpacing();
     const float row_h = (helper != nullptr && helper[0] != '\0') ? 2.0f * line : line;
     const float switch_w = 52.0f * scale;
-    const float switch_h = 32.0f * scale;
+    const float switch_h = metrics::control_min_height * scale;
     const float avail = ImGui::GetContentRegionAvail().x;
 
     // Switch on the right, vertically centered in the row.
@@ -859,7 +862,7 @@ void MainWindow::DrawGeneralHotkeyRow(const std::string& config_key, const char*
             bus_.PostCommand(UiCommandType::StartLearnHotkey,
                              UiBus::StartLearnPayload(config_key));
         }
-        ImGui::SameLine(0.0f, 8.0f * scale);
+        ImGui::SameLine(0.0f, metrics::space_s * scale);
         const std::string clear_id = "Clear##" + config_key;
         if (ImGui::Button(clear_id.c_str())) {
             settings_.SetString(config_key, "");
@@ -1561,11 +1564,11 @@ void MainWindow::DrawSettingsPage(float scale) {
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     ImGui::PushFont(nullptr, metrics::font_card_title_px);
     const float tab_h = 36.0f * scale;
-    const float tab_pad = 16.0f * scale;
+    const float tab_pad = metrics::space_m * scale;
     for (std::size_t i = 0; i < 6; ++i) {
         const TabItem& item = tabs[i];
         if (i > 0) {
-            ImGui::SameLine(0.0f, 8.0f * scale);
+            ImGui::SameLine(0.0f, metrics::space_s * scale);
         }
         const ImVec2 text_size = ImGui::CalcTextSize(item.label);
         const float w = text_size.x + 2.0f * tab_pad;
