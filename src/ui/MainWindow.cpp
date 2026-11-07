@@ -719,6 +719,53 @@ void MainWindow::DrawHotkeyChips(const std::string& chord, float scale) {
     ImGui::Dummy(ImVec2(x - origin.x, chip_h));
 }
 
+void MainWindow::DrawGeneralHotkeyRow(const std::string& config_key, const char* label,
+                                      const char* helper, float scale) {
+    const auto role = HotkeyBinding::RoleForConfigKey(config_key);
+    const std::string current = settings_.GetString(config_key);
+    ImGui::TextUnformatted(label);
+    ImGui::TextDisabled("%s", helper);
+    DrawHotkeyChips(current, scale);
+    if (!current.empty() && role.has_value()) {
+        const std::vector<Binding> registry = LoadBindings(settings_);
+        if (HotkeyBinding::FindConflict(current, registry, role).has_value()) {
+            ImGui::TextColored(Color(kDarkPalette.err), "That shortcut is already in use");
+        }
+    }
+    const bool armed = learn_target_ == config_key;
+    const bool any_armed = !learn_target_.empty();
+    if (armed) {
+        ImGui::TextDisabled("Press a chord...");
+    } else {
+        const bool buttons_disabled = any_armed;
+        if (buttons_disabled) {
+            ImGui::BeginDisabled();
+        }
+        const std::string record_id = "Record##" + config_key;
+        if (ImGui::Button(record_id.c_str())) {
+            learn_target_ = config_key;
+            if (learn_error_target_ == config_key) {
+                learn_error_.clear();
+                learn_error_target_.clear();
+            }
+            bus_.PostCommand(UiCommandType::StartLearnHotkey,
+                             UiBus::StartLearnPayload(config_key));
+        }
+        ImGui::SameLine(0.0f, 8.0f * scale);
+        const std::string clear_id = "Clear##" + config_key;
+        if (ImGui::Button(clear_id.c_str())) {
+            settings_.SetString(config_key, "");
+            ApplyAndSave();
+        }
+        if (buttons_disabled) {
+            ImGui::EndDisabled();
+        }
+    }
+    if (learn_error_target_ == config_key && !learn_error_.empty()) {
+        ImGui::TextColored(Color(kDarkPalette.err), "%s", learn_error_.c_str());
+    }
+}
+
 void MainWindow::DrawHomePage(float scale) {
     DrawPageChrome("Home", "Dictation runs on this computer and starts with one hotkey.", scale);
 
@@ -1254,11 +1301,19 @@ void MainWindow::DrawGeneralPage(float scale) {
         ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Hotkey");
         ImGui::PopFont();
-        DrawHotkeyChips(settings_.GetString("hotkey_ptt"), scale);
-        ImGui::TextDisabled("Hold to speak, release to type.");
-        if (ImGui::Button("Learn a new chord...")) {
-            bus_.PostCommand(UiCommandType::StartLearnHotkey);
-        }
+        DrawGeneralHotkeyRow("hotkey_ptt", "Push-to-talk", "Hold to speak, release to type.",
+                             scale);
+        ImGui::Separator();
+        DrawGeneralHotkeyRow("hotkey_handsfree", "Hands-free",
+                             "Double-tap to talk without holding.", scale);
+        ImGui::Separator();
+        DrawGeneralHotkeyRow("hotkey_cancel", "Cancel", "Stop dictation immediately.", scale);
+        ImGui::Separator();
+        DrawGeneralHotkeyRow("hotkey_command", "Command mode", "Hold to dictate a command.",
+                             scale);
+        ImGui::Separator();
+        DrawGeneralHotkeyRow("hotkey_paste_last", "Paste last",
+                             "Paste your last dictation.", scale);
     }
     EndCard(scale);
 

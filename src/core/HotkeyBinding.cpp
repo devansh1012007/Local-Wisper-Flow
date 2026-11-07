@@ -54,6 +54,22 @@ bool ParseSingleKey(const std::string& token_in, std::uint32_t& out_vk,
         }
         return false;
     }
+    if (token.size() == 2 && token[0] == 'f' &&
+        std::isdigit(static_cast<unsigned char>(token[1])) && token[1] != '0') {
+        const int index = token[1] - '0';
+        out_vk = HotkeyBinding::kF1 + static_cast<std::uint32_t>(index - 1);
+        out_name = token;
+        return true;
+    }
+    if (token.size() == 1) {
+        const char c = token[0];
+        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+            out_vk = static_cast<std::uint32_t>(
+                std::toupper(static_cast<unsigned char>(c)));
+            out_name = token;
+            return true;
+        }
+    }
     if (token.rfind("0x", 0) == 0) {
         try {
             const unsigned long value = std::stoul(token, nullptr, 16);
@@ -80,6 +96,9 @@ std::string CanonicalName(std::uint32_t vk) {
     }
     if (vk >= HotkeyBinding::kF1 && vk < HotkeyBinding::kF1 + 24) {
         return "F" + std::to_string(vk - HotkeyBinding::kF1 + 1);
+    }
+    if ((vk >= '0' && vk <= '9') || (vk >= 'A' && vk <= 'Z')) {
+        return std::string(1, static_cast<char>(vk));
     }
     std::ostringstream stream;
     stream << "0x" << std::hex << vk;
@@ -163,6 +182,153 @@ bool HotkeyBinding::IsSatisfied(const Binding& binding,
     return true;
 }
 
+bool HotkeyBinding::IsModifierVk(std::uint32_t vk) {
+    return vk == kCtrl || vk == kShift || vk == kAlt || vk == kWin || vk == kLeftAlt ||
+           vk == kRightAlt;
+}
+
+bool HotkeyBinding::ChordHasModifier(const Binding& binding) {
+    for (const std::uint32_t vk : binding.keys) {
+        if (IsModifierVk(vk)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+namespace {
+
+std::vector<std::uint32_t> SortedUniqueKeys(std::vector<std::uint32_t> keys) {
+    std::sort(keys.begin(), keys.end());
+    keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+    return keys;
+}
+
+bool KeySetIsSubset(const std::vector<std::uint32_t>& a,
+                    const std::vector<std::uint32_t>& b) {
+    return std::includes(b.begin(), b.end(), a.begin(), a.end());
+}
+
+}
+
+bool HotkeyBinding::BindingsConflict(const Binding& a, const Binding& b) {
+    if (a.keys.empty() || b.keys.empty()) {
+        return false;
+    }
+    const std::vector<std::uint32_t> a_keys = SortedUniqueKeys(a.keys);
+    const std::vector<std::uint32_t> b_keys = SortedUniqueKeys(b.keys);
+    return KeySetIsSubset(a_keys, b_keys) || KeySetIsSubset(b_keys, a_keys);
+}
+
+bool HotkeyBinding::ChordsConflict(const std::string& a, const std::string& b) {
+    const auto parsed_a = Parse(a, BindingRole::PushToTalk);
+    if (!parsed_a.has_value()) {
+        return false;
+    }
+    const auto parsed_b = Parse(b, BindingRole::PushToTalk);
+    if (!parsed_b.has_value()) {
+        return false;
+    }
+    return BindingsConflict(*parsed_a, *parsed_b);
+}
+
+std::optional<std::string> HotkeyBinding::FindConflict(
+    const std::string& candidate, const std::vector<Binding>& registry,
+    std::optional<BindingRole> exclude_role) {
+    const auto parsed = Parse(candidate, BindingRole::PushToTalk);
+    if (!parsed.has_value()) {
+        return std::nullopt;
+    }
+    for (const Binding& binding : registry) {
+        if (exclude_role.has_value() && binding.role == *exclude_role) {
+            continue;
+        }
+        if (BindingsConflict(*parsed, binding)) {
+            if (!binding.label.empty()) {
+                return binding.label;
+            }
+            return Serialize(binding);
+        }
+    }
+    return std::nullopt;
+}
+
+std::string HotkeyBinding::ValidateRecorderChord(const std::string& candidate,
+                                                 const std::vector<Binding>& registry,
+                                                 BindingRole target_role) {
+    const std::string trimmed_in = [](const std::string& input) {
+        const std::size_t begin = input.find_first_not_of(" \t");
+        if (begin == std::string::npos) {
+            return std::string();
+        }
+        const std::size_t end = input.find_last_not_of(" \t");
+        return input.substr(begin, end - begin + 1);
+    }(candidate);
+    if (trimmed_in.empty()) {
+        return "A shortcut needs a key";
+    }
+    const auto parsed = Parse(trimmed_in, target_role);
+    if (!parsed.has_value()) {
+        return "A shortcut needs a key";
+    }
+    const bool escape_only = parsed->keys.size() == 1 && parsed->keys[0] == kEscape;
+    if (!(escape_only && target_role == BindingRole::Cancel)) {
+        if (!ChordHasModifier(*parsed)) {
+            return "A shortcut needs a modifier key";
+        }
+    }
+    if (FindConflict(trimmed_in, registry, target_role).has_value()) {
+        return "That shortcut is already in use";
+    }
+    return {};
+}
+
+std::optional<BindingRole> HotkeyBinding::RoleForConfigKey(const std::string& key) {
+    if (key == "hotkey_ptt") {
+        return BindingRole::PushToTalk;
+    }
+    if (key == "hotkey_handsfree") {
+        return BindingRole::HandsFreeToggle;
+    }
+    if (key == "hotkey_cancel") {
+        return BindingRole::Cancel;
+    }
+    if (key == "hotkey_command") {
+        return BindingRole::CommandMode;
+    }
+    if (key == "hotkey_paste_last") {
+        return BindingRole::PasteLast;
+    }
+    return std::nullopt;
+}
+
+const char* HotkeyBinding::ConfigKeyForRole(BindingRole role) {
+    switch (role) {
+        case BindingRole::PushToTalk:
+            return "hotkey_ptt";
+        case BindingRole::HandsFreeToggle:
+            return "hotkey_handsfree";
+        case BindingRole::Cancel:
+            return "hotkey_cancel";
+        case BindingRole::CommandMode:
+            return "hotkey_command";
+        case BindingRole::PasteLast:
+            return "hotkey_paste_last";
+    }
+    return "hotkey_ptt";
+}
+
+bool HotkeyBinding::IsConfigHotkeyKey(const std::string& key) {
+    return RoleForConfigKey(key).has_value();
+}
+
+const std::vector<std::string>& HotkeyBinding::ConfigHotkeyKeys() {
+    static const std::vector<std::string> keys = {"hotkey_ptt", "hotkey_handsfree",
+                                                  "hotkey_cancel", "hotkey_command",
+                                                  "hotkey_paste_last"};
+    return keys;
+}
+
 const char* ToString(BindingRole role) {
     switch (role) {
         case BindingRole::PushToTalk: return "PushToTalk";
@@ -218,5 +384,19 @@ std::vector<Binding> LoadBindings(const SettingsStore& settings) {
             bindings.push_back(*binding);
         }
     }
-    return bindings;
+    std::vector<Binding> unique;
+    unique.reserve(bindings.size());
+    for (const Binding& binding : bindings) {
+        bool conflicts = false;
+        for (const Binding& kept : unique) {
+            if (HotkeyBinding::BindingsConflict(binding, kept)) {
+                conflicts = true;
+                break;
+            }
+        }
+        if (!conflicts) {
+            unique.push_back(binding);
+        }
+    }
+    return unique;
 }

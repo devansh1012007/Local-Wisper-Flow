@@ -60,6 +60,14 @@ public:
     bool PollCommand(UiCommand& out);
     void CloseCommands();
 
+    static std::string StartLearnPayload(const std::string& target_key) {
+        return target_key.empty() ? std::string("hotkey_ptt") : target_key;
+    }
+
+    static std::string ParseStartLearnTarget(const std::string& payload) {
+        return payload.empty() ? std::string("hotkey_ptt") : payload;
+    }
+
     void PublishStatus(const StatusSnapshotValue& value);
     StatusSnapshotValue ReadStatus() const;
 

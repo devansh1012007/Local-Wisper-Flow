@@ -28,8 +28,10 @@ public:
 
     void UpdateBindings(std::vector<Binding> bindings);
     void SetTrackerOptions(const HotkeyTracker::Options& options);
-    void BeginLearnMode();
+    void BeginLearnMode(const std::string& target_key = "hotkey_ptt");
     bool TryTakeLearnedBinding(std::string& out);
+    bool TryTakeLearnedBinding(std::string& out_chord, std::string& out_target);
+    std::string PendingLearnTarget() const;
     bool HookInstalled() const;
 
 public:

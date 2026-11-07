@@ -71,6 +71,8 @@ struct WindowsHotkeyListener::Impl {
     std::atomic<bool> learn_mode{false};
     std::atomic<bool> learned_ready{false};
     std::string learned_binding;
+    std::string learned_target;
+    std::string learn_target;
     std::vector<std::uint32_t> learned_keys;
     std::thread thread;
     std::atomic<std::uint32_t> thread_id{0};
@@ -160,18 +162,22 @@ bool WindowsHotkeyListener::Impl::HandleLearnMode(const KBDLLHOOKSTRUCT* info,
         return false;
     }
     const std::uint32_t vk = static_cast<std::uint32_t>(info->vkCode);
+    std::lock_guard<std::mutex> lock(tracker_mutex);
     if (is_down) {
         if (std::find(learned_keys.begin(), learned_keys.end(), vk) == learned_keys.end()) {
             learned_keys.push_back(vk);
         }
     } else {
         if (!learned_keys.empty()) {
+            const auto role = HotkeyBinding::RoleForConfigKey(learn_target);
             Binding binding;
             binding.keys = learned_keys;
-            binding.role = BindingRole::PushToTalk;
+            binding.role = role.has_value() ? *role : BindingRole::PushToTalk;
             learned_binding = HotkeyBinding::Serialize(binding);
+            learned_target = learn_target;
             learned_ready.store(true);
             learn_mode.store(false);
+            learn_target.clear();
             learned_keys.clear();
         }
     }
@@ -294,14 +300,23 @@ void WindowsHotkeyListener::SetTrackerOptions(const HotkeyTracker::Options& opti
     impl_->tracker.SetOptions(options);
 }
 
-void WindowsHotkeyListener::BeginLearnMode() {
+void WindowsHotkeyListener::BeginLearnMode(const std::string& target_key) {
     std::lock_guard<std::mutex> lock(impl_->tracker_mutex);
     impl_->learned_keys.clear();
+    impl_->learned_binding.clear();
+    impl_->learned_target.clear();
+    impl_->learn_target = target_key.empty() ? std::string("hotkey_ptt") : target_key;
     impl_->learned_ready.store(false);
     impl_->learn_mode.store(true);
 }
 
 bool WindowsHotkeyListener::TryTakeLearnedBinding(std::string& out) {
+    std::string target;
+    return TryTakeLearnedBinding(out, target);
+}
+
+bool WindowsHotkeyListener::TryTakeLearnedBinding(std::string& out_chord,
+                                                  std::string& out_target) {
     if (!impl_->learned_ready.load()) {
         return false;
     }
@@ -309,9 +324,16 @@ bool WindowsHotkeyListener::TryTakeLearnedBinding(std::string& out) {
     if (!impl_->learned_ready.load()) {
         return false;
     }
-    out = impl_->learned_binding;
+    out_chord = impl_->learned_binding;
+    out_target = impl_->learned_target;
     impl_->learned_ready.store(false);
+    impl_->learned_target.clear();
     return true;
+}
+
+std::string WindowsHotkeyListener::PendingLearnTarget() const {
+    std::lock_guard<std::mutex> lock(impl_->tracker_mutex);
+    return impl_->learn_target;
 }
 
 bool WindowsHotkeyListener::HookInstalled() const {
