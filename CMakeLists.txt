@@ -81,6 +81,7 @@ set(LWF_CORE_SOURCES
     src/stt/cloud/MuseRequest.cpp
     src/stt/cloud/MuseResponse.cpp
     src/stt/cloud/MuseProvider.cpp
+    src/llm/OpenRouterProvider.cpp
     src/core/DictationCleanup.cpp
     src/core/DictationEngine.cpp
     src/core/CrashReporter.cpp
@@ -172,6 +173,7 @@ add_executable(lwf_tests
     tests/test_dictionarystore.cpp
     tests/test_notesstore.cpp
     tests/test_onboarding.cpp
+    tests/test_openrouter.cpp
     tests/test_overlay_settings_ui.cpp
     tests/test_resilience.cpp
     tests/test_privacy.cpp

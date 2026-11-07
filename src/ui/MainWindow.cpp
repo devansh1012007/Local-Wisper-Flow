@@ -955,8 +955,8 @@ void MainWindow::DrawHomePage(float scale) {
                                   : provider == "elevenlabs" ? "ElevenLabs"
                                   : provider == "muse" ? "Muse" : provider.c_str();
             ImGui::Text("Speech is sent to %s for each sentence.", display);
-            ImGui::TextDisabled("If a cloud request fails, that utterance falls back to "
-                                "local Whisper.");
+            ImGui::TextDisabled("If a cloud request fails, that sentence is still dictated on this "
+                                "computer.");
         } else {
             ImGui::TextUnformatted("Everything runs on this computer.");
             ImGui::TextDisabled("Cloud speech is off.");
@@ -1137,7 +1137,7 @@ void MainWindow::DrawCloudPage(float scale) {
     BeginCard("##card_cloud_provider", width, scale);
     {
         ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Provider");
+        ImGui::TextUnformatted("Service");
         ImGui::PopFont();
 
         static const char* kProviderItems[] = {"local", "gnani", "elevenlabs", "muse"};
@@ -1155,9 +1155,8 @@ void MainWindow::DrawCloudPage(float scale) {
             }
             ImGui::EndCombo();
         }
-        ImGui::TextWrapped("Local Whisper keeps every recording on this machine. A cloud "
-                           "provider sends recordings to that provider's servers for "
-                           "transcription.");
+        ImGui::TextWrapped("Dictation runs on this machine by default. A cloud service sends "
+                           "recordings to its own servers for transcription.");
         ImGui::Separator();
         ImGui::TextUnformatted("Cloud language");
         StringFieldRow("stt_language", stt_language_field_, "##stt_language", false);
@@ -1192,11 +1191,11 @@ void MainWindow::DrawCloudPage(float scale) {
         }
         if (consent && settings_.GetString("stt_provider") != "local") {
             ImGui::TextColored(Color(kDarkPalette.warn),
-                               "Cloud is active only while the provider API key is present in "
+                               "Cloud is active only while the service API key is present in "
                                "the environment.");
             ImGui::TextWrapped("The API key is read from the environment and is never written "
                                "to config.json, logs, or history. If a cloud request fails, "
-                               "that utterance falls back to local Whisper.");
+                               "that sentence is still dictated on this computer.");
         }
     }
     EndCard(scale);
@@ -1330,9 +1329,13 @@ void MainWindow::DrawPrivacyPage(float scale) {
         if (settings_.GetString("llm_provider") == "openrouter") {
             ImGui::TextColored(Color(kDarkPalette.warn),
                                "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
+            const std::string openrouter_model = settings_.GetString("openrouter_model");
+            ImGui::Text("OpenRouter model: %s",
+                        openrouter_model.empty() ? "not set (edit config.json)" : openrouter_model.c_str());
         }
         ImGui::Separator();
-        ImGui::TextWrapped("%s", "No telemetry. No network calls except explicit model downloads.");
+        ImGui::TextWrapped("%s", "No telemetry. By default no network calls except explicit model "
+                                 "downloads. OpenRouter cleanup is the only opt-in exception.");
     }
     EndCard(scale);
 
@@ -1348,7 +1351,7 @@ void MainWindow::DrawPrivacyPage(float scale) {
             ImGui::TextDisabled("Removes statistics, dictionary, snippets, transforms, notes, history and saved API keys. Settings are kept.");
         } else {
             ImGui::TextColored(Color(kDarkPalette.err),
-                               "This cannot be undone. The app keeps running; restart to reseed empty files.");
+                               "This cannot be undone. The app keeps running.");
             if (ImGui::Button("Confirm delete")) {
                 DeleteLocalData();
             }
@@ -1371,8 +1374,9 @@ void MainWindow::DrawAboutPage(float scale) {
         ImGui::Text("Local Wisper Flow %s", lwf::AppVersion());
         ImGui::Separator();
         ImGui::TextWrapped("%s",
-                           "Local-first voice dictation. Whisper STT, optional local LLM cleanup, "
-                           "clipboard injection. All processing stays on this machine.");
+                           "Local-first voice dictation. On-device speech recognition and optional "
+                           "text cleanup, clipboard injection. All processing stays on this "
+                           "machine unless OpenRouter cleanup is enabled.");
         if (settings_.GetString("llm_provider") == "openrouter") {
             ImGui::TextColored(Color(kDarkPalette.warn),
                                "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
