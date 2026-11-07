@@ -15,7 +15,6 @@ void Modal::Open() {
 void Modal::Close() {
     open_ = false;
     armed_ = false;
-    visible_ = false;
 }
 
 bool Modal::IsOpen() const {
@@ -61,7 +60,6 @@ void Sheet::Open() {
 void Sheet::Close() {
     open_ = false;
     armed_ = false;
-    visible_ = false;
 }
 
 bool Sheet::IsOpen() const {
@@ -160,6 +158,13 @@ void Toast::Draw(float scale) {
             action_pending_ = true;
         }
         ImGui::PopStyleColor();
+        if (ImGui::IsItemFocused()) {
+            const ImVec2 ring_min = ImGui::GetItemRectMin();
+            const ImVec2 ring_max = ImGui::GetItemRectMax();
+            draw.AddRect(ImVec2(ring_min.x - 2.0f * scale, ring_min.y - 2.0f * scale),
+                         ImVec2(ring_max.x + 2.0f * scale, ring_max.y + 2.0f * scale),
+                         Pack(kStudioPalette.teal_300), h * 0.5f, 0, 2.0f * scale);
+        }
         ImGui::SetCursorScreenPos(saved_cursor);
     }
 }

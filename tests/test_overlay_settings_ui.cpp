@@ -751,11 +751,19 @@ TEST_CASE("studio palette contrast passes on ink and teal pairs and muted on car
     CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.banner_cream) >= 4.5);
     CHECK(ContrastRatio(kStudioPalette.border, kStudioPalette.page_bg) < 3.0);
     CHECK(ContrastRatio(kStudioPalette.border, kStudioPalette.card_bg_white) < 3.0);
+    CHECK(ContrastRatio(kStudioPalette.teal_300, kStudioPalette.ink) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.card_bg_white, kStudioPalette.ink) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.card_bg_white) >= 3.0);
+    CHECK(ContrastRatio(kStudioPalette.teal_500, kStudioPalette.page_bg) >= 3.0);
+    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.page_bg) >= 3.0);
+    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.muted) >= 3.0);
 }
 
 TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
     using lwf::ui::Clamp01;
+    using lwf::ui::HeatColor;
     using lwf::ui::HeatLevel;
+    using lwf::ui::kStudioPalette;
     using lwf::ui::UpperSpaced;
     CHECK(HeatLevel(0, 10) == 0);
     CHECK(HeatLevel(5, 0) == 0);
@@ -767,12 +775,18 @@ TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
     CHECK(HeatLevel(8, 10) == 4);
     CHECK(HeatLevel(10, 10) == 4);
     CHECK(HeatLevel(99, 10) == 4);
-    CHECK(HeatLevel(25, 100) == 1);
-    CHECK(HeatLevel(50, 100) == 2);
-    CHECK(HeatLevel(75, 100) == 3);
+    CHECK(HeatLevel(25, 100) == 2);
+    CHECK(HeatLevel(50, 100) == 3);
+    CHECK(HeatLevel(75, 100) == 4);
     CHECK(HeatLevel(26, 100) == 2);
     CHECK(HeatLevel(51, 100) == 3);
     CHECK(HeatLevel(76, 100) == 4);
+    CHECK(HeatColor(0) == kStudioPalette.heat_empty);
+    CHECK(HeatColor(1) == kStudioPalette.teal_100);
+    CHECK(HeatColor(2) == kStudioPalette.teal_300);
+    CHECK(HeatColor(3) == kStudioPalette.teal_500);
+    CHECK(HeatColor(4) == kStudioPalette.teal_700);
+    CHECK(HeatColor(9) == kStudioPalette.heat_empty);
     CHECK(Clamp01(2.0f) == 1.0f);
     CHECK(Clamp01(-0.5f) == 0.0f);
     CHECK(Clamp01(0.5f) == 0.5f);
@@ -898,4 +912,129 @@ TEST_CASE("new A4 schema keys default and clamp through the store") {
     CHECK(store.GetDouble("vad_threshold") == 1.0);
     store.SetInt("hotkey_code", -4);
     CHECK(store.GetInt("hotkey_code") == 0);
+}
+
+TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
+    std::ifstream buttons("src/ui/widgets/Buttons.cpp");
+    REQUIRE(static_cast<bool>(buttons));
+    const std::string buttons_content((std::istreambuf_iterator<char>(buttons)),
+                                      std::istreambuf_iterator<char>());
+    CHECK(buttons_content.find("const float h = studio_metrics::hit_size * scale") !=
+          std::string::npos);
+    CHECK(buttons_content.find("value ? Pack(kStudioPalette.ink) : Pack(kStudioPalette.muted)") !=
+          std::string::npos);
+    std::ifstream overlays("src/ui/widgets/Overlays.cpp");
+    REQUIRE(static_cast<bool>(overlays));
+    const std::string overlays_content((std::istreambuf_iterator<char>(overlays)),
+                                       std::istreambuf_iterator<char>());
+    CHECK(overlays_content.find("if (ImGui::IsItemFocused())") != std::string::npos);
+    std::size_t visible_resets = 0;
+    std::size_t scan_from = 0;
+    while ((scan_from = overlays_content.find("visible_ = false", scan_from)) !=
+           std::string::npos) {
+        ++visible_resets;
+        ++scan_from;
+    }
+    CHECK(visible_resets == 4);
+    std::ifstream transforms("src/ui/pages/TransformsPage.cpp");
+    REQUIRE(static_cast<bool>(transforms));
+    const std::string transforms_content((std::istreambuf_iterator<char>(transforms)),
+                                         std::istreambuf_iterator<char>());
+    CHECK(transforms_content.find("kCardRadius") == std::string::npos);
+    CHECK(transforms_content.find("studio_metrics::radius_card * scale") != std::string::npos);
+    CHECK(transforms_content.find("hovered ? kStudioPalette.ink : kStudioPalette.teal_700") !=
+          std::string::npos);
+    CHECK(transforms_content.find("ImGui::IsItemFocused()") != std::string::npos);
+    std::ifstream palette_h("src/ui/theme/StudioPalette.h");
+    REQUIRE(static_cast<bool>(palette_h));
+    const std::string palette_content((std::istreambuf_iterator<char>(palette_h)),
+                                      std::istreambuf_iterator<char>());
+    CHECK(palette_content.find("HeatColor") != std::string::npos);
+    std::ifstream display("src/ui/widgets/Display.cpp");
+    REQUIRE(static_cast<bool>(display));
+    const std::string display_content((std::istreambuf_iterator<char>(display)),
+                                      std::istreambuf_iterator<char>());
+    CHECK(display_content.find("using lwf::ui::HeatColor;") != std::string::npos);
+    CHECK(display_content.find("case 4:") == std::string::npos);
+    std::ifstream insights("src/ui/pages/InsightsPage.cpp");
+    REQUIRE(static_cast<bool>(insights));
+    const std::string insights_content((std::istreambuf_iterator<char>(insights)),
+                                       std::istreambuf_iterator<char>());
+    CHECK(insights_content.find("HeatPack") == std::string::npos);
+    CHECK(insights_content.find("HeatColor(level)") != std::string::npos);
+}
+
+TEST_CASE("F9 copy lint bans internal terms and exclamation in display strings") {
+    const std::vector<std::string> banned = {"oops", "fsm", "vad", "llm", "whisper", "provider",
+                                             "providers", "pipeline", "pipelines", "stt"};
+    const auto is_word = [](char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+               c == '_';
+    };
+    const auto contains_word = [&is_word](const std::string& text, const std::string& term) {
+        std::size_t from = 0;
+        while (true) {
+            const std::size_t hit = text.find(term, from);
+            if (hit == std::string::npos) {
+                return false;
+            }
+            const bool left_ok = hit == 0 || !is_word(text[hit - 1]);
+            const std::size_t after = hit + term.size();
+            const bool right_ok = after >= text.size() || !is_word(text[after]);
+            if (left_ok && right_ok) {
+                return true;
+            }
+            from = hit + 1;
+        }
+    };
+    const auto lower = [](std::string text) {
+        for (char& c : text) {
+            if (c >= 'A' && c <= 'Z') {
+                c = static_cast<char>(c - 'A' + 'a');
+            }
+        }
+        return text;
+    };
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::recursive_directory_iterator("src/ui")) {
+        const std::string path = entry.path().string();
+        const std::string ext = entry.path().extension().string();
+        if (ext != ".cpp" && ext != ".h") {
+            continue;
+        }
+        std::ifstream file(path);
+        REQUIRE(static_cast<bool>(file));
+        const std::string content((std::istreambuf_iterator<char>(file)),
+                                  std::istreambuf_iterator<char>());
+        std::size_t i = 0;
+        while (i < content.size()) {
+            if (content[i] != '"') {
+                ++i;
+                continue;
+            }
+            std::size_t j = i + 1;
+            std::string literal;
+            while (j < content.size() && content[j] != '"') {
+                if (content[j] == '\\' && j + 1 < content.size()) {
+                    ++j;
+                }
+                literal.push_back(content[j]);
+                ++j;
+            }
+            i = j + 1;
+            if (literal.empty()) {
+                continue;
+            }
+            const std::size_t hidden = literal.find("##");
+            if (hidden != std::string::npos) {
+                literal.erase(hidden);
+            }
+            INFO(path << ": " << literal);
+            CHECK(literal.find('!') == std::string::npos);
+            const std::string lowered = lower(literal);
+            for (const std::string& term : banned) {
+                CHECK_FALSE(contains_word(lowered, term));
+            }
+        }
+    }
 }

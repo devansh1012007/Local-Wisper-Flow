@@ -34,7 +34,6 @@ using lwf::ui::Color;
 using lwf::ui::kStudioPalette;
 using lwf::ui::Pack;
 
-constexpr float kCardRadius = 14.0f;
 constexpr float kCardPadding = 20.0f;
 constexpr float kCardGap = 16.0f;
 constexpr float kCardHeight = 172.0f;
@@ -120,10 +119,16 @@ bool TextLink(const char* id, const char* label, float scale) {
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const bool pressed = ImGui::InvisibleButton(id, text_size, ImGuiButtonFlags_EnableNav);
     const bool hovered = ImGui::IsItemHovered();
+    const bool focused = ImGui::IsItemFocused();
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     ImGui::PushFont(nullptr, metrics::font_body_px);
-    draw.AddText(pos, Pack(hovered ? kStudioPalette.teal_500 : kStudioPalette.teal_700), label);
+    draw.AddText(pos, Pack(hovered ? kStudioPalette.ink : kStudioPalette.teal_700), label);
     ImGui::PopFont();
+    if (focused) {
+        draw.AddRect(ImVec2(pos.x - 2.0f * scale, pos.y - 2.0f * scale),
+                     ImVec2(pos.x + text_size.x + 2.0f * scale, pos.y + text_size.y + 2.0f * scale),
+                     Pack(kStudioPalette.teal_700), 2.0f * scale, 0, 2.0f * scale);
+    }
     if (hovered) {
         const float y = pos.y + text_size.y + kLinkUnderlineGap * scale;
         draw.AddLine(ImVec2(pos.x, y), ImVec2(pos.x + text_size.x, y),
@@ -353,7 +358,7 @@ void TransformsPage::DrawCard(const TransformStore::Entry& entry, float width, f
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const std::string child_id = "transforms_card_" + std::to_string(entry.slot);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kStudioPalette.card_bg_white));
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, kCardRadius * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, studio_metrics::radius_card * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
                         ImVec2(kCardPadding * scale, kCardPadding * scale));
     ImGui::BeginChild(child_id.c_str(), ImVec2(width, height), ImGuiChildFlags_Borders);
@@ -388,14 +393,14 @@ void TransformsPage::DrawCard(const TransformStore::Entry& entry, float width, f
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         draw.AddRect(ImVec2(pos.x - 2.0f * scale, pos.y - 2.0f * scale),
                      ImVec2(pos.x + width + 2.0f * scale, pos.y + height + 2.0f * scale),
-                     Pack(kStudioPalette.teal_700), kCardRadius * scale, 0, 2.0f * scale);
+                     Pack(kStudioPalette.teal_700), studio_metrics::radius_card * scale, 0, 2.0f * scale);
     }
 }
 
 void TransformsPage::DrawCreateCard(float width, float height, float scale) {
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kStudioPalette.card_bg_white));
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, kCardRadius * scale);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, studio_metrics::radius_card * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
                         ImVec2(kCardPadding * scale, kCardPadding * scale));
     ImGui::BeginChild("transforms_card_create", ImVec2(width, height), ImGuiChildFlags_Borders);

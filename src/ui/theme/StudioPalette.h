@@ -77,16 +77,31 @@ inline int HeatLevel(int value, int month_max) {
         return 0;
     }
     const float ratio = static_cast<float>(value) / static_cast<float>(month_max);
-    if (ratio > 0.75f) {
+    if (ratio >= 0.75f) {
         return 4;
     }
-    if (ratio > 0.5f) {
+    if (ratio >= 0.5f) {
         return 3;
     }
-    if (ratio > 0.25f) {
+    if (ratio >= 0.25f) {
         return 2;
     }
     return 1;
+}
+
+inline std::uint32_t HeatColor(int level) {
+    switch (level) {
+        case 4:
+            return kStudioPalette.teal_700;
+        case 3:
+            return kStudioPalette.teal_500;
+        case 2:
+            return kStudioPalette.teal_300;
+        case 1:
+            return kStudioPalette.teal_100;
+        default:
+            return kStudioPalette.heat_empty;
+    }
 }
 
 inline std::string UpperSpaced(const std::string& text) {

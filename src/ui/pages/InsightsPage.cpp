@@ -17,6 +17,7 @@ namespace lwf::ui::insights {
 namespace {
 
 using lwf::ui::Color;
+using lwf::ui::HeatColor;
 using lwf::ui::Pack;
 using lwf::ui::kStudioPalette;
 namespace studio_metrics = lwf::ui::studio_metrics;
@@ -42,21 +43,6 @@ void DrawDivider(float scale) {
     ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
 }
 
-std::uint32_t HeatPack(int level) {
-    switch (level) {
-        case 4:
-            return kStudioPalette.teal_700;
-        case 3:
-            return kStudioPalette.teal_500;
-        case 2:
-            return kStudioPalette.teal_300;
-        case 1:
-            return kStudioPalette.teal_100;
-        default:
-            return kStudioPalette.heat_empty;
-    }
-}
-
 void DrawLegend(float scale) {
     const float cell = studio_metrics::activity_cell * scale;
     const float gap = studio_metrics::activity_gap * scale;
@@ -69,7 +55,7 @@ void DrawLegend(float scale) {
     for (int level : levels) {
         const ImVec2 pos = ImGui::GetCursorScreenPos();
         ImGui::Dummy(ImVec2(cell, cell));
-        draw.AddRectFilled(pos, ImVec2(pos.x + cell, pos.y + cell), Pack(HeatPack(level)),
+        draw.AddRectFilled(pos, ImVec2(pos.x + cell, pos.y + cell), Pack(HeatColor(level)),
                            studio_metrics::activity_corner * scale);
         ImGui::SameLine(0.0f, gap);
     }

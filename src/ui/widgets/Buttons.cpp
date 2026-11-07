@@ -131,7 +131,7 @@ bool IconButton(const char* id, const char* glyph, float scale) {
 bool ToggleSwitch(const char* id, bool value, float scale) {
     const char* safe_id = id == nullptr ? "" : id;
     const float w = 52.0f * scale;
-    const float h = 28.0f * scale;
+    const float h = studio_metrics::hit_size * scale;
     const ImVec2 p = ImGui::GetCursorScreenPos();
     const bool toggled = ImGui::InvisibleButton(safe_id, ImVec2(w, h), ImGuiButtonFlags_EnableNav);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
@@ -139,7 +139,7 @@ bool ToggleSwitch(const char* id, bool value, float scale) {
         DrawFocusRing(p, ImVec2(p.x + w, p.y + h), scale);
     }
     draw.AddRectFilled(p, ImVec2(p.x + w, p.y + h),
-                       value ? Pack(kStudioPalette.ink) : Pack(kStudioPalette.border), h * 0.5f);
+                       value ? Pack(kStudioPalette.ink) : Pack(kStudioPalette.muted), h * 0.5f);
     const float knob = 20.0f * scale;
     const float pad = 4.0f * scale;
     const float x = value ? p.x + w - pad - knob : p.x + pad;

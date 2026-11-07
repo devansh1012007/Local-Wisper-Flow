@@ -16,23 +16,9 @@ namespace lwf::ui::widgets {
 namespace {
 
 using lwf::ui::Color;
+using lwf::ui::HeatColor;
 using lwf::ui::kStudioPalette;
 using lwf::ui::Pack;
-
-std::uint32_t HeatColor(int level) {
-    switch (level) {
-        case 4:
-            return kStudioPalette.teal_700;
-        case 3:
-            return kStudioPalette.teal_500;
-        case 2:
-            return kStudioPalette.teal_300;
-        case 1:
-            return kStudioPalette.teal_100;
-        default:
-            return kStudioPalette.heat_empty;
-    }
-}
 
 }
 
