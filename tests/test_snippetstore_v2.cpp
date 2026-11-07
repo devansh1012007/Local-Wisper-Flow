@@ -28,8 +28,8 @@ std::string ReadFile(const std::string& path) {
     return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
 }
 
-SnippetStore StoreWith(std::initializer_list<std::pair<const char*, const char*>> entries) {
-    SnippetStore store;
+void StoreWith(SnippetStore& store,
+               std::initializer_list<std::pair<const char*, const char*>> entries) {
     std::vector<SnippetStore::Entry> items;
     for (const auto& pair : entries) {
         SnippetStore::Entry entry;
@@ -39,13 +39,13 @@ SnippetStore StoreWith(std::initializer_list<std::pair<const char*, const char*>
         items.push_back(std::move(entry));
     }
     store.SetEntries(items);
-    return store;
 }
 
 }
 
 TEST_CASE("v2 validation messages are exact") {
-    SnippetStore store = StoreWith({{"alpha", "bravo"}});
+    SnippetStore store;
+    StoreWith(store, {{"alpha", "bravo"}});
     CHECK(store.Validate("", "some expansion") == "Please enter a word");
     CHECK(store.Validate("   ", "some expansion") == "Please enter a word");
     CHECK(store.Validate("word", "") == "Please enter a snippet");
@@ -70,14 +70,16 @@ TEST_CASE("v2 validation messages are exact") {
 }
 
 TEST_CASE("longest trigger wins in contains mode") {
-    SnippetStore store = StoreWith({{"email", "E"}, {"my email", "ME"}});
+    SnippetStore store;
+    StoreWith(store, {{"email", "E"}, {"my email", "ME"}});
     store.SetMode("contains");
     CHECK(store.Expand("send my email please") == "send ME please");
     CHECK(store.Expand("send email please") == "send E please");
 }
 
 TEST_CASE("expansion casing is preserved") {
-    SnippetStore store = StoreWith({{"sign", "Hello World!!"}});
+    SnippetStore store;
+    StoreWith(store, {{"sign", "Hello World!!"}});
     CHECK(store.Expand("sign") == "Hello World!!");
     CHECK(store.Expand("SIGN") == "Hello World!!");
     store.SetMode("contains");
@@ -85,7 +87,8 @@ TEST_CASE("expansion casing is preserved") {
 }
 
 TEST_CASE("punctuation and extra spaces are ignored only when spoken alone") {
-    SnippetStore store = StoreWith({{"my email", "addr@example.test"}});
+    SnippetStore store;
+    StoreWith(store, {{"my email", "addr@example.test"}});
     CHECK(store.Expand("My Email!!") == "addr@example.test");
     CHECK(store.Expand("my    email") == "addr@example.test");
     CHECK(store.Expand("please my email") == "please my email");
@@ -94,7 +97,8 @@ TEST_CASE("punctuation and extra spaces are ignored only when spoken alone") {
 }
 
 TEST_CASE("empty expansion removes the entry after the length check") {
-    SnippetStore store = StoreWith({{"sign", "sig"}, {"other", "o"}});
+    SnippetStore store;
+    StoreWith(store, {{"sign", "sig"}, {"other", "o"}});
     std::string error = "sentinel";
     CHECK(store.Upsert("sign", "", error));
     CHECK(error.empty());
@@ -108,7 +112,8 @@ TEST_CASE("empty expansion removes the entry after the length check") {
 }
 
 TEST_CASE("empty trigger is ignored and whole-word matching is case-insensitive") {
-    SnippetStore store = StoreWith({{"my email", "addr@example.test"}});
+    SnippetStore store;
+    StoreWith(store, {{"my email", "addr@example.test"}});
     std::string error = "sentinel";
     CHECK_FALSE(store.Upsert("", "x", error));
     CHECK(store.Entries().size() == 1);
