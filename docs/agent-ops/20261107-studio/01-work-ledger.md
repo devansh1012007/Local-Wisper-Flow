@@ -48,9 +48,9 @@
 | T-026 | C1-C2 | llm | DEEP | OpenRouterProvider + Contract + llm_provider key + gate | pending |
 
 ## Waves (planned)
-- W0: verification (read-only investigators, 4 domains).
-- W1: data layer T-001, T-002..T-010 (parallel, disjoint write-sets; CMakeLists.txt + check_no_network.sh via P02 same-commit + follow-up integration agent if needed).
-- W2: engine hooks T-011..T-013 + A1 (T-022) in parallel.
+- W0: verification (read-only investigators, 4 domains). DONE — 4 reports; corrections folded (HistoryStore zero prod callers; live clipboard = WindowsSelectionCapture; app/duration gap; quiet_speech_boost dead no-op; UiBus no default case).
+- W1: data layer T-001, T-002..T-010. DONE (gate GREEN 23/23, 308/308; REV BLOCKER+6 MAJOR fixed by W1-IMPR-01; delta PASS). Commits e9752fc..3571116 + fixes.
+- W2: engine hooks T-011..T-013 + A1 (T-022). IMPLEMENTED, integration build pending (ea22607). E1+E2 interleaved hunks committed together (shared DictationEngine.cpp); main.cpp fully wired by E3 (StatsStore, StartTransform, OpenScratchpad). Gate + review pending build.
 - W3: shell T-014 (single writer for MainWindow) then T-015.
 - W4: workstream A T-023..T-025 + pages T-016..T-020 (parallel, disjoint).
 - W5: polish T-021 + workstream C T-026. Final review + gate + SUMMARY.
