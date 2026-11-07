@@ -31,8 +31,21 @@
 - Review plan: 1 code reviewer (MainWindow+pages) + 1 test reviewer (ban + pin flips), each blind-first.
 - Status: AWAITING USER APPROVAL (=orchestrator gate)
 
+## Wave 1 triage 2026-11-08 (orchestrator)
+- Reviewers: W1-REV-01 APPROVE (0 BLOCKER/0 MAJOR), W1-TREV-01 APPROVE-WITH-CHANGES (0 BLOCKER/1 MAJOR)
+- Dispositions:
+  - CODE R-W1-001 MINOR (Transforms paired arithmetic) -> FIX (improvement cycle 1, same-value zero delta)
+  - CODE R-W1-002/003/004 NIT -> DEFER/REJECT-docs-only (RowList dead code, editor-sharing note, count wording) — no code change
+  - TEST R-W1-001 MAJOR (no negative scanner test) -> FIX (improvement cycle 1, direct scanner unit tests)
+  - TEST R-W1-002 MINOR (per-site mapping unpinned) -> DEFER to P-006 screenshots (systemic lexical residual)
+  - TEST R-W1-003/004 MINOR (file glob, loophole class) -> DEFER Wave 2
+  - TEST R-W1-005 MINOR (CWD partial) -> DEFER (pre-existing, not regression)
+  - TEST R-W1-006 NIT -> REJECT (unrealistic CI path)
+- Improvement: W1-IMPR-01 (Transforms tokens, general) + W1-IMPR-02 (scanner negative test, coder), disjoint files, then re-gate + delta review. 1 of 2 cycles used.
+
 ## Orchestrator recovery note 2026-11-08
 - Wave 1 plan commit landed on main (572ec21) instead of ops branch; ORCH cherry-picked it to ops as 81b82db to restore single-branch invariant. Main is now 1 ahead with same docs. No code involved. Verify with git branch -vv before Wave 1.
+- Review branch anomaly: W1-REV-01 found HEAD on fix/dict-rows-imgui-error with foreign dirty tree (Dummy fix). Foreign commit 8773d94 exists on fix branch, NOT on ops. ORCH preserved W1-REV-01 report via fix-branch docs commits 570072c/dd83222, cherry-picked to ops as 1c101a7/40c748e. Foreign plan file docs/plans/2026-11-08-dict-rows-imgui-dummy.md left untracked, untouched. ops branch is working branch.
 
 ## Conflict resolution notes
 - C1 write-write MainWindow vs pages/widgets resolved by W1.tsv disjoint files; widgets assigned solely to W1-IMPL-02 (Wave 1), not split with W1-IMPL-01
