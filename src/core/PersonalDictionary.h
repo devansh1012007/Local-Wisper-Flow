@@ -17,12 +17,15 @@ public:
     bool Loaded() const;
 
     std::string InitialPrompt(std::size_t cap_chars = 600) const;
-    std::string Enforce(const std::string& text, bool fuzzy_enabled) const;
+    std::string Enforce(const std::string& text, bool fuzzy_enabled,
+                        std::size_t* fix_count = nullptr) const;
+    bool Reload();
 
     static std::size_t EditDistance(const std::string& a, const std::string& b);
 
 private:
     std::vector<std::string> words_;
     std::vector<std::pair<std::string, std::string>> replacements_;
+    std::string path_;
     bool loaded_ = false;
 };

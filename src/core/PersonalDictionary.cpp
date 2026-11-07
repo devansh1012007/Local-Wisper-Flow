@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -87,6 +88,7 @@ bool WholeWordFindInsensitive(const std::string& text, const std::string& needle
 }
 
 bool PersonalDictionary::Load(const std::string& path) {
+    path_ = path;
     std::ifstream file(path);
     if (!file.is_open()) {
         return false;
@@ -101,7 +103,29 @@ bool PersonalDictionary::Load(const std::string& path) {
     std::vector<std::string> words;
     std::vector<std::pair<std::string, std::string>> replacements;
 
-    if (json.is_array()) {
+    if (json.is_object() && json.contains("schema_version") &&
+        json["schema_version"].is_number() &&
+        json["schema_version"].get<std::int64_t>() == 2) {
+        if (!json.contains("entries") || !json["entries"].is_array()) {
+            return false;
+        }
+        for (const auto& element : json["entries"]) {
+            if (!element.is_object()) {
+                continue;
+            }
+            if (!element.contains("phrase") || !element["phrase"].is_string()) {
+                continue;
+            }
+            const std::string phrase = element["phrase"].get<std::string>();
+            words.push_back(phrase);
+            if (element.contains("replacement") && element["replacement"].is_string()) {
+                const std::string replacement = element["replacement"].get<std::string>();
+                if (!replacement.empty()) {
+                    replacements.emplace_back(phrase, replacement);
+                }
+            }
+        }
+    } else if (json.is_array()) {
         for (const auto& element : json) {
             if (element.is_string()) {
                 words.push_back(element.get<std::string>());
@@ -136,6 +160,13 @@ bool PersonalDictionary::Load(const std::string& path) {
     replacements_ = std::move(replacements);
     loaded_ = true;
     return true;
+}
+
+bool PersonalDictionary::Reload() {
+    if (path_.empty()) {
+        return false;
+    }
+    return Load(path_);
 }
 
 void PersonalDictionary::SetWords(std::vector<std::string> words) {
@@ -227,7 +258,9 @@ std::size_t PersonalDictionary::EditDistance(const std::string& a, const std::st
     return previous[cols - 1];
 }
 
-std::string PersonalDictionary::Enforce(const std::string& text, bool fuzzy_enabled) const {
+std::string PersonalDictionary::Enforce(const std::string& text, bool fuzzy_enabled,
+                                        std::size_t* fix_count) const {
+    std::size_t local_count = 0;
     std::string out = text;
 
     for (const auto& [from, to] : replacements_) {
@@ -242,6 +275,7 @@ std::string PersonalDictionary::Enforce(const std::string& text, bool fuzzy_enab
                 break;
             }
             out = result;
+            ++local_count;
         }
     }
 
@@ -275,10 +309,16 @@ std::string PersonalDictionary::Enforce(const std::string& text, bool fuzzy_enab
             }
         }
 
+        if (!replacement_word.empty()) {
+            ++local_count;
+        }
         rebuilt += out.substr(last, token.begin - last);
         rebuilt += replacement_word.empty() ? original : replacement_word;
         last = token.end;
     }
     rebuilt += out.substr(last);
+    if (fix_count != nullptr) {
+        *fix_count = local_count;
+    }
     return rebuilt;
 }
