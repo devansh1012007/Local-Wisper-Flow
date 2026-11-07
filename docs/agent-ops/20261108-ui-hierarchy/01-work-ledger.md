@@ -31,6 +31,9 @@
 - Review plan: 1 code reviewer (MainWindow+pages) + 1 test reviewer (ban + pin flips), each blind-first.
 - Status: AWAITING USER APPROVAL (=orchestrator gate)
 
+## Orchestrator recovery note 2026-11-08
+- Wave 1 plan commit landed on main (572ec21) instead of ops branch; ORCH cherry-picked it to ops as 81b82db to restore single-branch invariant. Main is now 1 ahead with same docs. No code involved. Verify with git branch -vv before Wave 1.
+
 ## Conflict resolution notes
 - C1 write-write MainWindow vs pages/widgets resolved by W1.tsv disjoint files; widgets assigned solely to W1-IMPL-02 (Wave 1), not split with W1-IMPL-01
 - C5 test collision resolved: tests/* sole writer W1-IMPL-03; T-001/T-002 forbid tests
