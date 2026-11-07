@@ -329,6 +329,7 @@ void DictionaryPage::DrawRows(float scale) {
                 }
             }
             ImGui::SetCursorScreenPos(saved_cursor);
+            ImGui::Dummy(ImVec2(0.0f, 0.0f));
         }
     }
     ImGui::EndChild();
