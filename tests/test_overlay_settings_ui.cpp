@@ -736,6 +736,15 @@ TEST_CASE("studio palette layout tokens follow the shape scale") {
     CHECK(metrics::activity_corner == 3.0f);
     CHECK(metrics::gauge_stroke == 14.0f);
     CHECK(metrics::progress_height == 28.0f);
+    CHECK(metrics::font_card_title_px == 15.0f);
+    CHECK(metrics::font_heading_px == 24.0f);
+    CHECK(metrics::font_subheading_px == 17.0f);
+    CHECK(metrics::font_glyph_px == 10.0f);
+    CHECK(metrics::gap_micro == 6.0f);
+    CHECK(metrics::gap_inline == 8.0f);
+    CHECK(metrics::gap_compact == 10.0f);
+    CHECK(metrics::gap_section == 12.0f);
+    CHECK(metrics::gap_block == 16.0f);
 }
 
 TEST_CASE("studio palette contrast passes on ink and teal pairs and muted on card fills") {
@@ -1124,8 +1133,10 @@ bool ParseNumberAt(const std::string& line, std::size_t pos, double& value) {
 // literal outside this table, or above its cap, fails the ban. Caps are
 // ceilings, not targets: tokenizing a gap site (or hoisting it to a named
 // constant) only lowers the count and keeps the test green. Wave 2 T-003
-// owns the token decisions for every entry below; do not remap them to a
-// nearest-value token (that would shift rendered pixels under a green test).
+// closed every entry below by adding the 9 studio_metrics tokens and
+// file-local hoists; the table ships empty and must stay empty. Do not
+// remap a future gap to a nearest-value token (that would shift rendered
+// pixels under a green test).
 struct BanAllowance {
     const char* file;
     const char* api;
@@ -1133,30 +1144,7 @@ struct BanAllowance {
     std::size_t cap;
 };
 
-const BanAllowance kBanAllowances[] = {
-    // Headings with no type token anywhere (24/17/10).
-    {"src/ui/pages/InsightsPage.cpp", "PushFont", 10.0, 2},
-    {"src/ui/pages/InsightsPage.cpp", "PushFont", 24.0, 2},
-    {"src/ui/pages/ScratchpadPage.cpp", "PushFont", 17.0, 1},
-    {"src/ui/widgets/Buttons.cpp", "PushFont", 24.0, 1},
-    // Section/row gaps with no spacing token (12/10/6).
-    {"src/ui/pages/DictionaryPage.cpp", "DummyHeight", 12.0, 3},
-    {"src/ui/pages/InsightsPage.cpp", "DummyHeight", 12.0, 1},
-    {"src/ui/pages/SnippetsPage.cpp", "DummyHeight", 12.0, 2},
-    {"src/ui/pages/ScratchpadPage.cpp", "DummyHeight", 12.0, 1},
-    {"src/ui/pages/ScratchpadPage.cpp", "DummyHeight", 10.0, 2},
-    {"src/ui/pages/TransformsPage.cpp", "DummyHeight", 12.0, 2},
-    {"src/ui/pages/InsightsPage.cpp", "SameLine", 6.0, 2},
-    {"src/ui/pages/TransformsPage.cpp", "SameLine", 12.0, 6},
-    {"src/ui/pages/TransformsPage.cpp", "SameLine", 10.0, 1},
-    // Rail status-dot indent (no native 14px token; shared with chip pad).
-    {"src/ui/MainWindow.cpp", "DummyWidth", 14.0, 2},
-    // Structural input widths with no token (the -1.0f fill-width sentinel
-    // is handled as a universal value in the scanner, not via this table).
-    {"src/ui/pages/DictionaryPage.cpp", "SetNextItemWidth", 240.0, 1},
-    {"src/ui/pages/DictionaryPage.cpp", "SetNextItemWidth", 360.0, 2},
-    {"src/ui/pages/ScratchpadPage.cpp", "SetNextItemWidth", 240.0, 1},
-};
+const BanAllowance kBanAllowances[] = {};
 
 // Scans one scoped source file for digit literals in the P-005 layout APIs:
 // PushFont(nullptr, N), Dummy(ImVec2(0.0f, N)) (height gap), Dummy(ImVec2(N,
@@ -1266,6 +1254,8 @@ TEST_CASE(
     // capped token-gap allowlist (Wave 2 T-003). Red until T-001/T-002 land;
     // the ban, not a count, is what stops the 37-literal PushFont drift from
     // returning while the page tests stayed green.
+    // New Full-window sources must be added here (see exclusions :1169-1171);
+    // Windows type-check (G3) runs per-file.
     const std::vector<std::string> layout_sources = {
         "src/ui/MainWindow.cpp",
         "src/ui/pages/DictionaryPage.cpp",
@@ -1300,31 +1290,34 @@ TEST_CASE(
     };
     const auto has_studio_font = [](const std::string& text) {
         return text.find("PushFont(nullptr, studio_metrics::font_") !=
-               std::string::npos;
+                   std::string::npos ||
+               text.find("PushFont(nullptr, lwf::ui::studio_metrics::font_") !=
+                   std::string::npos;
     };
     const std::string dictionary = ReadSource("src/ui/pages/DictionaryPage.cpp");
     const std::string insights = ReadSource("src/ui/pages/InsightsPage.cpp");
     const std::string snippets = ReadSource("src/ui/pages/SnippetsPage.cpp");
     const std::string transforms = ReadSource("src/ui/pages/TransformsPage.cpp");
     const std::string scratchpad = ReadSource("src/ui/pages/ScratchpadPage.cpp");
+    const std::string mainwindow = ReadSource("src/ui/MainWindow.cpp");
     REQUIRE_FALSE(dictionary.empty());
     REQUIRE_FALSE(insights.empty());
     REQUIRE_FALSE(snippets.empty());
     REQUIRE_FALSE(transforms.empty());
     REQUIRE_FALSE(scratchpad.empty());
+    REQUIRE_FALSE(mainwindow.empty());
+    INFO("MainWindow.cpp");
+    CHECK(has_metrics_font(mainwindow));
     INFO("DictionaryPage.cpp");
-    CHECK(has_metrics_font(dictionary));
+    CHECK(has_studio_font(dictionary));
     INFO("InsightsPage.cpp");
-    CHECK(has_metrics_font(insights));
+    CHECK(has_studio_font(insights));
     INFO("SnippetsPage.cpp");
-    CHECK(has_metrics_font(snippets));
     CHECK(has_studio_font(snippets));
     INFO("TransformsPage.cpp");
-    CHECK(has_metrics_font(transforms));
+    CHECK(has_studio_font(transforms));
     INFO("ScratchpadPage.cpp");
-    const bool has_token_font =
-        has_metrics_font(scratchpad) || has_studio_font(scratchpad);
-    CHECK(has_token_font);
+    CHECK(has_studio_font(scratchpad));
 }
 
 TEST_CASE("layout literal ban fires on violations and cap-exceeds") {
@@ -1336,12 +1329,13 @@ TEST_CASE("layout literal ban fires on violations and cap-exceeds") {
         "ImGui::PushFont(nullptr, 13.0f);\n");
     CHECK_FALSE(digit_violation.empty());
 
-    // Buttons.cpp PushFont 24.0 cap is 1; two hits exceed it.
-    const std::vector<std::string> cap_exceed = ScanLayoutLiterals(
+    // Buttons.cpp has no PushFont allowance (table empty); both lines are
+    // digit violations.
+    const std::vector<std::string> digit_violations = ScanLayoutLiterals(
         "src/ui/widgets/Buttons.cpp",
         "ImGui::PushFont(nullptr, 24.0f);\n"
         "ImGui::PushFont(nullptr, 24.0f);\n");
-    CHECK_FALSE(cap_exceed.empty());
+    CHECK_FALSE(digit_violations.empty());
 
     // Universal geometric factors never violate.
     const std::vector<std::string> universals = ScanLayoutLiterals(
@@ -1363,10 +1357,22 @@ TEST_CASE("layout literal ban fires on violations and cap-exceeds") {
     CHECK(sentinel_width.empty());
 
     // Dummy double-anchor safety: DummyWidth sees the 0.0f first component
-    // (universal, skipped), DummyHeight sees the 12.0f height within the
-    // DictionaryPage cap of 3, so a single gap line is not a violation.
-    const std::vector<std::string> dummy_safe = ScanLayoutLiterals(
+    // (universal, skipped), DummyHeight sees the 12.0f height. The allowance
+    // table is empty, so the literal 12.0f is now a violation.
+    const std::vector<std::string> dummy_literal = ScanLayoutLiterals(
         "src/ui/pages/DictionaryPage.cpp",
         "ImGui::Dummy(ImVec2(0.0f, 12.0f));\n");
-    CHECK(dummy_safe.empty());
+    CHECK_FALSE(dummy_literal.empty());
+
+    // A tokened gap is genuinely safe (token exemption).
+    const std::vector<std::string> dummy_tokened = ScanLayoutLiterals(
+        "src/ui/pages/DictionaryPage.cpp",
+        "ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_section * scale));\n");
+    CHECK(dummy_tokened.empty());
+
+    // A universal-factor gap is genuinely safe.
+    const std::vector<std::string> dummy_universal = ScanLayoutLiterals(
+        "src/ui/pages/DictionaryPage.cpp",
+        "ImGui::Dummy(ImVec2(0.0f, 1.0f));\n");
+    CHECK(dummy_universal.empty());
 }
