@@ -42,6 +42,7 @@
   - TEST R-W1-005 MINOR (CWD partial) -> DEFER (pre-existing, not regression)
   - TEST R-W1-006 NIT -> REJECT (unrealistic CI path)
 - Improvement: W1-IMPR-01 (Transforms tokens, general) + W1-IMPR-02 (scanner negative test, coder), disjoint files, then re-gate + delta review. 1 of 2 cycles used.
+- Improvement results: W1-IMPR-01 code 1f7a71d (Transforms 3 sites same-value), W1-IMPR-02 code bbc8a14 (6 CHECKs negative scanner test, neutered-scanner probe 3/6 fail proven). Gate w1-2 green (ctest 1/1 Passed 19.97s). Delta W1-DELTA-01 APPROVE (fdf5892). Wave 1 CLOSED 2026-11-08. Remain deferred to Wave 2: code R-W1-002 (RowList dead code), test R-W1-002..006 (mapping pins, glob, loopholes, CWD), plus token-gap allowlist 26 sites. Screenshots P-006 still pending.
 
 ## Orchestrator recovery note 2026-11-08
 - Wave 1 plan commit landed on main (572ec21) instead of ops branch; ORCH cherry-picked it to ops as 81b82db to restore single-branch invariant. Main is now 1 ahead with same docs. No code involved. Verify with git branch -vv before Wave 1.
