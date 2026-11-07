@@ -60,6 +60,7 @@ endif()
 
 set(LWF_CORE_SOURCES
     src/core/AppContextResolver.cpp
+    src/core/ApiKeyStore.cpp
     src/core/AtomicFile.cpp
     src/core/AudioGain.cpp
     src/core/CommandModeController.cpp
@@ -180,6 +181,8 @@ add_executable(lwf_tests
     tests/test_transform.cpp
     tests/test_transformstore.cpp
     tests/test_uibus.cpp
+    tests/test_apikeystore.cpp
+    tests/test_scratchpad_target.cpp
 )
 target_include_directories(lwf_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(lwf_tests PRIVATE LWF_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

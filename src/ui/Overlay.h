@@ -55,6 +55,9 @@ public:
     // Called when the user clicks the Paused badge (resume dictation).
     void SetActivateHandler(std::function<void()> handler);
 
+    void SetScratchpadVisible(bool visible);
+    void SetScratchpadActivateHandler(std::function<void()> handler);
+
     bool Visible() const;
     void RenderFrame(float delta_seconds);
 
@@ -86,6 +89,7 @@ private:
     bool poll_near_dot_ = false;
     bool poll_hover_dot_ = false;
     bool poll_button_down_ = false;
+    bool poll_note_hover_ = false;
     // INVARIANT: levels_scratch_ is reused across Listening frames so the
     // per-frame render performs zero heap allocations.
     std::vector<float> levels_scratch_;
@@ -124,4 +128,6 @@ private:
     int saved_y_ = 0;
     std::function<void(int, int)> on_position_persist_;
     std::function<void()> on_activate_;
+    bool scratchpad_visible_ = false;
+    std::function<void()> on_scratchpad_activate_;
 };

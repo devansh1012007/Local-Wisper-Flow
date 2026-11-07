@@ -21,6 +21,8 @@ struct SttConsentVerdict {
     std::string reason;
 };
 
+class ApiKeyStore;
+
 SttConsentVerdict EvaluateCloudConsent(const SttConsentInputs& inputs);
 
 bool IsKnownCloudProvider(const std::string& name);
@@ -28,3 +30,5 @@ bool IsKnownCloudProvider(const std::string& name);
 std::vector<std::string> KnownCloudProviders();
 
 const char* ApiKeyEnvFor(const std::string& name);
+
+std::string ResolveApiKey(const std::string& provider, const ApiKeyStore& store);

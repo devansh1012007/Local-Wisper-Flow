@@ -1,10 +1,33 @@
 #pragma once
 
+#include "core/ITextInjector.h"
+
 #include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
+
+class ScratchpadBuffer {
+public:
+    void Append(const std::string& text);
+    std::string Text() const;
+    void Clear();
+
+private:
+    mutable std::mutex mutex_;
+    std::string text_;
+};
+
+class ScratchpadInjector final : public ITextInjector {
+public:
+    explicit ScratchpadInjector(ScratchpadBuffer& buffer);
+
+    void InjectText(const std::string& text) override;
+
+private:
+    ScratchpadBuffer& buffer_;
+};
 
 class NotesStore {
 public:

@@ -6,6 +6,7 @@
 #ifdef _WIN32
 #include "audio/MiniaudioCapture.h"
 #include "audio/TonePlayer.h"
+#include "core/ApiKeyStore.h"
 #include "core/AppContextResolver.h"
 #include "core/CommandModeController.h"
 #include "core/DictationCleanup.h"
@@ -25,11 +26,14 @@
 #include "core/InjectionException.h"
 #include "core/ITextInjector.h"
 #include "core/Log.h"
+#include "core/NotesStore.h"
 #include "core/PersonalDictionary.h"
 #include "core/SettingsStore.h"
 #include "core/SnippetStore.h"
 #include "core/SpokenCommandProcessor.h"
+#include "core/StatsStore.h"
 #include "core/TextPipeline.h"
+#include "core/TransformStore.h"
 #include "core/AppVersion.h"
 #include "core/ConsentGate.h"
 #include "core/CrashReporter.h"
@@ -298,6 +302,9 @@ int main() {
         }
         config.Store().SetBool("first_run", config.Store().GetBool("first_run"));
 
+        ApiKeyStore api_keys(data_dir + "\\api_keys.json");
+        NotesStore notes(data_dir);
+
         UiBus ui_bus;
         AttentionBox attention;
         Overlay overlay;
@@ -394,9 +401,7 @@ int main() {
         std::unique_ptr<ISttProvider> cloud_provider;
         WindowsHttpClient http_client;
         if (IsKnownCloudProvider(stt_provider_name)) {
-            const char* key_env = ApiKeyEnvFor(stt_provider_name);
-            const char* key_value = key_env != nullptr ? std::getenv(key_env) : nullptr;
-            const std::string api_key = key_value != nullptr ? key_value : "";
+            const std::string api_key = ResolveApiKey(stt_provider_name, api_keys);
             SttConsentInputs consent_inputs;
             consent_inputs.provider = stt_provider_name;
             consent_inputs.consent_accepted = stt_consent;
@@ -442,10 +447,8 @@ int main() {
         SttRoutingConfig stt_routing;
         stt_routing.provider = stt_provider_name;
         stt_routing.consent_accepted = stt_consent;
-        stt_routing.api_key_source = [stt_provider_name] {
-            const char* env_name = ApiKeyEnvFor(stt_provider_name);
-            const char* key = env_name != nullptr ? std::getenv(env_name) : nullptr;
-            return key != nullptr ? std::string(key) : std::string();
+        stt_routing.api_key_source = [stt_provider_name, &api_keys] {
+            return ResolveApiKey(stt_provider_name, api_keys);
         };
         auto local_chain = std::make_unique<LocalProviderStack>(local_stack, passthrough_llm);
         SttRouter stt_router(std::move(local_chain), std::move(cloud_provider), stt_routing);
@@ -455,6 +458,10 @@ int main() {
                              config.Store().GetBool("keep_raw_in_history"),
                              config.Store().GetInt("history_max_entries"),
                              config.Store().GetInt("history_max_age_days"));
+
+        StatsStore usage_stats(data_dir + "\\stats.json", config.Store().GetBool("keep_usage_stats"));
+        TransformStore transforms;
+        transforms.Load(data_dir + "\\transforms.json");
 
         EngineBridge bridge(attention, tray, history);
         for (const auto& notice : startup_errors) {
@@ -490,8 +497,16 @@ int main() {
                                clock, bridge, settings);
         engine.SetToneFeedback(&tone_player);
         engine.SetCommandController(&command_controller);
+        engine.SetStatsStore(&usage_stats);
+        engine.SetActiveWindow(CreateActiveWindow());
+        engine.SetAppContextResolver(&app_context);
+        engine.SetScratchpadTarget(false);
+        engine.SetTransformStore(&transforms);
+        engine.SetTransformLlm(llm);
+        engine.SetSelectionCapture(&selection_capture);
 
         std::vector<Binding> hotkey_bindings = LoadBindings(config.Store());
+        transforms.SetHotkeyBindings(hotkey_bindings);
         HotkeyTracker::Options hotkey_options;
         hotkey_options.avoid_altgr_conflict = config.Store().GetBool("avoid_altgr_conflict");
         hotkey_options.double_tap_window_ms = config.Store().GetInt("double_tap_window_ms");
@@ -522,6 +537,10 @@ int main() {
             overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
             overlay.SetActivateHandler([&ui_bus] {
                 ui_bus.PostCommand(UiCommandType::SetEnabled, "1");
+            });
+            overlay.SetScratchpadVisible(config.Store().GetBool("scratchpad_flow_bar"));
+            overlay.SetScratchpadActivateHandler([&ui_bus] {
+                ui_bus.PostCommand(UiCommandType::OpenScratchpad);
             });
         } else {
             lwf::Log::Error("mini badge init failed; continuing without it");
@@ -566,12 +585,30 @@ int main() {
                         spoken.SetAggressive(config.Store().GetBool("spoken_commands_aggressive"));
                         snippets.SetMode(config.Store().GetString("snippet_mode"));
                         overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
+                        usage_stats.SetUsageStatsEnabled(config.Store().GetBool("keep_usage_stats"));
+                        overlay.SetScratchpadVisible(config.Store().GetBool("scratchpad_flow_bar"));
                         break;
                     case UiCommandType::ToggleAutostart:
                         Autostart::SetEnabled(!Autostart::IsEnabled());
                         break;
                     case UiCommandType::Quit:
                         quit.store(true);
+                        break;
+                    case UiCommandType::StartTransform: {
+                        int slot = 0;
+                        try {
+                            if (!command.payload.empty()) {
+                                slot = std::stoi(command.payload);
+                            }
+                        } catch (const std::exception&) {
+                            slot = 0;
+                        }
+                        engine.RequestTransform(slot);
+                        break;
+                    }
+                    case UiCommandType::OpenScratchpad:
+                        lwf::Log::Info("scratchpad open requested");
+                        full.SetVisible(true);
                         break;
                 }
             }

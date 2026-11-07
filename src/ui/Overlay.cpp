@@ -205,6 +205,18 @@ void Overlay::SetActivateHandler(std::function<void()> handler) {
     on_activate_ = std::move(handler);
 }
 
+void Overlay::SetScratchpadVisible(bool visible) {
+    if (scratchpad_visible_ == visible) {
+        return;
+    }
+    scratchpad_visible_ = visible;
+    dirty_ = true;
+}
+
+void Overlay::SetScratchpadActivateHandler(std::function<void()> handler) {
+    on_scratchpad_activate_ = std::move(handler);
+}
+
 bool Overlay::Visible() const {
     return state_ != OverlayModel::PillState::Hidden;
 }
@@ -297,13 +309,21 @@ void Overlay::RenderFrame(float delta_seconds) {
             poll_inflate);
         const bool poll_hover_dot = WindowStyles::IsCursorInsideRect(
             poll_win_x + poll_dot_min_x, poll_win_y, poll_dot_px, poll_dot_px, 0);
+        bool poll_note_hover = false;
+        if (scratchpad_visible_) {
+            const int poll_note_px = static_cast<int>(16.0f * static_cast<float>(dpi_scale_));
+            const int poll_note_gap = static_cast<int>(4.0f * static_cast<float>(dpi_scale_));
+            const int poll_note_min_x = poll_dot_min_x + poll_dot_px + poll_note_gap;
+            const int poll_note_min_y = (poll_dot_px - poll_note_px) / 2;
+            poll_note_hover = WindowStyles::IsCursorInsideRect(poll_win_x + poll_note_min_x, poll_win_y + poll_note_min_y, poll_note_px, poll_note_px, 0);
+        }
         const bool poll_button_down = WindowStyles::LeftMouseButtonDown();
-        if (poll_near == poll_near_dot_ && poll_hover_dot == poll_hover_dot_ &&
-            poll_button_down == poll_button_down_) {
+        if (poll_near == poll_near_dot_ && poll_hover_dot == poll_hover_dot_ && poll_note_hover == poll_note_hover_ && poll_button_down == poll_button_down_) {
             return;  // Nothing changed; skip the full frame render.
         }
         poll_near_dot_ = poll_near;
         poll_hover_dot_ = poll_hover_dot;
+        poll_note_hover_ = poll_note_hover;
         poll_button_down_ = poll_button_down;
         dirty_ = true;
     }
@@ -377,13 +397,20 @@ void Overlay::DrawBadge() {
     const bool near_dot = WindowStyles::IsCursorInsideRect(
         win_x + static_cast<int>(dot_min.x), win_y + static_cast<int>(dot_min.y),
         static_cast<int>(dot), static_cast<int>(dot), static_cast<int>(metrics::mini_hover_inflate * scale));
+    bool near_note = false;
+    if (scratchpad_visible_) {
+        const float note_size = 16.0f * scale;
+        const ImVec2 note_min(dot_max.x + 4.0f * scale, dot_min.y + (dot - note_size) * 0.5f);
+        near_note = WindowStyles::IsCursorInsideRect(win_x + static_cast<int>(note_min.x), win_y + static_cast<int>(note_min.y), static_cast<int>(note_size), static_cast<int>(note_size), 0);
+    }
+    const bool near_interactive = near_dot || near_note;
     if (dragging_) {
         if (pass_through_) {
             pass_through_ = false;
             WindowStyles::SetOverlayPassThrough(glfwGetWin32Window(window_), false);
         }
-    } else if (near_dot != !pass_through_) {
-        pass_through_ = !near_dot;
+    } else if (near_interactive != !pass_through_) {
+        pass_through_ = !near_interactive;
         WindowStyles::SetOverlayPassThrough(glfwGetWin32Window(window_), pass_through_);
     }
 
@@ -392,6 +419,20 @@ void Overlay::DrawBadge() {
     ImGui::InvisibleButton("##dot", ImVec2(dot, dot));
     hovered_ = ImGui::IsItemHovered() || dragging_;
     UpdateDrag(near_dot);
+
+    if (scratchpad_visible_) {
+        const float note_size = 16.0f * scale;
+        const ImVec2 note_min(dot_max.x + 4.0f * scale, dot_min.y + (dot - note_size) * 0.5f);
+        ImGui::SetCursorScreenPos(note_min);
+        const bool note_pressed = ImGui::InvisibleButton("##note", ImVec2(note_size, note_size));
+        if (note_pressed && on_scratchpad_activate_) {
+            on_scratchpad_activate_();
+            dirty_ = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            dirty_ = true;
+        }
+    }
 
     ImDrawList& draw = *ImGui::GetWindowDrawList();
 
@@ -407,6 +448,17 @@ void Overlay::DrawBadge() {
 
     draw.AddCircleFilled(center, radius, Pack(kDarkPalette.surface, kDarkPalette.surface_alpha * badge_alpha), 0);
     draw.AddCircle(center, radius, Pack(kDarkPalette.border, badge_alpha), 0, 1.0f * scale);
+
+    if (scratchpad_visible_) {
+        const float note_px = 16.0f * scale;
+        const ImVec2 note_min(dot_max.x + 4.0f * scale, dot_min.y + (dot - note_px) * 0.5f);
+        const ImVec2 note_max(note_min.x + note_px, note_min.y + note_px);
+        draw.AddRectFilled(note_min, note_max, Pack(kDarkPalette.surface, badge_alpha), 4.0f * scale);
+        draw.AddRect(note_min, note_max, Pack(kDarkPalette.border, badge_alpha), 4.0f * scale, 0, 1.0f * scale);
+        const ImVec2 glyph_min(note_min.x + 4.0f * scale, note_min.y + 4.0f * scale);
+        draw.AddRect(glyph_min, ImVec2(note_max.x - 4.0f * scale, note_max.y - 4.0f * scale), Pack(kDarkPalette.text, badge_alpha), 1.0f * scale, 0, 1.0f * scale);
+        draw.AddLine(ImVec2(glyph_min.x + 2.0f * scale, glyph_min.y + 4.0f * scale), ImVec2(note_max.x - 6.0f * scale, glyph_min.y + 4.0f * scale), Pack(kDarkPalette.text, badge_alpha), 1.0f * scale);
+    }
 
     switch (state_) {
         case OverlayModel::PillState::Ready:

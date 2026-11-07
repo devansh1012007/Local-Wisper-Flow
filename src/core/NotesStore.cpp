@@ -521,3 +521,30 @@ std::size_t NotesStore::Size() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return notes_.size();
 }
+
+void ScratchpadBuffer::Append(const std::string& text) {
+    if (text.empty()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!text_.empty() && text_.back() != '\n') {
+        text_.push_back('\n');
+    }
+    text_.append(text);
+}
+
+std::string ScratchpadBuffer::Text() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return text_;
+}
+
+void ScratchpadBuffer::Clear() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    text_.clear();
+}
+
+ScratchpadInjector::ScratchpadInjector(ScratchpadBuffer& buffer) : buffer_(buffer) {}
+
+void ScratchpadInjector::InjectText(const std::string& text) {
+    buffer_.Append(text);
+}

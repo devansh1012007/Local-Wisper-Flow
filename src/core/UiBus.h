@@ -16,6 +16,8 @@ enum class UiCommandType {
     StartLearnHotkey,
     ApplySettings,
     Quit,
+    StartTransform,
+    OpenScratchpad,
 };
 
 struct UiCommand {
