@@ -529,3 +529,57 @@ TEST_CASE("personal dictionary reload and enforce are thread safe") {
     CHECK(dict.Reload());
     CHECK(dict.Words().size() == 2);
 }
+
+TEST_CASE("delete-all clear before first visit does not reseed on next load") {
+    const std::string dir = TempDir("cleartombstone_previsit");
+    const std::string path = dir + "/dictionary.json";
+    // Reproduce: delete-all (file removed) calls Clear() before the
+    // Dictionary page was ever opened, then the first lazy Load() must
+    // stay empty instead of reseeding "btw".
+    DictionaryStore store(path);
+    store.Clear();
+    CHECK(store.Size() == 0);
+    REQUIRE(std::filesystem::exists(path));
+    CHECK(ReadFile(path).find("btw") == std::string::npos);
+    CHECK(ReadFile(path).find("\"schema_version\": 2") != std::string::npos);
+    CHECK(store.Load());
+    CHECK(store.Size() == 0);
+    CHECK_FALSE(ContainsPhrase(store.Entries(), "btw"));
+}
+
+TEST_CASE("clear leaves an empty file so reload and save stay empty") {
+    const std::string dir = TempDir("cleartombstone_stayempty");
+    const std::string path = dir + "/dictionary.json";
+    DictionaryStore store(path);
+    CHECK(store.Load());
+    REQUIRE(store.Size() == 1);
+    CHECK(store.Save());
+    REQUIRE(std::filesystem::exists(path));
+    // Delete-all order: primary file removed, then Clear() in RAM.
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    CHECK_FALSE(std::filesystem::exists(path));
+    store.Clear();
+    CHECK(store.Size() == 0);
+    REQUIRE(std::filesystem::exists(path));
+    CHECK(ReadFile(path).find("btw") == std::string::npos);
+    // Lazy Reload / next Save must not resurrect entries.
+    CHECK(store.Reload());
+    CHECK(store.Size() == 0);
+    CHECK(store.Save());
+    CHECK(store.Size() == 0);
+    DictionaryStore reloaded(path);
+    CHECK(reloaded.Load());
+    CHECK(reloaded.Size() == 0);
+    CHECK_FALSE(ContainsPhrase(reloaded.Entries(), "btw"));
+}
+
+TEST_CASE("genuine first-run still seeds btw without a prior clear") {
+    const std::string dir = TempDir("cleartombstone_firstrun");
+    const std::string path = dir + "/dictionary.json";
+    DictionaryStore store(path);
+    CHECK_FALSE(std::filesystem::exists(path));
+    CHECK(store.Load());
+    REQUIRE(store.Size() == 1);
+    CHECK(store.Entries()[0].phrase == "btw");
+}

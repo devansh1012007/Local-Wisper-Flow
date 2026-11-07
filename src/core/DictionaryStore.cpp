@@ -412,6 +412,41 @@ void DictionaryStore::Clear() {
     migrated_ = false;
     bak_pending_ = false;
     loaded_ = true;
+    // Tombstone: persist the intentionally-empty state so a later lazy Load()
+    // (first Dictionary page visit after delete-all) reads an empty entries
+    // array instead of hitting the missing-file seed path. Genuine first-run
+    // (file never existed, Clear never called) still seeds "btw" in Load().
+    // Mirrors StatsStore::Clear, which persists "{}" for the same reason.
+    // A subsequent Save() dumps the same empty RAM, so neither Load nor Save
+    // can resurrect entries.
+    if (path_.empty()) {
+        return;
+    }
+    const nlohmann::json root = EntriesToJson(entries_);
+    const std::string tmp_path = path_ + ".tmp";
+    {
+        std::ofstream tmp(tmp_path, std::ios::trunc);
+        if (!tmp.is_open()) {
+            lwf::Log::Warning("dictionary: could not write cleared file");
+            return;
+        }
+        tmp << root.dump(4) << '\n';
+        tmp.flush();
+        if (!tmp.good()) {
+            tmp.close();
+            std::error_code cleanup_ec;
+            std::filesystem::remove(tmp_path, cleanup_ec);
+            lwf::Log::Warning("dictionary: could not write cleared file");
+            return;
+        }
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp_path, path_, ec);
+    if (ec) {
+        std::error_code cleanup_ec;
+        std::filesystem::remove(tmp_path, cleanup_ec);
+        lwf::Log::Warning("dictionary: could not write cleared file");
+    }
 }
 
 bool DictionaryStore::Save() {
