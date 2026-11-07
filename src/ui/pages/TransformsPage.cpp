@@ -92,7 +92,7 @@ std::string KeyLabel(ImGuiKey key) {
 void DrawKeycapRow(const std::vector<std::string>& tokens, float scale) {
     for (std::size_t i = 0; i < tokens.size(); ++i) {
         if (i > 0) {
-            ImGui::SameLine(0.0f, 8.0f * scale);
+            ImGui::SameLine(0.0f, metrics::space_s * scale);
         }
         widgets::Keycap(tokens[i].c_str(), scale);
     }
@@ -104,7 +104,7 @@ float KeycapRowWidth(const std::vector<std::string>& tokens, float scale) {
         if (i > 0) {
             width += 8.0f * scale;
         }
-        ImGui::PushFont(nullptr, 13.0f);
+        ImGui::PushFont(nullptr, metrics::font_body_px);
         const float text_w = ImGui::CalcTextSize(tokens[i].c_str()).x;
         ImGui::PopFont();
         width += text_w + 24.0f * scale;
@@ -168,6 +168,7 @@ void TransformsPage::DrawHeader(float scale) {
     ImGui::PopFont();
     const ImVec2 title_min = ImGui::GetItemRectMin();
     const ImVec2 title_max = ImGui::GetItemRectMax();
+    // ALLOWLIST (Wave 2 T-003): 12px gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
     ImGui::SameLine(0.0f, 12.0f * scale);
     widgets::BadgeBeta(scale);
 
@@ -194,21 +195,24 @@ void TransformsPage::DrawHeader(float scale) {
     ImGui::PushFont(nullptr, metrics::font_body_px);
     ImGui::TextUnformatted("Opt in");
     ImGui::PopFont();
+    // ALLOWLIST (Wave 2 T-003): 10px gap has no same-value spacing token; mapping would shift pixels. Value frozen.
     ImGui::SameLine(0.0f, 10.0f * scale);
     if (widgets::IconButton("transforms_info", "i", scale)) {
         how_modal_.Open();
     }
-    ImGui::SameLine(0.0f, 8.0f * scale);
+    ImGui::SameLine(0.0f, metrics::space_s * scale);
     if (widgets::ToggleSwitch("transforms_optin", OptIn(), scale)) {
         SetOptIn(!OptIn());
     }
+    // ALLOWLIST (Wave 2 T-003): 12px gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
     ImGui::SameLine(0.0f, 12.0f * scale);
     DrawKeycapRow(tokens, scale);
-    ImGui::SameLine(0.0f, 8.0f * scale);
+    ImGui::SameLine(0.0f, metrics::space_s * scale);
     ImGui::PushFont(nullptr, metrics::font_body_px);
     ImGui::TextUnformatted("to view changes");
     ImGui::PopFont();
     if (HasDiff()) {
+        // ALLOWLIST (Wave 2 T-003): 12px gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
         ImGui::SameLine(0.0f, 12.0f * scale);
         if (widgets::LightButton("transforms_view_diff", "View changes", scale)) {
             OpenDiff();
@@ -272,7 +276,7 @@ void TransformsPage::DrawBanner(float scale) {
     if (widgets::LightButton("transforms_try", "Try it out", scale)) {
         TryItOut();
     }
-    ImGui::SameLine(0.0f, 16.0f * scale);
+    ImGui::SameLine(0.0f, metrics::space_m * scale);
     if (TextLink("transforms_how", "How it works", scale)) {
         how_modal_.Open();
     }
@@ -306,6 +310,7 @@ void TransformsPage::DrawMyTransforms(float scale) {
     if (widgets::OutlinePill("transforms_reset", "Reset to defaults", true, scale)) {
         reset_modal_.Open();
     }
+    // ALLOWLIST (Wave 2 T-003): 12px gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
     ImGui::SameLine(0.0f, 12.0f * scale);
     if (ShowCreateCard()) {
         if (widgets::PrimaryButton("transforms_create", "Create New", scale)) {
@@ -373,11 +378,11 @@ void TransformsPage::DrawCard(const TransformStore::Entry& entry, float width, f
     ImGui::TextColored(Color(kStudioPalette.muted), "%s", subtitle.c_str());
     ImGui::PopTextWrapPos();
     ImGui::PopFont();
-    ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
     const std::vector<std::string> tokens = transforms::SplitKeycaps(entry.shortcut);
     DrawKeycapRow(tokens, scale);
     if (store_.Conflicted(entry.slot)) {
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
+        ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
         ImGui::PushFont(nullptr, metrics::font_body_px);
         ImGui::TextColored(Color(kStudioPalette.muted), "%s", "Shortcut conflict");
         ImGui::PopFont();
@@ -461,7 +466,7 @@ void TransformsPage::DrawEditor(float scale) {
         ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Transform");
         ImGui::PopFont();
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
+        ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
         if (recording_) {
             ImGui::BeginDisabled();
         }
@@ -472,7 +477,7 @@ void TransformsPage::DrawEditor(float scale) {
         ImGui::InputText("##transforms_name", name_buffer_, sizeof(name_buffer_));
         ImGui::PopItemWidth();
         RefreshFromBuffers();
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
+        ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
         ImGui::PushFont(nullptr, metrics::font_body_px);
         ImGui::TextUnformatted("Prompt");
         ImGui::PopFont();
@@ -486,7 +491,7 @@ void TransformsPage::DrawEditor(float scale) {
             std::to_string(TransformStore::kMaxPromptChars);
         ImGui::TextColored(Color(kStudioPalette.muted), "%s", counter.c_str());
         ImGui::PopFont();
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
+        ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
         ImGui::PushFont(nullptr, metrics::font_body_px);
         ImGui::TextUnformatted("Shortcut");
         ImGui::PopFont();
@@ -502,11 +507,11 @@ void TransformsPage::DrawEditor(float scale) {
             const std::vector<std::string> tokens =
                 transforms::SplitKeycaps(edit_shortcut_);
             DrawKeycapRow(tokens, scale);
-            ImGui::SameLine(0.0f, 8.0f * scale);
+            ImGui::SameLine(0.0f, metrics::space_s * scale);
             if (widgets::LightButton("transforms_record", "Record", scale)) {
                 BeginRecord();
             }
-            ImGui::SameLine(0.0f, 8.0f * scale);
+            ImGui::SameLine(0.0f, metrics::space_s * scale);
             if (widgets::LightButton("transforms_record_clear", "Use default", scale)) {
                 ClearRecordedShortcut();
             }
@@ -515,20 +520,21 @@ void TransformsPage::DrawEditor(float scale) {
             ImGui::BeginDisabled();
         }
         if (!edit_error_.empty()) {
-            ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
+            ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
             ImGui::PushFont(nullptr, metrics::font_body_px);
             ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 24.0f * scale);
             ImGui::TextColored(Color(kStudioPalette.muted), "%s", edit_error_.c_str());
             ImGui::PopTextWrapPos();
             ImGui::PopFont();
         }
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
+        ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
         const int sheet_slot = editing_slot_;
         if (widgets::PrimaryButton("transforms_save", "Save", scale)) {
             if (SaveEdit()) {
                 toast_.Show("Saved", "");
             }
         }
+        // ALLOWLIST (Wave 2 T-003): 12px gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
         ImGui::SameLine(0.0f, 12.0f * scale);
         if (sheet_slot > 2) {
             if (widgets::LightButton("transforms_delete", "Delete", scale)) {
@@ -573,13 +579,15 @@ void TransformsPage::DrawResetConfirm(float scale) {
         ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 24.0f * scale);
         ImGui::TextUnformatted(deleted.c_str());
         ImGui::PopTextWrapPos();
-        ImGui::Dummy(ImVec2(0.0f, 4.0f * scale));
+        ImGui::Dummy(ImVec2(0.0f, metrics::space_xs * scale));
         ImGui::TextUnformatted("Polish and Prompt Engineer return to their defaults.");
         ImGui::PopFont();
+        // ALLOWLIST (Wave 2 T-003): 12px gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
         ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
         if (widgets::LightButton("transforms_reset_cancel", "Cancel", scale)) {
             reset_modal_.Close();
         }
+        // ALLOWLIST (Wave 2 T-003): 12px gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
         ImGui::SameLine(0.0f, 12.0f * scale);
         if (widgets::PrimaryButton("transforms_reset_confirm", "Reset", scale)) {
             PerformReset();
@@ -599,7 +607,7 @@ void TransformsPage::DrawDiff(float scale) {
         ImGui::TextColored(Color(kStudioPalette.muted), "%s",
                            CurrentChangeLabel().c_str());
         ImGui::PopFont();
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
+        ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
         if (!HasDiff()) {
             ImGui::PushFont(nullptr, metrics::font_body_px);
             ImGui::TextUnformatted("No recent change.");
@@ -666,7 +674,7 @@ void TransformsPage::DrawHowItWorks(float scale) {
         ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("How it works");
         ImGui::PopFont();
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
+        ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
         ImGui::PushFont(nullptr, metrics::font_body_px);
         ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 24.0f * scale);
         ImGui::TextUnformatted(transforms::kHowItWorksBody);
@@ -674,6 +682,7 @@ void TransformsPage::DrawHowItWorks(float scale) {
         const std::string hint = "The diff view opens with " + store_.DiffShortcut() + ".";
         ImGui::TextUnformatted(hint.c_str());
         ImGui::PopFont();
+        // ALLOWLIST (Wave 2 T-003): 12px gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
         ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
         if (widgets::PrimaryButton("transforms_how_close", "Close", scale)) {
             how_modal_.Close();

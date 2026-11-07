@@ -32,7 +32,7 @@ void RowList(const char* id, const std::vector<RowListItem>& rows, float scale) 
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
     if (rows.empty()) {
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         const ImVec2 pos = ImGui::GetCursorScreenPos();
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         const ImVec2 text_size = ImGui::CalcTextSize("Not available yet.");
@@ -52,7 +52,7 @@ void RowList(const char* id, const std::vector<RowListItem>& rows, float scale) 
             }
             const float row_h = studio_metrics::row_height * scale;
             const ImVec2 row_pos = ImGui::GetCursorScreenPos();
-            ImGui::PushFont(nullptr, 15.0f);
+            ImGui::PushFont(nullptr, metrics::font_card_title_px);
             ImDrawList& inner = *ImGui::GetWindowDrawList();
             inner.AddText(ImVec2(row_pos.x + 16.0f * scale, row_pos.y + 8.0f * scale),
                           Pack(kStudioPalette.ink), rows[i].title.c_str());
@@ -62,7 +62,7 @@ void RowList(const char* id, const std::vector<RowListItem>& rows, float scale) 
             }
             ImGui::PopFont();
             if (!rows[i].trailing.empty()) {
-                ImGui::PushFont(nullptr, 15.0f);
+                ImGui::PushFont(nullptr, metrics::font_card_title_px);
                 const ImVec2 trail_size = ImGui::CalcTextSize(rows[i].trailing.c_str());
                 ImGui::PopFont();
                 const ImVec2 right = ImVec2(row_pos.x + width - 16.0f * scale - trail_size.x,
@@ -150,20 +150,20 @@ void ProgressPill(const char* id, float value, const char* label, float scale) {
     const float fill_w = w * clamped;
     draw.AddRectFilled(pos, ImVec2(pos.x + fill_w, pos.y + h), Pack(kStudioPalette.teal_500),
                        studio_metrics::radius_pill * scale);
-    ImGui::PushFont(nullptr, 13.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     const ImVec2 text_size = ImGui::CalcTextSize(label == nullptr ? "" : label);
     ImGui::PopFont();
     const int percent = static_cast<int>(std::lround(clamped * 100.0f));
     char percent_buf[16];
     std::snprintf(percent_buf, sizeof(percent_buf), "%d%%", percent);
     if (fill_w >= text_size.x + 24.0f * scale) {
-        ImGui::PushFont(nullptr, 13.0f);
+        ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
         draw.AddText(ImVec2(pos.x + fill_w * 0.5f - text_size.x * 0.5f,
                             pos.y + (h - text_size.y) * 0.5f),
                      Pack(kStudioPalette.card_bg_white), label == nullptr ? "" : label);
         ImGui::PopFont();
     } else {
-        ImGui::PushFont(nullptr, 13.0f);
+        ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
         const ImVec2 badge_size = ImGui::CalcTextSize(percent_buf);
         const float badge_w = badge_size.x + 20.0f * scale;
         const float badge_h = 20.0f * scale;

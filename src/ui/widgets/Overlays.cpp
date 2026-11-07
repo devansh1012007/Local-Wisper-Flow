@@ -124,12 +124,12 @@ void Toast::Draw(float scale) {
         return;
     }
     const float h = studio_metrics::hit_size * scale;
-    ImGui::PushFont(nullptr, 13.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     const ImVec2 text_size = ImGui::CalcTextSize(message_.c_str());
     ImGui::PopFont();
     float w = text_size.x + 32.0f * scale;
     if (!action_label_.empty()) {
-        ImGui::PushFont(nullptr, 13.0f);
+        ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
         const ImVec2 action_size = ImGui::CalcTextSize(action_label_.c_str());
         ImGui::PopFont();
         w += action_size.x + 32.0f * scale;
@@ -139,13 +139,13 @@ void Toast::Draw(float scale) {
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     draw.AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), Pack(kStudioPalette.ink),
                        studio_metrics::radius_pill * scale);
-    ImGui::PushFont(nullptr, 13.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     const float text_y = pos.y + (h - text_size.y) * 0.5f;
     draw.AddText(ImVec2(pos.x + 16.0f * scale, text_y), Pack(kStudioPalette.card_bg_white),
                  message_.c_str());
     ImGui::PopFont();
     if (!action_label_.empty()) {
-        ImGui::PushFont(nullptr, 13.0f);
+        ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
         const ImVec2 action_size = ImGui::CalcTextSize(action_label_.c_str());
         ImGui::PopFont();
         const ImVec2 button_min(pos.x + 16.0f * scale + text_size.x + 8.0f * scale, pos.y);

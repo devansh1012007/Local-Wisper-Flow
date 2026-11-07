@@ -140,10 +140,11 @@ void DictionaryPage::DrawHeader(float scale) {
     ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
     ImGui::TextUnformatted("Dictionary");
     ImGui::PopFont();
-    ImGui::SameLine(0.0f, 16.0f * scale);
+    ImGui::SameLine(0.0f, metrics::space_m * scale);
     if (widgets::PrimaryButton("dict_add_new", "Add new", scale)) {
         OpenAdd();
     }
+    // ALLOWLIST (Wave 2 T-003): 12px section gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
     ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
 }
 
@@ -152,11 +153,12 @@ void DictionaryPage::DrawTabs(float scale) {
     int selected = state_.tab == DictionaryTab::Personal ? 1 : 0;
     widgets::TabRow("##dict_tabs", kTabs, 2, &selected, scale);
     state_.tab = selected == 1 ? DictionaryTab::Personal : DictionaryTab::All;
-    ImGui::SameLine(0.0f, 8.0f * scale);
+    ImGui::SameLine(0.0f, metrics::space_s * scale);
     widgets::OutlinePill("##dict_shared_tab", "Shared with team", false, scale);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         ImGui::SetTooltip("Shared with team is not available locally");
     }
+    // ALLOWLIST (Wave 2 T-003): 12px section gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
     ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
 }
 
@@ -173,7 +175,7 @@ void DictionaryPage::DrawToolbar(float scale) {
                                  sizeof(search_buffer_))) {
         state_.search = search_buffer_;
     }
-    ImGui::SameLine(0.0f, 8.0f * scale);
+    ImGui::SameLine(0.0f, metrics::space_s * scale);
     if (widgets::LightButton("dict_sort", SortLabel(state_.sort), scale)) {
         ImGui::OpenPopup("##dict_sort_menu");
     }
@@ -189,13 +191,14 @@ void DictionaryPage::DrawToolbar(float scale) {
         }
         ImGui::EndPopup();
     }
-    ImGui::SameLine(0.0f, 8.0f * scale);
+    ImGui::SameLine(0.0f, metrics::space_s * scale);
     if (widgets::LightButton("dict_refresh", "Refresh", scale)) {
         (void)store_.Reload();
         if (dict_ != nullptr) {
             (void)dict_->Reload();
         }
     }
+    // ALLOWLIST (Wave 2 T-003): 12px section gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
     ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
 }
 
@@ -217,7 +220,7 @@ void DictionaryPage::DrawBanner(float scale) {
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap * scale));
         for (std::size_t i = 0; i < chips.size(); ++i) {
             if (i > 0) {
-                ImGui::SameLine(0.0f, 8.0f * scale);
+                ImGui::SameLine(0.0f, metrics::space_s * scale);
             }
             const std::string chip_id = std::string("##dict_chip_") + std::to_string(i);
             if (widgets::Chip(chip_id.c_str(), chips[i].c_str(), false, scale)) {
@@ -239,7 +242,7 @@ void DictionaryPage::DrawRows(float scale) {
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
     if (rows.empty()) {
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         const ImVec2 pos = ImGui::GetCursorScreenPos();
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         const char* empty_text = state_.search.empty() ? "No words yet." : "No matching words.";
@@ -280,14 +283,14 @@ void DictionaryPage::DrawRows(float scale) {
                              ImVec2(row_max.x + 2.0f * scale, row_max.y + 2.0f * scale),
                              Pack(kStudioPalette.teal_700), 4.0f * scale, 0, 2.0f * scale);
             }
-            ImGui::PushFont(nullptr, 15.0f);
+            ImGui::PushFont(nullptr, metrics::font_card_title_px);
             ImDrawList& row_draw = *ImGui::GetWindowDrawList();
             row_draw.AddText(ImVec2(row_min.x + 16.0f * scale, row_min.y + 8.0f * scale),
                              Pack(kStudioPalette.ink), RowText(entry).c_str());
             ImGui::PopFont();
             const std::string detail = RowDetail(entry);
             if (!detail.empty()) {
-                ImGui::PushFont(nullptr, 13.0f);
+                ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
                 row_draw.AddText(ImVec2(row_min.x + 16.0f * scale, row_min.y + 30.0f * scale),
                                  Pack(kStudioPalette.muted), detail.c_str());
                 ImGui::PopFont();
@@ -296,7 +299,7 @@ void DictionaryPage::DrawRows(float scale) {
                 continue;
             }
             const std::string star_label = entry.starred ? "Unstar" : "Star";
-            ImGui::PushFont(nullptr, 13.0f);
+            ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
             const float star_w = ImGui::CalcTextSize(star_label.c_str()).x + 32.0f * scale;
             const float edit_w = ImGui::CalcTextSize("Edit").x + 32.0f * scale;
             const float delete_w = ImGui::CalcTextSize("Delete").x + 32.0f * scale;
@@ -368,7 +371,7 @@ void DictionaryPage::DrawDialog(float scale) {
         if (widgets::LightButton("dict_cancel", "Cancel", scale)) {
             close_requested = true;
         }
-        ImGui::SameLine(0.0f, 8.0f * scale);
+        ImGui::SameLine(0.0f, metrics::space_s * scale);
         if (widgets::PrimaryButton("dict_confirm", editing_id_ == 0 ? "Add" : "Save", scale)) {
             if (AttemptSubmit()) {
                 close_requested = true;

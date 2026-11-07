@@ -120,6 +120,7 @@ bool IconButton(const char* id, const char* glyph, float scale) {
     if (ImGui::IsItemFocused()) {
         DrawFocusRing(pos, ImVec2(pos.x + hit, pos.y + hit), scale);
     }
+    // ALLOWLIST (Wave 2 T-003): 24px icon glyph has no same-value font token; mapping to 28 would shift pixels. Value frozen.
     ImGui::PushFont(nullptr, 24.0f);
     const ImVec2 text_size = ImGui::CalcTextSize(safe_glyph);
     draw.AddText(ImVec2(pos.x + (hit - text_size.x) * 0.5f, pos.y + (hit - text_size.y) * 0.5f),
@@ -150,7 +151,7 @@ bool ToggleSwitch(const char* id, bool value, float scale) {
 
 void Keycap(const char* label, float scale) {
     const char* safe_label = label == nullptr ? "" : label;
-    ImGui::PushFont(nullptr, 13.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     const ImVec2 text_size = ImGui::CalcTextSize(safe_label);
     ImGui::PopFont();
     const float pad_x = 12.0f * scale;
@@ -162,7 +163,7 @@ void Keycap(const char* label, float scale) {
                        Pack(kStudioPalette.card_bg_white), studio_metrics::radius_chip * scale);
     DrawBorder(pos, ImVec2(pos.x + size.x, pos.y + size.y),
                studio_metrics::radius_chip * scale, scale, kStudioPalette.border);
-    ImGui::PushFont(nullptr, 13.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     draw.AddText(ImVec2(pos.x + pad_x, pos.y + (size.y - text_size.y) * 0.5f),
                  Pack(kStudioPalette.ink), safe_label);
     ImGui::PopFont();
@@ -172,7 +173,7 @@ void Keycap(const char* label, float scale) {
 bool Chip(const char* id, const char* label, bool selected, float scale) {
     const char* safe_id = id == nullptr ? "" : id;
     const char* safe_label = label == nullptr ? "" : label;
-    ImGui::PushFont(nullptr, 13.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     const ImVec2 text_size = ImGui::CalcTextSize(safe_label);
     ImGui::PopFont();
     const float pad_x = 14.0f * scale;
@@ -192,7 +193,7 @@ bool Chip(const char* id, const char* label, bool selected, float scale) {
     if (ImGui::IsItemFocused()) {
         DrawFocusRing(pos, ImVec2(pos.x + size.x, pos.y + size.y), scale);
     }
-    ImGui::PushFont(nullptr, 13.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     const std::uint32_t text = selected ? kStudioPalette.teal_700 : kStudioPalette.ink;
     draw.AddText(ImVec2(pos.x + pad_x, pos.y + (size.y - text_size.y) * 0.5f), Pack(text),
                  safe_label);

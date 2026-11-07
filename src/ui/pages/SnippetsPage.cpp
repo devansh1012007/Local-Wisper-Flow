@@ -29,7 +29,7 @@ std::string TruncateToWidth(const std::string& text, float max_width, float scal
     if (max_width <= 0.0f) {
         return "...";
     }
-    ImGui::PushFont(nullptr, 15.0f);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
     const float full_w = ImGui::CalcTextSize(text.c_str()).x;
     if (full_w <= max_width) {
         ImGui::PopFont();
@@ -108,10 +108,11 @@ void SnippetsPage::DrawHeader(float scale) {
     ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
     ImGui::TextUnformatted("Snippets");
     ImGui::PopFont();
-    ImGui::SameLine(0.0f, 16.0f * scale);
+    ImGui::SameLine(0.0f, metrics::space_m * scale);
     if (widgets::LightButton("snippets_add_new", kSnippetsAddLabel, scale)) {
         OpenAdd();
     }
+    // ALLOWLIST (Wave 2 T-003): 12px section gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
     ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
 }
 
@@ -128,11 +129,11 @@ void SnippetsPage::DrawBanner(float scale) {
     }
     ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap * scale));
     (void)widgets::Chip("##snippets_chip_trigger", kSnippetsBannerExampleTrigger, false, scale);
-    ImGui::SameLine(0.0f, 8.0f * scale);
-    ImGui::PushFont(nullptr, 13.0f);
+    ImGui::SameLine(0.0f, metrics::space_s * scale);
+    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     ImGui::TextUnformatted("→");
     ImGui::PopFont();
-    ImGui::SameLine(0.0f, 8.0f * scale);
+    ImGui::SameLine(0.0f, metrics::space_s * scale);
     (void)widgets::Chip("##snippets_chip_expansion", kSnippetsBannerExampleExpansion, false, scale);
     ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap * scale));
 }
@@ -147,7 +148,7 @@ void SnippetsPage::DrawRows(float scale) {
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
     if (rows.empty()) {
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         const ImVec2 pos = ImGui::GetCursorScreenPos();
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         const ImVec2 text_size = ImGui::CalcTextSize(kSnippetsEmptyCopy);
@@ -187,7 +188,7 @@ void SnippetsPage::DrawRows(float scale) {
                              ImVec2(row_max.x + 2.0f * scale, row_max.y + 2.0f * scale),
                              Pack(kStudioPalette.teal_700), 4.0f * scale, 0, 2.0f * scale);
             }
-            ImGui::PushFont(nullptr, 15.0f);
+            ImGui::PushFont(nullptr, metrics::font_card_title_px);
             ImDrawList& row_draw = *ImGui::GetWindowDrawList();
             const std::string shown = TruncateToWidth(RowText(entry), width - kRowActionReserve * scale,
                                                       scale);
@@ -230,11 +231,11 @@ void SnippetsPage::DrawSheet(float scale) {
     }
     const char* title = editing_id_.empty() ? kSnippetsEditorAddTitle : kSnippetsEditorEditTitle;
     if (editor_sheet_.Begin(title, kSheetWidth, scale)) {
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted(title);
         ImGui::PopFont();
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Trigger");
         ImGui::PopFont();
         ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
@@ -244,11 +245,11 @@ void SnippetsPage::DrawSheet(float scale) {
                                      ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::PopItemWidth();
         RefreshFromBuffers();
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         ImGui::TextUnformatted("Expansion");
         ImGui::PopFont();
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
         const float line_height = ImGui::GetTextLineHeight();
         ImGui::PopFont();
         ImGui::InputTextMultiline("##snippets_expansion", expansion_buffer_,
@@ -257,30 +258,31 @@ void SnippetsPage::DrawSheet(float scale) {
                                          line_height * static_cast<float>(kSnippetsEditorVisibleLines)),
                                   ImGuiInputTextFlags_None);
         RefreshFromBuffers();
-        ImGui::PushFont(nullptr, 13.0f);
+        ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
         const std::string counter =
             std::to_string(CountCodePoints(edit_expansion_)) + " / " +
             std::to_string(SnippetStore::kMaxExpansionChars);
         ImGui::TextColored(Color(kStudioPalette.muted), "%s", counter.c_str());
         ImGui::PopFont();
         if (!edit_error_.empty()) {
-            ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
-            ImGui::PushFont(nullptr, 15.0f);
+            ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+            ImGui::PushFont(nullptr, metrics::font_card_title_px);
             ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 24.0f * scale);
             ImGui::TextColored(Color(kDarkPalette.err), "%s", edit_error_.c_str());
             ImGui::PopTextWrapPos();
             ImGui::PopFont();
         }
+        // ALLOWLIST (Wave 2 T-003): 12px section gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
         ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
         if (widgets::LightButton("snippets_cancel", "Cancel", scale)) {
             CloseEditor();
         }
-        ImGui::SameLine(0.0f, 8.0f * scale);
+        ImGui::SameLine(0.0f, metrics::space_s * scale);
         if (!editing_id_.empty()) {
             if (widgets::LightButton("snippets_sheet_delete", "Delete", scale)) {
                 DeleteEdit();
             }
-            ImGui::SameLine(0.0f, 8.0f * scale);
+            ImGui::SameLine(0.0f, metrics::space_s * scale);
         }
         if (widgets::PrimaryButton("snippets_save", "Save", scale)) {
             if (SaveEdit()) {
