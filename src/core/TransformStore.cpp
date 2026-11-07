@@ -54,6 +54,7 @@ std::string NormalizeToken(std::string token) {
                 return LowerAscii(std::string(1, static_cast<char>(value)));
             }
         } catch (const std::exception&) {
+            return token;
         }
     }
     return token;
@@ -259,11 +260,13 @@ bool TransformStore::Load(const std::string& path) {
     try {
         file >> json;
     } catch (const nlohmann::json::exception&) {
+        file.close();
         std::lock_guard<std::mutex> lock(mutex_);
         load_warnings_.push_back("transforms: '" + path + "' is corrupt; keeping seeded built-ins");
         warnings_ = load_warnings_;
         return false;
     }
+    file.close();
 
     std::vector<Entry> migrated;
     std::vector<std::string> load_warnings;
@@ -542,7 +545,7 @@ std::string TransformStore::Validate(int slot, const std::string& name,
     if (slot > 2 && TrimCopy(name).empty()) {
         return "Please enter a name";
     }
-    if (EnsureTextPlaceholder(prompt).size() > kMaxPromptChars) {
+    if (prompt.size() > kMaxPromptChars) {
         return "Prompt too long";
     }
     return {};
