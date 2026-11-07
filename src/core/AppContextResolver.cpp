@@ -5,7 +5,9 @@
 #include <regex>
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
+#include <initializer_list>
 
 namespace {
 
@@ -19,6 +21,15 @@ std::string ToLower(std::string text) {
 const AppProfile& FallbackProfile() {
     static const AppProfile fallback;
     return fallback;
+}
+
+bool ContainsAny(const std::string& haystack, std::initializer_list<const char*> needles) {
+    for (const char* needle : needles) {
+        if (haystack.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
 }
 
 }
@@ -61,6 +72,9 @@ bool AppContextResolver::Load(const std::string& path) {
             }
             if (value.contains("paste_chord") && value["paste_chord"].is_string()) {
                 profile.paste_chord = value["paste_chord"].get<std::string>();
+            }
+            if (value.contains("category") && value["category"].is_string()) {
+                profile.category = value["category"].get<std::string>();
             }
             profiles[it.key()] = std::move(profile);
         }
@@ -132,18 +146,23 @@ void AppContextResolver::UseBuiltInProfiles() {
         "email",
         "This is dictated email text. Keep a friendly professional tone and a short greeting.",
         false, true, true, "ctrl+v"};
+    profiles_["email"].category = "Emails";
     profiles_["chat"] = AppProfile{
         "chat",
         "This is a casual chat message. Keep it short and conversational, no formal sign-off.",
         true, false, true, "ctrl+v"};
+    profiles_["chat"].category = "Work messages";
     profiles_["code"] = AppProfile{
         "code",
         "This is code or technical text. Do not capitalize identifiers, do not add a trailing "
         "period, do not rewrite code, only transcribe faithfully.",
         false, false, true, "ctrl+shift+v"};
+    profiles_["code"].category = "Other tasks";
     profiles_["notes"] = AppProfile{
         "notes", "This is a personal note. Keep it concise.", false, true, true, "ctrl+v"};
+    profiles_["notes"].category = "Documents";
     profiles_["default"] = AppProfile{"default"};
+    profiles_["default"].category = "Other tasks";
 
     const auto add_rule = [this](const std::string& process, const std::string& title,
                                  const std::string& profile) {
@@ -218,6 +237,52 @@ const std::vector<std::string>& AppContextResolver::Warnings() const {
 
 bool AppContextResolver::Loaded() const {
     return loaded_;
+}
+
+const std::vector<std::string>& AppContextResolver::CategoryNames() {
+    static const std::vector<std::string> names = {"AI prompts", "Emails", "Work messages",
+                                                   "Personal", "Documents", "Other tasks"};
+    return names;
+}
+
+std::string AppContextResolver::CategoryFor(const std::string& process_name,
+                                            const std::string& window_title) {
+    const std::string process = ToLower(process_name);
+    const std::string title = ToLower(window_title);
+    if (!process.empty() &&
+        ContainsAny(process, {"chatgpt", "claude", "cursor", "gemini", "perplexity"})) {
+        return "AI prompts";
+    }
+    if (!process.empty() && ContainsAny(process, {"outlook", "thunderbird", "gmail"})) {
+        return "Emails";
+    }
+    if (!process.empty() && ContainsAny(process, {"slack", "teams"})) {
+        return "Work messages";
+    }
+    if (!process.empty() && ContainsAny(process, {"whatsapp", "telegram", "messages"})) {
+        return "Personal";
+    }
+    if (!process.empty() && ContainsAny(process, {"winword", "word.exe", "notion", "obsidian"})) {
+        return "Documents";
+    }
+    if (!title.empty() &&
+        ContainsAny(title, {"chatgpt", "claude", "cursor", "gemini", "perplexity"})) {
+        return "AI prompts";
+    }
+    if (!title.empty() && ContainsAny(title, {"outlook", "thunderbird", "gmail"})) {
+        return "Emails";
+    }
+    if (!title.empty() && ContainsAny(title, {"slack", "microsoft teams", "teams"})) {
+        return "Work messages";
+    }
+    if (!title.empty() && ContainsAny(title, {"whatsapp", "telegram", "messages"})) {
+        return "Personal";
+    }
+    if (!title.empty() &&
+        ContainsAny(title, {"docs.google", "google docs", "notion", "obsidian"})) {
+        return "Documents";
+    }
+    return "Other tasks";
 }
 
 std::string AppContextResolver::BuildCleanupPrompt(const std::string& base,

@@ -13,6 +13,7 @@ struct AppProfile {
     bool trailing_period = true;
     bool use_llm = true;
     std::string paste_chord = "ctrl+v";
+    std::string category = "Other tasks";
 };
 
 class AppContextResolver {
@@ -27,6 +28,9 @@ public:
     bool Loaded() const;
 
     static std::string BuildCleanupPrompt(const std::string& base, const AppProfile& profile);
+    static std::string CategoryFor(const std::string& process_name,
+                                  const std::string& window_title);
+    static const std::vector<std::string>& CategoryNames();
 
 private:
     struct Rule {
