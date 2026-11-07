@@ -340,7 +340,7 @@ TEST_CASE("dictionary page sources stay off the font scale ban and carry no copi
     CHECK(impl.find("\xE2\x86\x92") != std::string::npos);
 }
 
-TEST_CASE("dictionary rows submit Dummy after trailing cursor restore") {
+TEST_CASE("dictionary rows compensate cursor restore by ItemSpacing before Dummy") {
     const std::string dict = ReadFile("src/ui/pages/DictionaryPage.cpp");
     const std::string snips = ReadFile("src/ui/pages/SnippetsPage.cpp");
     const std::string insights = ReadFile("src/ui/pages/InsightsPage.cpp");
@@ -348,19 +348,35 @@ TEST_CASE("dictionary rows submit Dummy after trailing cursor restore") {
     REQUIRE_FALSE(snips.empty());
     REQUIRE_FALSE(insights.empty());
     const std::string dummy = "ImGui::Dummy(ImVec2(0.0f, 0.0f))";
-    const std::string dict_restore = "ImGui::SetCursorScreenPos(saved_cursor);";
+    const std::string spacing = "- ImGui::GetStyle().ItemSpacing.y";
+    CHECK(dict.find(spacing) != std::string::npos);
+    CHECK(snips.find(spacing) != std::string::npos);
+    CHECK(insights.find(spacing) != std::string::npos);
+    const std::string saved_restore =
+        "ImGui::SetCursorScreenPos(ImVec2(saved_cursor.x, saved_cursor.y - ImGui::GetStyle().ItemSpacing.y));";
     const std::string insights_restore =
-        "ImGui::SetCursorScreenPos(ImVec2(row_pos.x, row_pos.y + row_h + 8.0f * scale));";
-    const std::size_t dict_pos = dict.find(dict_restore);
-    const std::size_t snips_pos = snips.find(dict_restore);
+        "ImGui::SetCursorScreenPos(ImVec2(row_pos.x, row_pos.y + row_h + 8.0f * scale - ImGui::GetStyle().ItemSpacing.y));";
+    const std::size_t dict_pos = dict.find(saved_restore);
+    const std::size_t snips_pos = snips.find(saved_restore);
     const std::size_t insights_pos = insights.find(insights_restore);
     REQUIRE(dict_pos != std::string::npos);
     REQUIRE(snips_pos != std::string::npos);
     REQUIRE(insights_pos != std::string::npos);
-    const std::size_t dict_dummy = dict.find(dummy, dict_pos + dict_restore.size());
-    const std::size_t snips_dummy = snips.find(dummy, snips_pos + dict_restore.size());
-    const std::size_t insights_dummy = insights.find(dummy, insights_pos + insights_restore.size());
-    CHECK(dict_dummy != std::string::npos);
-    CHECK(snips_dummy != std::string::npos);
-    CHECK(insights_dummy != std::string::npos);
+    const auto dummy_within_two_lines =
+        [&dummy](const std::string& content, std::size_t restore_pos, const std::string& restore) {
+            const std::size_t dummy_pos = content.find(dummy, restore_pos + restore.size());
+            if (dummy_pos == std::string::npos) {
+                return false;
+            }
+            std::size_t newlines = 0;
+            for (std::size_t i = restore_pos; i < dummy_pos; ++i) {
+                if (content[i] == '\n') {
+                    ++newlines;
+                }
+            }
+            return newlines <= 2;
+        };
+    CHECK(dummy_within_two_lines(dict, dict_pos, saved_restore));
+    CHECK(dummy_within_two_lines(snips, snips_pos, saved_restore));
+    CHECK(dummy_within_two_lines(insights, insights_pos, insights_restore));
 }
