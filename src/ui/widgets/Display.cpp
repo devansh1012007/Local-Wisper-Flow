@@ -32,7 +32,7 @@ void RowList(const char* id, const std::vector<RowListItem>& rows, float scale) 
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
     if (rows.empty()) {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
         const ImVec2 pos = ImGui::GetCursorScreenPos();
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         const ImVec2 text_size = ImGui::CalcTextSize("Not available yet.");
@@ -52,7 +52,7 @@ void RowList(const char* id, const std::vector<RowListItem>& rows, float scale) 
             }
             const float row_h = studio_metrics::row_height * scale;
             const ImVec2 row_pos = ImGui::GetCursorScreenPos();
-            ImGui::PushFont(nullptr, metrics::font_card_title_px);
+            ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
             ImDrawList& inner = *ImGui::GetWindowDrawList();
             inner.AddText(ImVec2(row_pos.x + 16.0f * scale, row_pos.y + 8.0f * scale),
                           Pack(kStudioPalette.ink), rows[i].title.c_str());
@@ -62,7 +62,7 @@ void RowList(const char* id, const std::vector<RowListItem>& rows, float scale) 
             }
             ImGui::PopFont();
             if (!rows[i].trailing.empty()) {
-                ImGui::PushFont(nullptr, metrics::font_card_title_px);
+                ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
                 const ImVec2 trail_size = ImGui::CalcTextSize(rows[i].trailing.c_str());
                 ImGui::PopFont();
                 const ImVec2 right = ImVec2(row_pos.x + width - 16.0f * scale - trail_size.x,
@@ -90,7 +90,7 @@ void StatCard(const char* id, const char* title, const char* value, const char* 
     ImGui::PushFont(nullptr, studio_metrics::font_caps_px);
     ImGui::TextColored(Color(kStudioPalette.muted), "%s", caps.c_str());
     ImGui::PopFont();
-    ImGui::PushFont(nullptr, metrics::font_page_title_px);
+    ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
     ImGui::TextUnformatted(value == nullptr ? "" : value);
     ImGui::PopFont();
     if (subtitle != nullptr && subtitle[0] != '\0') {
@@ -123,7 +123,7 @@ void RadialGauge(const char* id, float value, const char* center_label, const ch
                      center.y + radius * static_cast<float>(std::sin(a1)));
     draw.AddCircleFilled(start, stroke * 0.5f, Pack(kStudioPalette.teal_100));
     draw.AddCircleFilled(end, stroke * 0.5f, Pack(kStudioPalette.teal_700));
-    ImGui::PushFont(nullptr, metrics::font_page_title_px);
+    ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
     const ImVec2 center_size = ImGui::CalcTextSize(center_label == nullptr ? "" : center_label);
     draw.AddText(ImVec2(center.x - center_size.x * 0.5f, center.y - 42.0f * scale),
                  Pack(kStudioPalette.ink), center_label == nullptr ? "" : center_label);

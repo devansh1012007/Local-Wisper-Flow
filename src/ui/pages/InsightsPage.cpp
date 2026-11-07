@@ -40,8 +40,7 @@ void DrawDivider(float scale) {
     const float width = ImGui::GetContentRegionAvail().x;
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     draw.AddLine(pos, ImVec2(pos.x + width, pos.y), Pack(kStudioPalette.border), 1.0f * scale);
-    // ALLOWLIST (Wave 2 T-003): 12px section gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
-    ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
+    ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_section * scale));
 }
 
 void DrawLegend(float scale) {
@@ -50,8 +49,7 @@ void DrawLegend(float scale) {
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     ImGui::TextUnformatted("More");
     ImGui::PopFont();
-    // ALLOWLIST (Wave 2 T-003): 6px legend gap has no same-value token (space_xs=4, space_s=8); mapping would shift pixels. Value frozen.
-    ImGui::SameLine(0.0f, 6.0f * scale);
+    ImGui::SameLine(0.0f, studio_metrics::gap_micro * scale);
     const int levels[] = {4, 3, 2, 1};
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     for (int level : levels) {
@@ -64,8 +62,7 @@ void DrawLegend(float scale) {
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     ImGui::TextUnformatted("Less");
     ImGui::PopFont();
-    // ALLOWLIST (Wave 2 T-003): 6px legend gap has no same-value token (space_xs=4, space_s=8); mapping would shift pixels. Value frozen.
-    ImGui::SameLine(0.0f, 6.0f * scale);
+    ImGui::SameLine(0.0f, studio_metrics::gap_micro * scale);
     const ImVec2 empty_pos = ImGui::GetCursorScreenPos();
     ImGui::Dummy(ImVec2(cell, cell));
     draw.AddRectFilled(empty_pos, ImVec2(empty_pos.x + cell, empty_pos.y + cell),
@@ -76,7 +73,7 @@ void DrawInfoRow(const char* id, const std::string& text, const char* tooltip, f
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     ImGui::TextUnformatted(text.c_str());
     ImGui::PopFont();
-    ImGui::SameLine(0.0f, metrics::space_s * scale);
+    ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
     widgets::IconButton(id, "i", scale);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("%s", tooltip);
@@ -93,7 +90,7 @@ void InsightsPage::Draw(float scale) {
         ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
         ImGui::TextDisabled("%s", kVoiceEmpty);
         ImGui::PopFont();
-        ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+        ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_block * scale));
         DrawShareDialog(scale);
         return;
     }
@@ -127,8 +124,7 @@ void InsightsPage::DrawHeader(float scale) {
     const int repeats = 4;
     const std::size_t total = glyphs.size() * static_cast<std::size_t>(repeats);
     const float ring_radius = radius - 3.0f * scale;
-    // ALLOWLIST (Wave 2 T-003): 10px glyph font has no same-value token; mapping to 13/28 would shift pixels. Value frozen.
-    ImGui::PushFont(nullptr, 10.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_glyph_px);
     for (std::size_t i = 0; i < total; ++i) {
         const std::string& glyph = glyphs[i % glyphs.size()];
         const float angle = -1.5707963267948966f + static_cast<float>(i) * 6.283185307179586f /
@@ -164,7 +160,7 @@ void InsightsPage::DrawTabs(float scale) {
     int selected = tab_;
     widgets::TabRow("##insights_tabs", kTabs, 2, &selected, scale);
     tab_ = selected;
-    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+    ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_block * scale));
 }
 
 void InsightsPage::DrawRow1(float scale) {
@@ -191,7 +187,7 @@ void InsightsPage::DrawCardA(float width, float scale) {
     ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
     ImGui::TextUnformatted(wpm.c_str());
     ImGui::PopFont();
-    ImGui::SameLine(0.0f, metrics::space_s * scale);
+    ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
     widgets::IconButton("##insights_wpm_info", "i", scale);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("%s", kWpmTooltip);
@@ -264,8 +260,7 @@ void InsightsPage::DrawRow2(float scale) {
 
 void InsightsPage::DrawCardD(float width, float scale) {
     BeginCard("##insights_card_d", width, scale);
-    // ALLOWLIST (Wave 2 T-003): 24px card heading has no same-value font token; mapping to 28 would shift pixels. Value frozen.
-    ImGui::PushFont(nullptr, 24.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_heading_px);
     ImGui::TextUnformatted(kUsageTitle);
     ImGui::PopFont();
     ImGui::PushFont(nullptr, studio_metrics::font_caps_px);
@@ -287,8 +282,7 @@ void InsightsPage::DrawCardD(float width, float scale) {
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         const ImVec2 icon_center(row_pos.x + 14.0f * scale, row_pos.y + row_h * 0.5f);
         draw.AddCircle(icon_center, 12.0f * scale, Pack(kStudioPalette.border), 24, 1.0f * scale);
-        // ALLOWLIST (Wave 2 T-003): 10px glyph font has no same-value token; mapping to 13/28 would shift pixels. Value frozen.
-        ImGui::PushFont(nullptr, 10.0f);
+        ImGui::PushFont(nullptr, studio_metrics::font_glyph_px);
         const ImVec2 icon_size = ImGui::CalcTextSize(row.icon.c_str());
         draw.AddText(ImVec2(icon_center.x - icon_size.x * 0.5f, icon_center.y - icon_size.y * 0.5f),
                      Pack(kStudioPalette.teal_700), row.icon.c_str());
@@ -304,8 +298,7 @@ void InsightsPage::DrawCardD(float width, float scale) {
 
 void InsightsPage::DrawCardE(float width, float scale) {
     BeginCard("##insights_card_e", width, scale);
-    // ALLOWLIST (Wave 2 T-003): 24px card heading has no same-value font token; mapping to 28 would shift pixels. Value frozen.
-    ImGui::PushFont(nullptr, 24.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_heading_px);
     ImGui::TextUnformatted(StreakTitle(summary_.current_streak).c_str());
     ImGui::PopFont();
     ImGui::PushFont(nullptr, studio_metrics::font_caps_px);
@@ -322,11 +315,11 @@ void InsightsPage::DrawCardE(float width, float scale) {
     if (prev_pressed) {
         GoPrevMonth();
     }
-    ImGui::SameLine(0.0f, metrics::space_s * scale);
+    ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     ImGui::TextUnformatted(month_label.c_str());
     ImGui::PopFont();
-    ImGui::SameLine(0.0f, metrics::space_s * scale);
+    ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
     if (!CanNextMonth()) {
         ImGui::BeginDisabled();
     }
@@ -354,7 +347,7 @@ void InsightsPage::DrawShareDialog(float scale) {
     bool close_requested = false;
     if (share_modal_.Begin(kShareDialogTitle, scale)) {
         BeginCard("##insights_share_highlights", 220.0f * scale, scale);
-        ImGui::PushFont(nullptr, lwf::ui::metrics::font_card_title_px);
+        ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
         ImGui::TextUnformatted(kShareHighlightsTitle);
         ImGui::PopFont();
         const std::vector<std::string> lines = ShareHighlightLines(summary_);
@@ -364,26 +357,26 @@ void InsightsPage::DrawShareDialog(float scale) {
             ImGui::PopFont();
         }
         EndCard();
-        ImGui::SameLine(0.0f, metrics::space_s * scale);
+        ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
         BeginCard("##insights_share_streak", 220.0f * scale, scale);
-        ImGui::PushFont(nullptr, lwf::ui::metrics::font_card_title_px);
+        ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
         ImGui::TextUnformatted(kShareStreakTitle);
         ImGui::PopFont();
         ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
         ImGui::TextUnformatted(StreakTitle(summary_.current_streak).c_str());
         ImGui::PopFont();
         EndCard();
-        ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+        ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
         ImGui::BeginDisabled();
         (void)widgets::PrimaryButton("insights_copy", kShareCopy, scale);
-        ImGui::SameLine(0.0f, metrics::space_s * scale);
+        ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
         (void)widgets::PrimaryButton("insights_download", kShareDownload, scale);
         ImGui::EndDisabled();
-        ImGui::SameLine(0.0f, metrics::space_s * scale);
+        ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
         ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
         ImGui::TextColored(Color(kStudioPalette.muted), "%s", kComingSoon);
         ImGui::PopFont();
-        ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+        ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
         if (widgets::LightButton("insights_share_close", "Close", scale)) {
             close_requested = true;
         }

@@ -120,8 +120,7 @@ bool IconButton(const char* id, const char* glyph, float scale) {
     if (ImGui::IsItemFocused()) {
         DrawFocusRing(pos, ImVec2(pos.x + hit, pos.y + hit), scale);
     }
-    // ALLOWLIST (Wave 2 T-003): 24px icon glyph has no same-value font token; mapping to 28 would shift pixels. Value frozen.
-    ImGui::PushFont(nullptr, 24.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_heading_px);
     const ImVec2 text_size = ImGui::CalcTextSize(safe_glyph);
     draw.AddText(ImVec2(pos.x + (hit - text_size.x) * 0.5f, pos.y + (hit - text_size.y) * 0.5f),
                  Pack(kStudioPalette.ink), safe_glyph);
@@ -224,7 +223,7 @@ void TabRow(const char* id, const char* const* tabs, int count, int* selected, f
     if (tabs == nullptr || selected == nullptr || count <= 0) {
         return;
     }
-    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
     const float line = ImGui::GetTextLineHeight();
     const float hit = std::max(studio_metrics::hit_size * scale, line + 12.0f * scale);
     const ImVec2 origin = ImGui::GetCursorScreenPos();

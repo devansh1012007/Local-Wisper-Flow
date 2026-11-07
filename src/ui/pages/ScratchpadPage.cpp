@@ -17,6 +17,9 @@ using lwf::ui::Pack;
 using lwf::ui::kStudioPalette;
 namespace studio_metrics = lwf::ui::studio_metrics;
 
+// Control design width (Wave 2 T-003 file-local hoist, not a spacing token).
+constexpr float kSearchWidth = 240.0f;
+
 }
 
 ScratchpadPage::ScratchpadPage(NotesStore& notes, SettingsStore& settings, UiBus& bus)
@@ -44,10 +47,9 @@ void ScratchpadPage::Draw(float scale) {
         undo_.Clear();
     }
     DrawHeader(scale);
-    // ALLOWLIST (Wave 2 T-003): 12px section gap has no same-value token; mapping to 16 would shift pixels. Value frozen.
-    ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
+    ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_section * scale));
     DrawBanner(scale);
-    ImGui::Dummy(ImVec2(0.0f, lwf::ui::metrics::space_m * scale));
+    ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_block * scale));
     DrawRecents(scale);
     DrawUndoToast(scale);
 }
@@ -70,7 +72,7 @@ void ScratchpadPage::DrawHeader(float scale) {
     const ImVec2 pill_size = ImGui::CalcTextSize(ShortcutLabel().c_str());
     ImGui::PopFont();
     const float pill_w = pill_size.x + 28.0f * scale;
-    const float gap = 10.0f * scale;
+    const float gap = studio_metrics::gap_compact * scale;
     const float controls_w = flow_size.x + gap + flow_w + gap + pill_w;
     const float controls_x = origin.x + avail - controls_w;
     const float controls_y = origin.y;
@@ -174,20 +176,17 @@ void ScratchpadPage::DrawBanner(float scale) {
     ImDrawList& mock_draw = *ImGui::GetWindowDrawList();
     mock_draw.AddRectFilled(ImVec2(bar_origin.x, bar_origin.y), ImVec2(bar_origin.x + 120.0f * scale, bar_origin.y + 6.0f * scale),
                             Pack(kStudioPalette.muted, 0.35f), 3.0f * scale);
-    // ALLOWLIST (Wave 2 T-003): 10px mock-note gap has no same-value spacing token; mapping would shift pixels. Value frozen.
-    ImGui::Dummy(ImVec2(0.0f, 10.0f * scale));
+    ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_compact * scale));
     const ImVec2 bar2_origin = ImGui::GetCursorScreenPos();
     mock_draw.AddRectFilled(ImVec2(bar2_origin.x, bar2_origin.y), ImVec2(bar2_origin.x + 90.0f * scale, bar2_origin.y + 6.0f * scale),
                             Pack(kStudioPalette.muted, 0.35f), 3.0f * scale);
-    // ALLOWLIST (Wave 2 T-003): 10px mock-note gap has no same-value spacing token; mapping would shift pixels. Value frozen.
-    ImGui::Dummy(ImVec2(0.0f, 10.0f * scale));
+    ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_compact * scale));
     ImGui::EndChild();
     ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + height));
 }
 
 void ScratchpadPage::DrawRecents(float scale) {
-    // ALLOWLIST (Wave 2 T-003): 17px Recents heading has no same-value font token; mapping to 15/28 would shift pixels. Value frozen.
-    ImGui::PushFont(nullptr, 17.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_subheading_px);
     ImGui::TextUnformatted("Recents");
     ImGui::PopFont();
     ImGui::Separator();
@@ -195,7 +194,7 @@ void ScratchpadPage::DrawRecents(float scale) {
         ImGui::SetKeyboardFocusHere();
         search_focus_pending_ = false;
     }
-    ImGui::SetNextItemWidth(240.0f * scale);
+    ImGui::SetNextItemWidth(kSearchWidth * scale);
     ImGui::InputTextWithHint("##scratch_search", "Search", search_buffer_, sizeof(search_buffer_));
     ImGui::SameLine();
     if (lwf::ui::widgets::IconButton("##scratch_search", "?", scale)) {
@@ -212,10 +211,10 @@ void ScratchpadPage::DrawRecents(float scale) {
     if (lwf::ui::widgets::IconButton("##scratch_refresh", "R", scale)) {
         notes_.Reload();
     }
-    ImGui::Dummy(ImVec2(0.0f, lwf::ui::metrics::space_s * scale));
+    ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
     const std::vector<NotesStore::Note> notes = notes_.Search(search_buffer_);
     if (notes.empty()) {
-        ImGui::PushFont(nullptr, lwf::ui::metrics::font_card_title_px);
+        ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
         ImGui::TextDisabled("No notes found");
         ImGui::PopFont();
         return;
@@ -243,7 +242,7 @@ void ScratchpadPage::DrawNoteRow(const NotesStore::Note& note, float scale) {
                      ImVec2(row_pos.x + width + 2.0f * scale, row_pos.y + row_h + 2.0f * scale),
                      Pack(kStudioPalette.teal_700), studio_metrics::radius_row * scale, 0, 2.0f * scale);
     }
-    ImGui::PushFont(nullptr, lwf::ui::metrics::font_card_title_px);
+    ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
     const std::string title = note.title.empty() ? "Untitled" : note.title;
     draw.AddText(ImVec2(row_pos.x + 14.0f * scale, row_pos.y + 8.0f * scale), Pack(kStudioPalette.ink),
                  title.c_str());

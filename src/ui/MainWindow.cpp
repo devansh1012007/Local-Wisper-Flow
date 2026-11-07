@@ -57,6 +57,10 @@ using lwf::ui::Pack;
 // unused until the rail/token drift is resolved (mission D-rail).
 constexpr float kRailWidth = 220.0f;
 
+// Rail status-dot indent (Wave 2 T-003 file-local hoist): shared by the rail
+// and Home status dots ahead of the status word. No 14px spacing token.
+constexpr float kStatusDotIndent = 14.0f;
+
 std::vector<std::string> SplitChord(const std::string& chord) {
     std::vector<std::string> parts;
     std::size_t start = 0;
@@ -555,7 +559,7 @@ void MainWindow::DrawRail(float scale) {
         const ImVec2 status_pos = ImGui::GetCursorScreenPos();
         draw.AddCircleFilled(ImVec2(status_pos.x + 4.0f * scale, status_pos.y + line * 0.5f),
                              4.0f * scale, Pack(status_color));
-        ImGui::Dummy(ImVec2(14.0f * scale, 0.0f));
+        ImGui::Dummy(ImVec2(kStatusDotIndent * scale, 0.0f));
         ImGui::SameLine();
         ImGui::TextUnformatted(status_word);
         ImGui::TextDisabled("The mini dot shows this too.");
@@ -925,7 +929,7 @@ void MainWindow::DrawHomePage(float scale) {
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         draw.AddCircleFilled(ImVec2(word_pos.x + 4.0f * scale, word_pos.y + line * 0.5f),
                              4.0f * scale, Pack(status_color));
-        ImGui::Dummy(ImVec2(14.0f * scale, 0.0f));
+        ImGui::Dummy(ImVec2(kStatusDotIndent * scale, 0.0f));
         ImGui::SameLine();
         ImGui::TextUnformatted(status_word);
         ImGui::SameLine();
