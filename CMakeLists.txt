@@ -116,6 +116,7 @@ set(LWF_CORE_SOURCES
     src/core/TransformManager.cpp
     src/core/TransformStore.cpp
     src/core/UiBus.cpp
+    src/core/WhisperText.cpp
     src/audio/TonePlayer.cpp
 )
 

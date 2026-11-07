@@ -675,3 +675,144 @@ TEST_CASE("engine settings hot apply changes armed timeout") {
     CHECK(HasStatus(h.sink.statuses, "no speech detected, stopped"));
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
 }
+
+TEST_CASE("blank audio marker yields nothing to inject") {
+    SUBCASE("upper bracket marker") {
+        Harness h;
+        h.stt.transcript = "[BLANK_AUDIO]";
+        auto engine = MakeEngine(h);
+        PressAndSpeak(h, *engine);
+        CHECK(h.injector.InjectionCount() == 0);
+        CHECK_FALSE(h.injector.HasInjected());
+        CHECK(engine->LastText().empty());
+        CHECK(h.fsm.GetCurrentState() == State::IDLE);
+        CHECK(HasStatus(h.sink.statuses, "nothing to inject"));
+    }
+    SUBCASE("lower bracket marker") {
+        Harness h;
+        h.stt.transcript = "[blank_audio]";
+        auto engine = MakeEngine(h);
+        PressAndSpeak(h, *engine);
+        CHECK(h.injector.InjectionCount() == 0);
+        CHECK_FALSE(h.injector.HasInjected());
+        CHECK(engine->LastText().empty());
+        CHECK(h.fsm.GetCurrentState() == State::IDLE);
+        CHECK(HasStatus(h.sink.statuses, "nothing to inject"));
+    }
+    SUBCASE("paren music marker") {
+        Harness h;
+        h.stt.transcript = "(music)";
+        auto engine = MakeEngine(h);
+        PressAndSpeak(h, *engine);
+        CHECK(h.injector.InjectionCount() == 0);
+        CHECK_FALSE(h.injector.HasInjected());
+        CHECK(engine->LastText().empty());
+        CHECK(h.fsm.GetCurrentState() == State::IDLE);
+        CHECK(HasStatus(h.sink.statuses, "nothing to inject"));
+    }
+}
+
+TEST_CASE("streamed blank audio marker yields nothing to inject") {
+    Harness h;
+    h.stt.transcript = "[BLANK_AUDIO]";
+    int calls = 0;
+    h.stt.on_transcribe = [&] {
+        if (++calls > 1) {
+            h.stt.transcript = "";
+        }
+    };
+    h.settings.streaming_stt = true;
+    h.settings.streaming_min_segment_ms = 3000;
+    h.settings.streaming_pause_ms = 700;
+    auto engine = MakeEngine(h);
+
+    engine->PostEvent(EngineEventType::PttPress);
+    engine->ProcessOne(0);
+    h.vad.SetSpeech(true);
+    const std::vector<float> voiced(kChunkSamples, 0.3f);
+    for (int i = 0; i < 100; ++i) {
+        h.capture.FeedSamples(voiced);
+        engine->ProcessOne(0);
+    }
+    h.vad.SetSpeech(false);
+    const std::vector<float> silent(kChunkSamples, 0.0f);
+    for (int i = 0; i < 26; ++i) {
+        h.capture.FeedSamples(silent);
+        engine->ProcessOne(0);
+    }
+    CHECK(engine->StreamedSegments() == 1);
+    h.vad.SetSpeech(true);
+    for (int i = 0; i < 20; ++i) {
+        h.capture.FeedSamples(voiced);
+        engine->ProcessOne(0);
+    }
+    h.vad.SetSpeech(false);
+    for (int i = 0; i < 4; ++i) {
+        h.capture.FeedSamples(silent);
+        engine->ProcessOne(0);
+    }
+    engine->PostEvent(EngineEventType::PttRelease);
+    engine->ProcessOne(0);
+
+    CHECK(h.injector.InjectionCount() == 0);
+    CHECK_FALSE(h.injector.HasInjected());
+    CHECK(engine->LastText().empty());
+    CHECK(h.fsm.GetCurrentState() == State::IDLE);
+    CHECK(HasStatus(h.sink.statuses, "nothing to inject"));
+    CHECK(h.stt.TranscribeCount() == 2);
+}
+
+TEST_CASE("command mode blank audio marker is rejected") {
+    Harness h;
+    h.stt.transcript = "[BLANK_AUDIO]";
+    auto engine = MakeEngine(h);
+    ScriptedSelectionCapture selection;
+    ScriptedLlm command_llm;
+    command_llm.response = "the edited sentence";
+    CommandModeController controller{selection, &command_llm, h.injector};
+    engine->SetCommandController(&controller);
+
+    engine->PostEvent(EngineEventType::CommandMode);
+    engine->ProcessOne(0);
+    h.Speak();
+    engine->PostEvent(EngineEventType::PttRelease);
+    engine->ProcessOne(0);
+
+    CHECK(h.injector.InjectionCount() == 0);
+    CHECK_FALSE(h.injector.HasInjected());
+    CHECK(command_llm.CallCount() == 0);
+    CHECK(engine->LastText().empty());
+    CHECK(h.fsm.GetCurrentState() == State::IDLE);
+    CHECK(h.sink.errors.empty());
+    CHECK(HasStatus(h.sink.statuses, "nothing to inject"));
+}
+
+TEST_CASE("real speech passes through the hallucination filter") {
+    Harness h;
+    h.stt.transcript = "hello world";
+    auto engine = MakeEngine(h);
+    PressAndSpeak(h, *engine);
+
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(h.injector.Injected()[0] == "hello world");
+    CHECK(engine->LastText() == "hello world");
+    CHECK(h.fsm.GetCurrentState() == State::IDLE);
+}
+
+TEST_CASE("short real speech under cleanup minimum bypasses the language model") {
+    Harness h;
+    ScriptedLlm llm;
+    llm.response = "should not appear";
+    DictationCleanup custom_cleanup{&llm};
+    TextPipeline custom_pipeline{custom_cleanup};
+    h.stt.transcript = "  hello  ";
+    DictationEngine engine(h.capture, &h.vad, h.stt, custom_pipeline, h.injector, h.fsm,
+                           h.clock, h.sink, h.settings);
+    PressAndSpeak(h, engine);
+
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(h.injector.Injected()[0] == "hello");
+    CHECK(llm.CallCount() == 0);
+    CHECK(engine.LastText() == "hello");
+    CHECK(h.fsm.GetCurrentState() == State::IDLE);
+}
