@@ -23,9 +23,9 @@
 - Digests: 37 PushFont-digit + whitespace literals; dual-palette split proven (ApplyStudioStyle only ScratchpadWindow 91,591); tests pin literals (fail-before required); mockup matches structurally (PARTIAL token coverage); rail 220 vs 208 leave+document per D-rail
 - Spot-checked by ORCH: PushFont grep + Dummy grep confirm counts; read W0-INV-02 s5/s9 + W0-INV-03 s5
 
-### Wave 1 (Surface fixes) — READY FOR APPROVAL
+### Wave 1 (Surface fixes) — APPROVED 2026-11-08 (all waves approved)
 - Agents: 3 parallel, disjoint (ownership/W1.tsv, overlap check clean)
-- WAVE_BASE_SHA (pre-wave): 8f2ff6c
+- WAVE_BASE_SHA (pre-wave): aecb917e33dbbf43a69df55e6b9df8eef7ed2c1a
 - Pre-mortem: hidden coupling via shared widgets (ScratchpadWindow editor shares RowList/Toast/Banner); same-value mapping error silently shifts pixels with no lexical test failure; dual-palette means spelling-only cannot fix identity split; token-gap sites (24/17/10, 12px) must stay allowlisted, never forced to 28/16. Mitigations: same-value-only rule + allowlist in T-004 ban, forbid *Palette.cpp edits, screenshots gate before merge, no palette changes.
 - Gate plan: G1 target lwf_tests build, G2 ctest (expect green only after all 3 land; T-004 alone is red-by-design), G4 hygiene, G5 in-suite, G3 pending. Full exe build with long timeout at gate.
 - Review plan: 1 code reviewer (MainWindow+pages) + 1 test reviewer (ban + pin flips), each blind-first.
