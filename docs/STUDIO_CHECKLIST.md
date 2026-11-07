@@ -61,3 +61,17 @@ repo, so no pixel claim is made anywhere in this sweep).
   `bash scripts/check_no_network.sh`.
 - PENDING on Windows: G3 zig type-check (no zig on dev box); full 23/23 ctest (scoped mandate);
   MSVC build (CI lane only).
+
+## Integration (W5-IMPL-INT, T-026-integration)
+
+- PASS: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`, `cmake --build build
+  --config Release --parallel 4` (exit 0, exe links), full
+  `ctest --test-dir build` 23/23 in 660.70s, `bash scripts/check_hygiene.sh`,
+  `bash scripts/check_no_network.sh`. Evidence: gates/gate-w5-1.md.
+- PASS: CMake registers OpenRouterProvider.cpp (lwf_core) +
+  test_openrouter.cpp (lwf_tests); `*openrouter*` 19/19 cases, 118 asserts.
+- PASS: MainWindow Privacy/About/Cloud/Trust copy — O egress + P lint + RESEED
+  delete-all clause drop (dictionary tombstone f66943b). No `!`, no internal
+  terms; local-first promise kept; OpenRouter opt-in stated on Privacy + About.
+- MANUAL (Devansh on Windows): live OpenRouter cleanup (key + model), missing
+  key/model degrade, cancel/timeout — O report steps 1-7; G3 zig still pending.
