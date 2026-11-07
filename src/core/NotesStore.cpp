@@ -167,6 +167,12 @@ bool NotesStore::LoadLocked() {
             file.close();
             std::error_code rename_ec;
             std::filesystem::rename(index_path_, index_path_ + ".bad", rename_ec);
+            if (rename_ec) {
+                std::error_code remove_ec;
+                std::filesystem::remove(index_path_ + ".bad", remove_ec);
+                rename_ec.clear();
+                std::filesystem::rename(index_path_, index_path_ + ".bad", rename_ec);
+            }
         } else {
             for (const nlohmann::json& element : json) {
                 if (!element.is_object()) {
@@ -367,6 +373,7 @@ std::optional<NotesStore::Note> NotesStore::Create(const std::string& title,
     notes_.push_back(note);
     if (!WriteIndexLocked()) {
         notes_.erase(notes_.begin() + static_cast<std::ptrdiff_t>(notes_.size() - 1));
+        RemoveBodyLocked(note.id);
         return std::nullopt;
     }
     return note;
@@ -439,6 +446,7 @@ bool NotesStore::Restore(const Note& note) {
         if (pos != notes_.size()) {
             notes_.erase(notes_.begin() + static_cast<std::ptrdiff_t>(pos));
         }
+        RemoveBodyLocked(restored.id);
         return false;
     }
     return true;

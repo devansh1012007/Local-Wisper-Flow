@@ -338,6 +338,37 @@ TEST_CASE("reload picks up a note file added outside the store") {
     CHECK(store.Get("late")->title == "Late arrival");
 }
 
+TEST_CASE("failed create removes its body so a reload does not resurrect it") {
+    const std::filesystem::path dir = TestDir("rollback");
+    std::filesystem::create_directories(dir / "notes" / "index.json");
+    NotesStore store(dir.string());
+    std::error_code setup_ec;
+    std::filesystem::remove_all(dir / "notes" / "index.json", setup_ec);
+    std::filesystem::create_directories(dir / "notes" / "index.json", setup_ec);
+    CHECK(store.Size() == 0);
+    const auto created = store.Create("Doomed", "doomed body line");
+    CHECK_FALSE(created.has_value());
+    CHECK(store.Size() == 0);
+    std::error_code ec;
+    std::filesystem::remove_all(dir / "notes" / "index.json", ec);
+    NotesStore reloaded(dir.string());
+    CHECK(reloaded.Size() == 0);
+    CHECK(reloaded.Get("doomed") == std::nullopt);
+}
+
+TEST_CASE("duplicate ids in the index keep the first entry") {
+    const std::filesystem::path dir = TestDir("dupids");
+    WriteFile(dir / "notes" / "same.md", "same body");
+    WriteFile(IndexPath(dir),
+              R"([{"id":"same","title":"First","created_at":10,"modified_at":11,"pinned":false},{"id":"same","title":"Second","created_at":20,"modified_at":21,"pinned":true}])");
+    NotesStore store(dir.string());
+    REQUIRE(store.Size() == 1);
+    const auto got = store.Get("same");
+    REQUIRE(got.has_value());
+    CHECK(got->title == "First");
+    CHECK_FALSE(got->pinned);
+}
+
 TEST_CASE("concurrent creates stay thread safe and persist every note") {
     const std::filesystem::path dir = TestDir("threads");
     NotesStore store(dir.string());

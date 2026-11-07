@@ -28,13 +28,13 @@ public:
     bool Save(const std::string& path) const;
     bool Save() const;
 
-    const std::vector<Entry>& Entries() const;
-    const std::vector<std::string>& Warnings() const;
+    std::vector<Entry> Entries() const;
+    std::vector<std::string> Warnings() const;
     bool Loaded() const;
 
     bool Enabled() const;
     void SetEnabled(bool enabled);
-    const std::string& DiffShortcut() const;
+    std::string DiffShortcut() const;
     void SetDiffShortcut(std::string shortcut);
 
     void SetHotkeyBindings(std::vector<Binding> bindings);
@@ -54,6 +54,8 @@ public:
                                   const std::vector<Binding>& bindings);
 
 private:
+    std::string ValidateLocked(int slot, const std::string& name,
+                               const std::string& prompt) const;
     void SeedDefaults();
     void RecomputeConflicts();
     void EnsureAllSlotsLocked();

@@ -41,7 +41,7 @@ public:
 
 private:
     void LoadLocked();
-    void PersistLocked();
+    bool PersistLocked();
     bool EvictLocked();
 
     mutable std::mutex mutex_;

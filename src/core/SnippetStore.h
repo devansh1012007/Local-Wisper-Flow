@@ -23,8 +23,8 @@ public:
     void SetEntries(std::vector<Entry> entries);
     void SetMode(std::string mode);
 
-    const std::vector<Entry>& Entries() const;
-    const std::vector<std::string>& Warnings() const;
+    std::vector<Entry> Entries() const;
+    std::vector<std::string> Warnings() const;
     bool Loaded() const;
 
     std::string Expand(const std::string& text) const;

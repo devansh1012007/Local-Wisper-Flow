@@ -168,8 +168,9 @@ void StatsStore::Record(const DictationRecord& record) {
     day.by_category[category] += words;
     day.apps[process] += words;
     EvictLocked();
-    PersistLocked();
-    generation_.fetch_add(1);
+    if (PersistLocked()) {
+        generation_.fetch_add(1);
+    }
 }
 
 void StatsStore::SetUsageStatsEnabled(bool enabled) {
@@ -221,12 +222,28 @@ void StatsStore::LoadLocked() {
         day.speaking_ms = JsonNumber(*it, "speaking_ms");
         day.words_corrected = JsonNumber(*it, "words_corrected");
         day.dictionary_fixes = JsonNumber(*it, "dictionary_fixes");
+        if (day.words < 0) {
+            day.words = 0;
+        }
+        if (day.dictations < 0) {
+            day.dictations = 0;
+        }
+        if (day.speaking_ms < 0) {
+            day.speaking_ms = 0;
+        }
+        if (day.words_corrected < 0) {
+            day.words_corrected = 0;
+        }
+        if (day.dictionary_fixes < 0) {
+            day.dictionary_fixes = 0;
+        }
         if (it->contains("by_category") &&
             (*it)["by_category"].is_object()) {
             for (auto cat_it = (*it)["by_category"].begin();
                  cat_it != (*it)["by_category"].end(); ++cat_it) {
                 if (cat_it->is_number()) {
-                    day.by_category[cat_it.key()] = cat_it->get<std::int64_t>();
+                    const std::int64_t value = cat_it->get<std::int64_t>();
+                    day.by_category[cat_it.key()] = value < 0 ? 0 : value;
                 }
             }
         }
@@ -234,7 +251,8 @@ void StatsStore::LoadLocked() {
             for (auto app_it = (*it)["apps"].begin(); app_it != (*it)["apps"].end();
                  ++app_it) {
                 if (app_it->is_number()) {
-                    day.apps[app_it.key()] = app_it->get<std::int64_t>();
+                    const std::int64_t value = app_it->get<std::int64_t>();
+                    day.apps[app_it.key()] = value < 0 ? 0 : value;
                 }
             }
         }
@@ -243,9 +261,9 @@ void StatsStore::LoadLocked() {
     }
 }
 
-void StatsStore::PersistLocked() {
+bool StatsStore::PersistLocked() {
     if (path_.empty()) {
-        return;
+        return true;
     }
     nlohmann::json json = nlohmann::json::object();
     for (auto& entry : days_) {
@@ -272,16 +290,25 @@ void StatsStore::PersistLocked() {
     {
         std::ofstream tmp(tmp_path, std::ios::trunc);
         if (!tmp.is_open()) {
-            return;
+            return false;
         }
         tmp << json.dump(4) << '\n';
         tmp.flush();
         if (!tmp) {
-            return;
+            tmp.close();
+            std::error_code cleanup_ec;
+            std::filesystem::remove(tmp_path, cleanup_ec);
+            return false;
         }
     }
     std::error_code ec;
     std::filesystem::rename(tmp_path, path_, ec);
+    if (ec) {
+        std::error_code cleanup_ec;
+        std::filesystem::remove(tmp_path, cleanup_ec);
+        return false;
+    }
+    return true;
 }
 
 bool StatsStore::EvictLocked() {

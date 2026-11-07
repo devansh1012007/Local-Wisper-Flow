@@ -178,6 +178,89 @@ TEST_CASE("stats word count splits on unicode whitespace") {
     CHECK(StatsStore::CountWords("") == 0);
     CHECK(StatsStore::CountWords("  one   two\tthree\nfour") == 4);
     CHECK(StatsStore::CountWords("hello world") == 2);
+    CHECK(StatsStore::CountWords("a\xC2\xA0" "b") == 2);
+    CHECK(StatsStore::CountWords("a\xE3\x80\x80" "b") == 2);
+}
+
+TEST_CASE("stats record clamps negative durations and counts to zero") {
+    const std::string path = TempPath("negclamp");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    const std::int64_t now = NowSeconds();
+    DictationRecord record = MakeRecord(now, "hello world", "slack.exe");
+    record.duration_ms = -100;
+    record.words_corrected = -3;
+    record.dictionary_fixes = -7;
+    store.Record(record);
+    const auto snap = store.Snapshot();
+    const std::string key = StatsStore::DateKey(now);
+    REQUIRE(snap.find(key) != snap.end());
+    CHECK(snap.at(key).words == 2);
+    CHECK(snap.at(key).speaking_ms == 0);
+    CHECK(snap.at(key).words_corrected == 0);
+    CHECK(snap.at(key).dictionary_fixes == 0);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats record with empty process attributes to unknown app") {
+    const std::string path = TempPath("unknownapp");
+    std::filesystem::remove(path);
+    StatsStore store(path);
+    const std::int64_t now = NowSeconds();
+    store.Record(MakeRecord(now, "hello world", ""));
+    const auto snap = store.Snapshot();
+    const std::string key = StatsStore::DateKey(now);
+    REQUIRE(snap.find(key) != snap.end());
+    REQUIRE(snap.at(key).apps.find("unknown") != snap.at(key).apps.end());
+    CHECK(snap.at(key).apps.at("unknown") == 2);
+    CHECK(snap.at(key).by_category.at("Other tasks") == 2);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats generation does not advance when persistence fails") {
+    const std::string dir =
+        (std::filesystem::temp_directory_path() / "lwf_stats_02b_absent_dir").string();
+    std::filesystem::remove_all(dir);
+    const std::string path = dir + "/stats.json";
+    StatsStore store(path);
+    store.Record(MakeRecord(NowSeconds(), "hello world", "slack.exe"));
+    CHECK(store.Snapshot().size() == 1);
+    CHECK(store.Generation() == 0);
+    CHECK_FALSE(std::filesystem::exists(path));
+    CHECK_FALSE(std::filesystem::exists(path + ".tmp"));
+}
+
+TEST_CASE("stats load clamps negative day values to zero") {
+    const std::string path = TempPath("negload");
+    std::filesystem::remove(path);
+    const std::int64_t now = NowSeconds();
+    const std::string key = StatsStore::DateKey(now);
+    nlohmann::json planted = nlohmann::json::object();
+    nlohmann::json day;
+    day["words"] = -5;
+    day["dictations"] = -1;
+    day["speaking_ms"] = -100;
+    day["words_corrected"] = -2;
+    day["dictionary_fixes"] = -3;
+    nlohmann::json cats = nlohmann::json::object();
+    cats["Work messages"] = -9;
+    day["by_category"] = cats;
+    nlohmann::json apps = nlohmann::json::object();
+    apps["slack.exe"] = -4;
+    day["apps"] = apps;
+    planted[key] = day;
+    WriteJson(path, planted);
+    StatsStore store(path);
+    const auto snap = store.Snapshot();
+    REQUIRE(snap.find(key) != snap.end());
+    CHECK(snap.at(key).words == 0);
+    CHECK(snap.at(key).dictations == 0);
+    CHECK(snap.at(key).speaking_ms == 0);
+    CHECK(snap.at(key).words_corrected == 0);
+    CHECK(snap.at(key).dictionary_fixes == 0);
+    CHECK(snap.at(key).by_category.at("Work messages") == 0);
+    CHECK(snap.at(key).apps.at("slack.exe") == 0);
+    std::filesystem::remove(path);
 }
 
 TEST_CASE("app context category mapping process first title second") {

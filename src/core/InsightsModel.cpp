@@ -45,6 +45,14 @@ bool ParseDayKey(const std::string& day, std::int64_t& serial) {
     if (month < 1 || month > 12 || day_of_month < 1 || day_of_month > 31) {
         return false;
     }
+    static const int kDaysInMonth[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    int max_day = kDaysInMonth[month - 1];
+    if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) {
+        max_day = 29;
+    }
+    if (day_of_month > max_day) {
+        return false;
+    }
     serial = DaysFromCivil(year, month, day_of_month);
     return true;
 }

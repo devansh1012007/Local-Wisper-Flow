@@ -9,9 +9,9 @@
 
 namespace {
 
-std::filesystem::path TestDir() {
+std::filesystem::path TestDir(const char* name) {
     const std::filesystem::path dir =
-        std::filesystem::temp_directory_path() / "lwf_snippetstore_v2";
+        std::filesystem::temp_directory_path() / (std::string("lwf_snippetstore_v2_") + name);
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
     std::filesystem::create_directories(dir, ec);
@@ -126,7 +126,7 @@ TEST_CASE("empty trigger is ignored and whole-word matching is case-insensitive"
 }
 
 TEST_CASE("v2 save and load roundtrip keeps ids and timestamps") {
-    const std::filesystem::path dir = TestDir();
+    const std::filesystem::path dir = TestDir("roundtrip");
     const std::string path = (dir / "snippets.json").string();
     SnippetStore store;
     std::string error;
@@ -154,7 +154,7 @@ TEST_CASE("v2 save and load roundtrip keeps ids and timestamps") {
 }
 
 TEST_CASE("v1 array still loads and gains ids") {
-    const std::filesystem::path dir = TestDir();
+    const std::filesystem::path dir = TestDir("v1");
     const std::string path = (dir / "snippets.json").string();
     WriteFile(path,
               R"([{"trigger": "sig", "expansion": "first"}, {"trigger": "email", "expansion": "e"}])");
@@ -167,7 +167,7 @@ TEST_CASE("v1 array still loads and gains ids") {
 }
 
 TEST_CASE("duplicate triggers last wins and missing file is not loaded") {
-    const std::filesystem::path dir = TestDir();
+    const std::filesystem::path dir = TestDir("duplock");
     const std::string path = (dir / "snippets.json").string();
     WriteFile(path,
               R"([{"trigger": "sig", "expansion": "first"}, {"trigger": "SIG", "expansion": "second"}])");
@@ -178,4 +178,112 @@ TEST_CASE("duplicate triggers last wins and missing file is not loaded") {
     SnippetStore missing;
     CHECK_FALSE(missing.Load((dir / "nope.json").string()));
     CHECK_FALSE(missing.Loaded());
+}
+
+TEST_CASE("upsert with exclude id renames only that entry") {
+    SnippetStore store;
+    StoreWith(store, {{"alpha", "one"}, {"beta", "two"}});
+    std::string alpha_id;
+    std::string beta_id;
+    for (const auto& entry : store.Entries()) {
+        if (entry.trigger == "alpha") {
+            alpha_id = entry.id;
+        }
+        if (entry.trigger == "beta") {
+            beta_id = entry.id;
+        }
+    }
+    REQUIRE_FALSE(alpha_id.empty());
+    REQUIRE_FALSE(beta_id.empty());
+    std::string error;
+    REQUIRE(store.Upsert("gamma", "three", alpha_id, error));
+    CHECK(store.Entries().size() == 2);
+    CHECK(store.Expand("gamma") == "three");
+    CHECK(store.Expand("alpha") == "alpha");
+    CHECK(store.Expand("beta") == "two");
+    bool kept_id = false;
+    for (const auto& entry : store.Entries()) {
+        if (entry.trigger == "gamma" && entry.id == alpha_id) {
+            kept_id = true;
+        }
+    }
+    CHECK(kept_id);
+}
+
+TEST_CASE("upsert rename onto another trigger does not delete the other entry") {
+    SnippetStore store;
+    StoreWith(store, {{"alpha", "one"}, {"beta", "two"}});
+    std::string alpha_id;
+    for (const auto& entry : store.Entries()) {
+        if (entry.trigger == "alpha") {
+            alpha_id = entry.id;
+        }
+    }
+    REQUIRE_FALSE(alpha_id.empty());
+    std::string error;
+    CHECK_FALSE(store.Upsert("beta", "changed", alpha_id, error));
+    CHECK(error == "Snippet already exists");
+    CHECK(store.Entries().size() == 2);
+    CHECK(store.Expand("alpha") == "one");
+    CHECK(store.Expand("beta") == "two");
+    REQUIRE(store.Upsert("beta", "", alpha_id, error));
+    CHECK(store.Entries().size() == 1);
+    CHECK(store.Expand("beta") == "two");
+    CHECK(store.Expand("alpha") == "alpha");
+}
+
+TEST_CASE("remove by trigger removes only the matching entry") {
+    SnippetStore store;
+    StoreWith(store, {{"alpha", "one"}, {"beta", "two"}});
+    store.RemoveByTrigger("ALPHA");
+    CHECK(store.Entries().size() == 1);
+    CHECK(store.Expand("beta") == "two");
+    store.RemoveByTrigger("missing");
+    CHECK(store.Entries().size() == 1);
+}
+
+TEST_CASE("contains mode equal length tie break is alphabetical ascending") {
+    SnippetStore store;
+    StoreWith(store, {{"bb", "cc"}, {"aa", "bb"}});
+    store.SetMode("contains");
+    CHECK(store.Expand("aa") == "cc");
+}
+
+TEST_CASE("expansion cap counts characters not bytes") {
+    SnippetStore store;
+    std::string wide;
+    for (int i = 0; i < 4000; ++i) {
+        wide += "\xE4\xBD\xA0";
+    }
+    CHECK(wide.size() == 12000);
+    CHECK(store.Validate("word", wide) == "");
+    std::string too_wide = wide + "\xE4\xBD\xA0";
+    CHECK(store.Validate("word", too_wide) == "Snippet too long");
+}
+
+TEST_CASE("load generates ids that do not collide with file provided ids") {
+    const std::filesystem::path dir = TestDir("idcollision");
+    const std::string path = (dir / "snippets.json").string();
+    WriteFile(path,
+              R"([{"trigger": "first", "expansion": "one"}, {"id": "snippet-1", "trigger": "second", "expansion": "two"}])");
+    SnippetStore store;
+    REQUIRE(store.Load(path));
+    REQUIRE(store.Entries().size() == 2);
+    CHECK(store.Entries()[0].id != store.Entries()[1].id);
+    store.RemoveById("snippet-1");
+    CHECK(store.Entries().size() == 1);
+    CHECK(store.Expand("first") == "one");
+}
+
+TEST_CASE("load tolerates non string id and timestamp fields") {
+    const std::filesystem::path dir = TestDir("badtypes");
+    const std::string path = (dir / "snippets.json").string();
+    WriteFile(path,
+              R"([{"id": 42, "trigger": "sig", "expansion": "first", "created_at": "yesterday"}])");
+    SnippetStore store;
+    REQUIRE(store.Load(path));
+    REQUIRE(store.Entries().size() == 1);
+    CHECK_FALSE(store.Entries()[0].id.empty());
+    CHECK(store.Entries()[0].id != "42");
+    CHECK(store.Expand("sig") == "first");
 }

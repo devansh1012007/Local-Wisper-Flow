@@ -37,6 +37,44 @@ std::string ToLowerCopy(const std::string& text) {
     return out;
 }
 
+bool ContainsWholeWord(const std::string& haystack, const std::string& needle) {
+    if (needle.empty() || haystack.empty()) {
+        return false;
+    }
+    const std::string lowered = ToLowerCopy(haystack);
+    const std::string target = ToLowerCopy(needle);
+    std::size_t pos = 0;
+    for (;;) {
+        pos = lowered.find(target, pos);
+        if (pos == std::string::npos) {
+            return false;
+        }
+        const std::size_t after = pos + target.size();
+        const bool left_ok =
+            pos == 0 || !std::isalnum(static_cast<unsigned char>(lowered[pos - 1]));
+        const bool right_ok =
+            after >= lowered.size() || !std::isalnum(static_cast<unsigned char>(lowered[after]));
+        if (left_ok && right_ok) {
+            return true;
+        }
+        ++pos;
+    }
+}
+
+void MoveToBad(const std::string& path) {
+    std::error_code ec;
+    std::filesystem::rename(path, path + ".bad", ec);
+    if (ec) {
+        std::error_code remove_ec;
+        std::filesystem::remove(path + ".bad", remove_ec);
+        ec.clear();
+        std::filesystem::rename(path, path + ".bad", ec);
+    }
+    if (ec) {
+        lwf::Log::Warning("dictionary: could not rename corrupt file to .bad: " + ec.message());
+    }
+}
+
 void MergeParsed(std::vector<DictionaryStore::Entry>& out,
                  std::unordered_map<std::string, std::size_t>& index,
                  DictionaryStore::Entry candidate) {
@@ -321,8 +359,7 @@ bool DictionaryStore::Load() {
         file >> json;
     } catch (const nlohmann::json::exception&) {
         file.close();
-        std::error_code ec;
-        std::filesystem::rename(path_, path_ + ".bad", ec);
+        MoveToBad(path_);
         lwf::Log::Warning("dictionary: corrupt file renamed to .bad");
         entries_.clear();
         next_id_ = 1;
@@ -334,8 +371,7 @@ bool DictionaryStore::Load() {
     bool migrated = false;
     if (!ParseAny(json, NowSeconds(), Source::Manual, parsed, migrated)) {
         file.close();
-        std::error_code ec;
-        std::filesystem::rename(path_, path_ + ".bad", ec);
+        MoveToBad(path_);
         lwf::Log::Warning("dictionary: unsupported file renamed to .bad");
         entries_.clear();
         next_id_ = 1;
@@ -343,9 +379,11 @@ bool DictionaryStore::Load() {
         migrated_ = false;
         return false;
     }
+    bool truncated = false;
     if (parsed.size() > kMaxEntries) {
         lwf::Log::Warning("dictionary: truncated to " + std::to_string(kMaxEntries) + " entries");
         parsed.resize(kMaxEntries);
+        truncated = true;
     }
     std::int64_t next = 1;
     for (const Entry& entry : parsed) {
@@ -357,6 +395,9 @@ bool DictionaryStore::Load() {
     next_id_ = next;
     loaded_ = true;
     migrated_ = migrated;
+    if (truncated) {
+        bak_pending_ = true;
+    }
     return true;
 }
 
@@ -382,10 +423,13 @@ bool DictionaryStore::Save() {
         tmp << root.dump(4) << '\n';
         tmp.flush();
         if (!tmp.good()) {
+            tmp.close();
+            std::error_code cleanup_ec;
+            std::filesystem::remove(tmp_path, cleanup_ec);
             return false;
         }
     }
-    if (migrated_) {
+    if (migrated_ || bak_pending_) {
         std::error_code ec;
         if (!std::filesystem::exists(path_ + ".bak", ec)) {
             std::filesystem::copy_file(path_, path_ + ".bak",
@@ -402,6 +446,7 @@ bool DictionaryStore::Save() {
     }
     loaded_ = true;
     migrated_ = false;
+    bak_pending_ = false;
     return true;
 }
 
@@ -457,6 +502,13 @@ bool DictionaryStore::Add(const std::string& phrase, const std::string& replacem
             return false;
         }
     }
+    if (!trimmed_replacement.empty() &&
+        ContainsWholeWord(trimmed_replacement, trimmed_phrase)) {
+        if (error != nullptr) {
+            *error = "replacement cannot contain the phrase";
+        }
+        return false;
+    }
     const std::int64_t now = NowSeconds();
     Entry entry;
     entry.id = next_id_++;
@@ -508,6 +560,13 @@ bool DictionaryStore::Update(std::int64_t id, const std::string& phrase,
             }
             return false;
         }
+    }
+    if (!trimmed_replacement.empty() &&
+        ContainsWholeWord(trimmed_replacement, trimmed_phrase)) {
+        if (error != nullptr) {
+            *error = "replacement cannot contain the phrase";
+        }
+        return false;
     }
     target->phrase = trimmed_phrase;
     target->replacement = trimmed_replacement;
@@ -581,6 +640,15 @@ bool DictionaryStore::ImportJson(const std::string& content, std::string* error)
                           " entries on import");
         parsed.resize(kMaxEntries);
     }
+    for (const Entry& entry : parsed) {
+        if (entry.has_replacement && !entry.replacement.empty() &&
+            ContainsWholeWord(entry.replacement, entry.phrase)) {
+            if (error != nullptr) {
+                *error = "replacement cannot contain the phrase";
+            }
+            return false;
+        }
+    }
     std::lock_guard<std::mutex> lock(mutex_);
     std::int64_t next = 1;
     for (const Entry& entry : parsed) {
@@ -592,18 +660,35 @@ bool DictionaryStore::ImportJson(const std::string& content, std::string* error)
     next_id_ = next;
     loaded_ = true;
     migrated_ = false;
+    bak_pending_ = true;
     return true;
 }
 
 bool DictionaryStore::ExportFile(const std::string& path) const {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::ofstream file(path, std::ios::trunc);
-    if (!file.is_open()) {
+    const std::string tmp_path = path + ".tmp";
+    {
+        std::ofstream file(tmp_path, std::ios::trunc);
+        if (!file.is_open()) {
+            return false;
+        }
+        file << EntriesToJson(entries_).dump(4) << '\n';
+        file.flush();
+        if (!file.good()) {
+            file.close();
+            std::error_code cleanup_ec;
+            std::filesystem::remove(tmp_path, cleanup_ec);
+            return false;
+        }
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp_path, path, ec);
+    if (ec) {
+        std::error_code cleanup_ec;
+        std::filesystem::remove(tmp_path, cleanup_ec);
         return false;
     }
-    file << EntriesToJson(entries_).dump(4) << '\n';
-    file.flush();
-    return file.good();
+    return true;
 }
 
 bool DictionaryStore::ImportFile(const std::string& path, std::string* error) {

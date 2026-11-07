@@ -30,6 +30,17 @@ std::string LowerAscii(std::string text) {
     return text;
 }
 
+std::size_t CountCodePoints(const std::string& text) {
+    std::size_t count = 0;
+    for (const char c : text) {
+        const unsigned char u = static_cast<unsigned char>(c);
+        if ((u & 0xC0) != 0x80) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 std::string NormalizeToken(std::string token) {
     token = LowerAscii(TrimCopy(token));
     if (token == "control") {
@@ -182,6 +193,11 @@ void TransformStore::EnsureAllSlotsLocked() {
                 entry.name = "Prompt Engineer";
                 entry.prompt = DefaultPromptEngineerPrompt();
             }
+            if (!entry.name.empty()) {
+                const std::int64_t now = NowSeconds();
+                entry.created_at = now;
+                entry.updated_at = now;
+            }
             filled.push_back(std::move(entry));
         }
     }
@@ -216,7 +232,13 @@ void TransformStore::RecomputeConflicts() {
         if (ShortcutsConflict(entry.shortcut, bindings_)) {
             conflict = true;
         }
-        const std::string key = LowerAscii(TrimCopy(entry.shortcut));
+        std::string key;
+        for (const std::string& token : TokenSet(entry.shortcut)) {
+            if (!key.empty()) {
+                key += '+';
+            }
+            key += token;
+        }
         if (!seen_shortcuts.insert(key).second) {
             conflict = true;
         }
@@ -294,6 +316,21 @@ bool TransformStore::Load(const std::string& path) {
                 load_warnings.push_back("transforms: v1 entry with empty name skipped");
                 continue;
             }
+            {
+                const std::string candidate = LowerAscii(TrimCopy(element["name"].get<std::string>()));
+                const bool duplicate_name =
+                    candidate == "polish" || candidate == "prompt engineer" ||
+                    std::any_of(migrated.begin(), migrated.end(),
+                                [&candidate](const Entry& existing) {
+                                    return LowerAscii(existing.name) == candidate;
+                                });
+                if (duplicate_name) {
+                    load_warnings.push_back("transforms: v1 entry '" +
+                                            element["name"].get<std::string>() +
+                                            "' skipped: duplicate transform name");
+                    continue;
+                }
+            }
             Entry entry;
             entry.slot = next_slot++;
             entry.name = TrimCopy(element["name"].get<std::string>());
@@ -306,8 +343,12 @@ bool TransformStore::Load(const std::string& path) {
             migrated.push_back(std::move(entry));
         }
     } else if (json.is_object()) {
-        enabled = json.value("enabled", false);
-        diff_shortcut = json.value("diff_shortcut", std::string("Win+Alt+O"));
+        if (json.contains("enabled") && json["enabled"].is_boolean()) {
+            enabled = json["enabled"].get<bool>();
+        }
+        if (json.contains("diff_shortcut") && json["diff_shortcut"].is_string()) {
+            diff_shortcut = json["diff_shortcut"].get<std::string>();
+        }
         if (TrimCopy(diff_shortcut).empty()) {
             diff_shortcut = "Win+Alt+O";
         }
@@ -329,24 +370,41 @@ bool TransformStore::Load(const std::string& path) {
                 continue;
             }
             Entry entry;
-            entry.slot = element.value("slot", static_cast<int>(index + 1));
+            entry.slot = static_cast<int>(index + 1);
+            if (element.contains("slot") && element["slot"].is_number()) {
+                entry.slot = element["slot"].get<int>();
+            }
             if (entry.slot < 1 || entry.slot > kSlotCount) {
                 load_warnings.push_back("transforms: slot " + std::to_string(entry.slot) +
                                         " out of range; skipped");
                 continue;
             }
-            entry.name = TrimCopy(element.value("name", std::string()));
-            entry.prompt = element.value("prompt", std::string());
-            entry.shortcut = element.value("shortcut", DefaultShortcutForSlot(entry.slot));
+            if (element.contains("name") && element["name"].is_string()) {
+                entry.name = TrimCopy(element["name"].get<std::string>());
+            }
+            if (element.contains("prompt") && element["prompt"].is_string()) {
+                entry.prompt = element["prompt"].get<std::string>();
+            }
+            entry.shortcut = DefaultShortcutForSlot(entry.slot);
+            if (element.contains("shortcut") && element["shortcut"].is_string()) {
+                entry.shortcut = element["shortcut"].get<std::string>();
+            }
             if (TrimCopy(entry.shortcut).empty()) {
                 entry.shortcut = DefaultShortcutForSlot(entry.slot);
             }
-            entry.built_in = element.value("built_in", entry.slot <= 2);
+            entry.built_in = entry.slot <= 2;
+            if (element.contains("built_in") && element["built_in"].is_boolean()) {
+                entry.built_in = element["built_in"].get<bool>();
+            }
             if (entry.slot <= 2) {
                 entry.built_in = true;
             }
-            entry.created_at = element.value("created_at", std::int64_t{0});
-            entry.updated_at = element.value("updated_at", std::int64_t{0});
+            if (element.contains("created_at") && element["created_at"].is_number()) {
+                entry.created_at = element["created_at"].get<std::int64_t>();
+            }
+            if (element.contains("updated_at") && element["updated_at"].is_number()) {
+                entry.updated_at = element["updated_at"].get<std::int64_t>();
+            }
             if (!entry.prompt.empty()) {
                 entry.prompt = EnsureTextPlaceholder(entry.prompt);
             }
@@ -372,6 +430,25 @@ bool TransformStore::Load(const std::string& path) {
                                  "' must contain an array or object; keeping seeded built-ins");
         warnings_ = load_warnings_;
         return false;
+    }
+
+    if (!convert_v1) {
+        std::set<std::string> seen_names;
+        for (auto it = migrated.begin(); it != migrated.end();) {
+            if (it->name.empty()) {
+                ++it;
+                continue;
+            }
+            const std::string key = LowerAscii(it->name);
+            if (seen_names.count(key) != 0) {
+                load_warnings.push_back("transforms: duplicate transform name '" + it->name +
+                                        "' skipped");
+                it = migrated.erase(it);
+                continue;
+            }
+            seen_names.insert(key);
+            ++it;
+        }
     }
 
     {
@@ -419,24 +496,22 @@ bool TransformStore::Load(const std::string& path) {
 }
 
 bool TransformStore::Save(const std::string& path) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     nlohmann::json json;
     json["version"] = 2;
     nlohmann::json slots = nlohmann::json::array();
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        json["enabled"] = enabled_;
-        json["diff_shortcut"] = diff_shortcut_;
-        for (const Entry& entry : entries_) {
-            nlohmann::json element;
-            element["slot"] = entry.slot;
-            element["name"] = entry.name;
-            element["prompt"] = entry.prompt;
-            element["shortcut"] = entry.shortcut;
-            element["built_in"] = entry.built_in;
-            element["created_at"] = entry.created_at;
-            element["updated_at"] = entry.updated_at;
-            slots.push_back(std::move(element));
-        }
+    json["enabled"] = enabled_;
+    json["diff_shortcut"] = diff_shortcut_;
+    for (const Entry& entry : entries_) {
+        nlohmann::json element;
+        element["slot"] = entry.slot;
+        element["name"] = entry.name;
+        element["prompt"] = entry.prompt;
+        element["shortcut"] = entry.shortcut;
+        element["built_in"] = entry.built_in;
+        element["created_at"] = entry.created_at;
+        element["updated_at"] = entry.updated_at;
+        slots.push_back(std::move(element));
     }
     json["slots"] = std::move(slots);
 
@@ -449,6 +524,9 @@ bool TransformStore::Save(const std::string& path) const {
         tmp << json.dump(4) << '\n';
         tmp.flush();
         if (!tmp) {
+            tmp.close();
+            std::error_code cleanup_ec;
+            std::filesystem::remove(tmp_path, cleanup_ec);
             return false;
         }
     }
@@ -457,7 +535,12 @@ bool TransformStore::Save(const std::string& path) const {
                                std::filesystem::copy_options::overwrite_existing, ec);
     ec.clear();
     std::filesystem::rename(tmp_path, path, ec);
-    return !ec;
+    if (ec) {
+        std::error_code cleanup_ec;
+        std::filesystem::remove(tmp_path, cleanup_ec);
+        return false;
+    }
+    return true;
 }
 
 bool TransformStore::Save() const {
@@ -472,15 +555,18 @@ bool TransformStore::Save() const {
     return Save(path);
 }
 
-const std::vector<TransformStore::Entry>& TransformStore::Entries() const {
+std::vector<TransformStore::Entry> TransformStore::Entries() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return entries_;
 }
 
-const std::vector<std::string>& TransformStore::Warnings() const {
+std::vector<std::string> TransformStore::Warnings() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return warnings_;
 }
 
 bool TransformStore::Loaded() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return loaded_;
 }
 
@@ -494,7 +580,8 @@ void TransformStore::SetEnabled(bool enabled) {
     enabled_ = enabled;
 }
 
-const std::string& TransformStore::DiffShortcut() const {
+std::string TransformStore::DiffShortcut() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return diff_shortcut_;
 }
 
@@ -534,8 +621,8 @@ bool TransformStore::IsSlotEnabled(int slot) const {
     return found->prompt.find("{text}") != std::string::npos;
 }
 
-std::string TransformStore::Validate(int slot, const std::string& name,
-                                     const std::string& prompt) const {
+std::string TransformStore::ValidateLocked(int slot, const std::string& name,
+                                           const std::string& prompt) const {
     if (slot < 1 || slot > kSlotCount) {
         return "Invalid slot";
     }
@@ -545,10 +632,24 @@ std::string TransformStore::Validate(int slot, const std::string& name,
     if (slot > 2 && TrimCopy(name).empty()) {
         return "Please enter a name";
     }
-    if (prompt.size() > kMaxPromptChars) {
+    if (CountCodePoints(prompt) > kMaxPromptChars) {
         return "Prompt too long";
     }
+    const std::string candidate = LowerAscii(TrimCopy(name));
+    if (!candidate.empty()) {
+        for (const Entry& entry : entries_) {
+            if (entry.slot != slot && LowerAscii(TrimCopy(entry.name)) == candidate) {
+                return "Transform name already exists";
+            }
+        }
+    }
     return {};
+}
+
+std::string TransformStore::Validate(int slot, const std::string& name,
+                                     const std::string& prompt) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return ValidateLocked(slot, name, prompt);
 }
 
 bool TransformStore::SetSlot(int slot, const std::string& name, const std::string& prompt,
@@ -562,7 +663,7 @@ bool TransformStore::SetSlot(int slot, const std::string& name, const std::strin
 
 bool TransformStore::SetSlot(const Entry& entry, std::string& error) {
     std::lock_guard<std::mutex> lock(mutex_);
-    const std::string validation = Validate(entry.slot, entry.name, entry.prompt);
+    const std::string validation = ValidateLocked(entry.slot, entry.name, entry.prompt);
     if (!validation.empty()) {
         error = validation;
         return false;

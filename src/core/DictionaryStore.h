@@ -59,4 +59,5 @@ private:
     std::int64_t next_id_ = 1;
     bool loaded_ = false;
     bool migrated_ = false;
+    bool bak_pending_ = false;
 };

@@ -8,6 +8,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <utility>
 
 namespace {
@@ -61,6 +62,17 @@ std::size_t WholeWordFind(const std::string& lowered_text, const std::string& lo
         }
         ++pos;
     }
+}
+
+std::size_t CountCodePoints(const std::string& text) {
+    std::size_t count = 0;
+    for (const char c : text) {
+        const unsigned char u = static_cast<unsigned char>(c);
+        if ((u & 0xC0) != 0x80) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 std::string CollapseWhitespace(const std::string& text) {
@@ -150,6 +162,15 @@ bool SnippetStore::Load(const std::string& path) {
 
     std::vector<Entry> entries;
     std::vector<std::string> warnings;
+    std::set<std::string> reserved_ids;
+    for (const auto& element : items) {
+        if (element.is_object() && element.contains("id") && element["id"].is_string()) {
+            const std::string id = element["id"].get<std::string>();
+            if (!id.empty()) {
+                reserved_ids.insert(id);
+            }
+        }
+    }
     for (std::size_t index = 0; index < items.size(); ++index) {
         const nlohmann::json& element = items[index];
         if (!element.is_object() || !element.contains("trigger") ||
@@ -160,13 +181,19 @@ bool SnippetStore::Load(const std::string& path) {
         Entry entry;
         entry.trigger = element["trigger"].get<std::string>();
         entry.expansion = element["expansion"].get<std::string>();
-        entry.id = element.value("id", std::string());
-        entry.created_at = element.value("created_at", std::int64_t{0});
-        entry.updated_at = element.value("updated_at", std::int64_t{0});
+        if (element.contains("id") && element["id"].is_string()) {
+            entry.id = element["id"].get<std::string>();
+        }
+        if (element.contains("created_at") && element["created_at"].is_number()) {
+            entry.created_at = element["created_at"].get<std::int64_t>();
+        }
+        if (element.contains("updated_at") && element["updated_at"].is_number()) {
+            entry.updated_at = element["updated_at"].get<std::int64_t>();
+        }
         if (TrimCopy(entry.trigger).empty()) {
             continue;
         }
-        if (entry.expansion.size() > kMaxExpansionChars) {
+        if (CountCodePoints(entry.expansion) > kMaxExpansionChars) {
             warnings.push_back("snippet '" + entry.trigger +
                                "' rejected: expansion over 4000 chars");
             continue;
@@ -180,13 +207,23 @@ bool SnippetStore::Load(const std::string& path) {
                                "', last wins");
             entries.erase(duplicate);
         }
-        if (entry.id.empty()) {
-            entry.id = "snippet-" + std::to_string(index + 1);
+        const bool id_taken =
+            std::any_of(entries.begin(), entries.end(),
+                        [&entry](const Entry& existing) { return existing.id == entry.id; });
+        if (entry.id.empty() || id_taken) {
+            std::size_t suffix = index + 1;
+            std::string candidate = "snippet-" + std::to_string(suffix);
+            while (reserved_ids.count(candidate) != 0) {
+                ++suffix;
+                candidate = "snippet-" + std::to_string(suffix);
+            }
+            entry.id = candidate;
+            reserved_ids.insert(candidate);
         }
         entries.push_back(std::move(entry));
     }
-    for (const std::string& warning : warnings) {
-        lwf::Log::Warning("snippets: " + warning);
+    if (!warnings.empty()) {
+        lwf::Log::Warning("snippets: " + std::to_string(warnings.size()) + " load warnings");
     }
     std::lock_guard<std::mutex> lock(mutex_);
     entries_ = std::move(entries);
@@ -197,20 +234,18 @@ bool SnippetStore::Load(const std::string& path) {
 }
 
 bool SnippetStore::Save(const std::string& path) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     nlohmann::json json;
     json["version"] = 2;
     nlohmann::json items = nlohmann::json::array();
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (const Entry& entry : entries_) {
-            nlohmann::json element;
-            element["id"] = entry.id;
-            element["trigger"] = entry.trigger;
-            element["expansion"] = entry.expansion;
-            element["created_at"] = entry.created_at;
-            element["updated_at"] = entry.updated_at;
-            items.push_back(std::move(element));
-        }
+    for (const Entry& entry : entries_) {
+        nlohmann::json element;
+        element["id"] = entry.id;
+        element["trigger"] = entry.trigger;
+        element["expansion"] = entry.expansion;
+        element["created_at"] = entry.created_at;
+        element["updated_at"] = entry.updated_at;
+        items.push_back(std::move(element));
     }
     json["snippets"] = std::move(items);
 
@@ -223,6 +258,9 @@ bool SnippetStore::Save(const std::string& path) const {
         tmp << json.dump(4) << '\n';
         tmp.flush();
         if (!tmp) {
+            tmp.close();
+            std::error_code cleanup_ec;
+            std::filesystem::remove(tmp_path, cleanup_ec);
             return false;
         }
     }
@@ -231,7 +269,12 @@ bool SnippetStore::Save(const std::string& path) const {
                                std::filesystem::copy_options::overwrite_existing, ec);
     ec.clear();
     std::filesystem::rename(tmp_path, path, ec);
-    return !ec;
+    if (ec) {
+        std::error_code cleanup_ec;
+        std::filesystem::remove(tmp_path, cleanup_ec);
+        return false;
+    }
+    return true;
 }
 
 bool SnippetStore::Save() const {
@@ -279,15 +322,18 @@ void SnippetStore::SetMode(std::string mode) {
     mode_ = std::move(mode);
 }
 
-const std::vector<SnippetStore::Entry>& SnippetStore::Entries() const {
+std::vector<SnippetStore::Entry> SnippetStore::Entries() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return entries_;
 }
 
-const std::vector<std::string>& SnippetStore::Warnings() const {
+std::vector<std::string> SnippetStore::Warnings() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return warnings_;
 }
 
 bool SnippetStore::Loaded() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return loaded_;
 }
 
@@ -354,7 +400,7 @@ std::string SnippetStore::ValidateLocked(const std::string& trigger,
     if (TrimCopy(trigger).empty()) {
         return "Please enter a word";
     }
-    if (expansion.size() > kMaxExpansionChars) {
+    if (CountCodePoints(expansion) > kMaxExpansionChars) {
         return "Snippet too long";
     }
     if (TrimCopy(expansion).empty()) {
@@ -403,7 +449,7 @@ bool SnippetStore::Upsert(const std::string& trigger, const std::string& expansi
         error = "Please enter a word";
         return false;
     }
-    if (expansion.size() > kMaxExpansionChars) {
+    if (CountCodePoints(expansion) > kMaxExpansionChars) {
         error = "Snippet too long";
         return false;
     }
@@ -411,9 +457,10 @@ bool SnippetStore::Upsert(const std::string& trigger, const std::string& expansi
     if (TrimCopy(expansion).empty()) {
         entries_.erase(std::remove_if(entries_.begin(), entries_.end(),
                                        [&trigger_key, &exclude_id](const Entry& entry) {
-                                           return LowerTrimCopy(entry.trigger) == trigger_key ||
-                                                  (!exclude_id.empty() &&
-                                                   entry.id == exclude_id);
+                                           if (!exclude_id.empty()) {
+                                               return entry.id == exclude_id;
+                                           }
+                                           return LowerTrimCopy(entry.trigger) == trigger_key;
                                        }),
                        entries_.end());
         error.clear();
@@ -427,8 +474,10 @@ bool SnippetStore::Upsert(const std::string& trigger, const std::string& expansi
     const std::int64_t now = NowSeconds();
     const auto existing = std::find_if(
         entries_.begin(), entries_.end(), [&trigger_key, &exclude_id](const Entry& entry) {
-            return (!exclude_id.empty() && entry.id == exclude_id) ||
-                   LowerTrimCopy(entry.trigger) == trigger_key;
+            if (!exclude_id.empty()) {
+                return entry.id == exclude_id;
+            }
+            return LowerTrimCopy(entry.trigger) == trigger_key;
         });
     if (existing != entries_.end()) {
         if (existing->id.empty()) {

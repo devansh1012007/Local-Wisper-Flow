@@ -63,14 +63,24 @@ TEST_CASE("WriteAtomic ignores a stale tmp left by an interrupted write") {
     CHECK_FALSE(std::filesystem::exists(path + ".tmp"));
 }
 
-TEST_CASE("a tmp write without the rename leaves the old content intact") {
-    const std::string dir = TempDir("norenamer");
+TEST_CASE("WriteAtomic fails when the target path is a directory and cleans its tmp") {
+    const std::string dir = TempDir("isdir");
     const std::string path = (std::filesystem::path(dir) / "config.json").string();
+    std::filesystem::create_directories(path);
 
-    WriteFile(path, "committed");
-    WriteFile(path + ".tmp", "partial");
+    CHECK_FALSE(lwf::WriteAtomic(path, "content"));
+    CHECK(std::filesystem::is_directory(path));
+    CHECK_FALSE(std::filesystem::exists(path + ".tmp"));
+}
 
-    CHECK(ReadFile(path) == "committed");
+TEST_CASE("WriteAtomic preserves binary content with NUL bytes") {
+    const std::string dir = TempDir("binary");
+    const std::string path = (std::filesystem::path(dir) / "blob.bin").string();
+    const std::string content("a\0b\0c", 5);
+
+    CHECK(lwf::WriteAtomic(path, content));
+    CHECK(ReadFile(path) == content);
+    CHECK_FALSE(std::filesystem::exists(path + ".tmp"));
 }
 
 TEST_CASE("WriteAtomic into a missing directory fails and creates nothing") {

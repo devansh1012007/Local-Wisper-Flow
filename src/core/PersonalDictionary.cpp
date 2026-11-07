@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstdint>
 #include <fstream>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -60,13 +61,13 @@ std::vector<Token> WordTokens(const std::string& text) {
 }
 
 bool WholeWordFindInsensitive(const std::string& text, const std::string& needle,
-                              std::size_t& out_begin, std::size_t& out_end) {
+                              std::size_t start, std::size_t& out_begin, std::size_t& out_end) {
     const std::string lowered = ToLowerUtf8Safe(text);
     const std::string target = ToLowerUtf8Safe(needle);
     if (target.empty()) {
         return false;
     }
-    std::size_t pos = 0;
+    std::size_t pos = start;
     for (;;) {
         pos = lowered.find(target, pos);
         if (pos == std::string::npos) {
@@ -88,6 +89,7 @@ bool WholeWordFindInsensitive(const std::string& text, const std::string& needle
 }
 
 bool PersonalDictionary::Load(const std::string& path) {
+    std::lock_guard<std::mutex> lock(mutex_);
     path_ = path;
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -141,7 +143,8 @@ bool PersonalDictionary::Load(const std::string& path) {
         }
         if (json.contains("replacements") && json["replacements"].is_array()) {
             for (const auto& element : json["replacements"]) {
-                if (element.is_object() && element.contains("from") && element.contains("to")) {
+                if (element.is_object() && element.contains("from") && element.contains("to") &&
+                    element["from"].is_string() && element["to"].is_string()) {
                     replacements.emplace_back(element["from"].get<std::string>(),
                                               element["to"].get<std::string>());
                 }
@@ -163,19 +166,26 @@ bool PersonalDictionary::Load(const std::string& path) {
 }
 
 bool PersonalDictionary::Reload() {
-    if (path_.empty()) {
+    std::string path;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        path = path_;
+    }
+    if (path.empty()) {
         return false;
     }
-    return Load(path_);
+    return Load(path);
 }
 
 void PersonalDictionary::SetWords(std::vector<std::string> words) {
+    std::lock_guard<std::mutex> lock(mutex_);
     words_ = std::move(words);
     loaded_ = true;
 }
 
 void PersonalDictionary::SetReplacements(
     std::vector<std::pair<std::string, std::string>> replacements) {
+    std::lock_guard<std::mutex> lock(mutex_);
     replacements_ = std::move(replacements);
 }
 
@@ -191,37 +201,45 @@ void PersonalDictionary::AddWord(std::string word) {
     if (trimmed.empty()) {
         return;
     }
+    std::lock_guard<std::mutex> lock(mutex_);
     words_.erase(std::remove(words_.begin(), words_.end(), trimmed), words_.end());
     words_.insert(words_.begin(), trimmed);
     loaded_ = true;
 }
 
-const std::vector<std::string>& PersonalDictionary::Words() const {
+std::vector<std::string> PersonalDictionary::Words() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return words_;
 }
 
-const std::vector<std::pair<std::string, std::string>>& PersonalDictionary::Replacements()
-    const {
+std::vector<std::pair<std::string, std::string>> PersonalDictionary::Replacements() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return replacements_;
 }
 
 bool PersonalDictionary::Loaded() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return loaded_;
 }
 
 std::string PersonalDictionary::InitialPrompt(std::size_t cap_chars) const {
-    if (words_.empty()) {
+    std::vector<std::string> words;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        words = words_;
+    }
+    if (words.empty()) {
         return {};
     }
     std::string listing = "Glossary: ";
     std::size_t used = 0;
     std::size_t included = 0;
-    for (const std::string& word : words_) {
+    for (const std::string& word : words) {
         const std::size_t needed = word.size() + (included > 0 ? 2 : 0);
         if (listing.size() + needed > cap_chars) {
             lwf::Log::Warning("personal dictionary prompt truncated at " +
                          std::to_string(included) + " of " +
-                         std::to_string(words_.size()) + " words");
+                         std::to_string(words.size()) + " words");
             break;
         }
         if (included > 0) {
@@ -262,21 +280,37 @@ std::string PersonalDictionary::Enforce(const std::string& text, bool fuzzy_enab
                                         std::size_t* fix_count) const {
     std::size_t local_count = 0;
     std::string out = text;
+    std::vector<std::string> words;
+    std::vector<std::pair<std::string, std::string>> replacements;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        words = words_;
+        replacements = replacements_;
+    }
 
-    for (const auto& [from, to] : replacements_) {
+    for (const auto& [from, to] : replacements) {
+        if (from.empty()) {
+            continue;
+        }
+        const std::string source = out;
+        std::string rebuilt_rule;
+        rebuilt_rule.reserve(source.size());
+        std::size_t cursor = 0;
         for (;;) {
             std::size_t begin = 0;
             std::size_t end = 0;
-            if (!WholeWordFindInsensitive(out, from, begin, end)) {
+            if (!WholeWordFindInsensitive(source, from, cursor, begin, end)) {
+                rebuilt_rule += source.substr(cursor);
                 break;
             }
-            const std::string result = out.substr(0, begin) + to + out.substr(end);
-            if (result == out) {
-                break;
+            rebuilt_rule += source.substr(cursor, begin - cursor);
+            rebuilt_rule += to;
+            if (to != source.substr(begin, end - begin)) {
+                ++local_count;
             }
-            out = result;
-            ++local_count;
+            cursor = end;
         }
+        out = rebuilt_rule;
     }
 
     const std::vector<Token> tokens = WordTokens(out);
@@ -287,7 +321,7 @@ std::string PersonalDictionary::Enforce(const std::string& text, bool fuzzy_enab
         const std::string lowered = ToLowerUtf8Safe(original);
         std::string replacement_word;
 
-        for (const std::string& word : words_) {
+        for (const std::string& word : words) {
             if (ToLowerUtf8Safe(word) == lowered && word != original) {
                 replacement_word = word;
                 break;
@@ -295,7 +329,7 @@ std::string PersonalDictionary::Enforce(const std::string& text, bool fuzzy_enab
         }
 
         if (replacement_word.empty() && fuzzy_enabled && original.size() >= 6) {
-            for (const std::string& word : words_) {
+            for (const std::string& word : words) {
                 if (word.size() < 6) {
                     continue;
                 }
