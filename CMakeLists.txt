@@ -357,6 +357,10 @@ if(LWF_BUILD_FULL)
             src/ui/MainWindow.cpp
             src/ui/Overlay.cpp
             src/ui/theme/ThemePalette.cpp
+            src/ui/theme/StudioPalette.cpp
+            src/ui/widgets/Buttons.cpp
+            src/ui/widgets/Display.cpp
+            src/ui/widgets/Overlays.cpp
         )
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/source/app.manifest")
             target_sources(local-wisper-flow PRIVATE source/app.manifest)
