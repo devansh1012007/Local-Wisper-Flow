@@ -24,6 +24,17 @@ TEST_CASE("real speech survives the hallucination filter") {
           "the song had (music) in the title");
 }
 
+TEST_CASE("token aware hallucination filter removes markers anywhere") {
+    CHECK(WhisperText::FilterHallucinations("[BLANK_AUDIO] [BLANK_AUDIO]") == "");
+    CHECK(WhisperText::FilterHallucinations("hello [BLANK_AUDIO]") == "hello");
+    CHECK(WhisperText::FilterHallucinations("[BLANK_AUDIO] hello") == "hello");
+    CHECK(WhisperText::FilterHallucinations("hello[BLANK_AUDIO]") == "hello");
+    CHECK(WhisperText::FilterHallucinations("(no speech) (no speech)") == "");
+    CHECK(WhisperText::FilterHallucinations("(music) hello world") == "hello world");
+    CHECK(WhisperText::IsOnlyHallucination("[BLANK_AUDIO] [BLANK_AUDIO]"));
+    CHECK_FALSE(WhisperText::IsOnlyHallucination("hello [BLANK_AUDIO]"));
+}
+
 TEST_CASE("hallucination detection is case insensitive and bracket tolerant") {
     CHECK(WhisperText::IsOnlyHallucination("[blank_audio]"));
     CHECK(WhisperText::IsOnlyHallucination("[Blank_Audio]"));
