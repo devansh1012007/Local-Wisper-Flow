@@ -1,19 +1,29 @@
 #pragma once
 
-// Palette and metrics for the redesigned GUI (redesign step R1).
+// Palette and metrics for the redesigned GUI (redesign step R1 + Phase 2
+// token unify, 2026-11-08).
 //
-// Source of truth: docs/design/mockup.html (D0). Do not change values here
-// without regenerating the contrast tables in the mockup. Both themes are
-// defined even though the app starts in dark; the light theme is part of the
-// token system and is covered by the unit tests.
+// Source of truth: docs/design/mockup.html (D0 + Phase 1 "full unify Ivory
+// light primary"). Do not change values here without regenerating the
+// contrast tables in the mockup. Two palettes, ONE accent per theme:
+//   - Ivory Light is PRIMARY (kLightPalette). Dark is a variant kept dark
+//     for Mini badge legibility over the desktop; it is unchanged by the
+//     unify. Both themes are defined even though the app starts in dark;
+//     the light theme is the primary of the token system and is covered
+//     by the unit tests with the same exactness as dark.
 //
 // Contrast policy (from the mockup, computed with the WCAG relative-luminance
-// formula): every text pair passes 4.5:1 and every meaningful color pair
-// passes 3:1, EXCEPT the two decorative hairline pairs (border on bg, border
-// on surface) which sit below 3:1 in both themes. They separate surfaces that
-// already differ in tone and never carry state on their own; every state is
-// also shown in text or shape. These two pairs are exempt from the contrast
-// test. tests/test_overlay_settings_ui.cpp enforces the policy on this header.
+// formula): every TEXT pair passes 4.5:1 — text/muted/accent/ok/warn/err/
+// brass/on_accent on their fills — and every meaningful non-text pair
+// passes 3:1 (focus ring, err_fill). EXCEPTIONS: the two decorative
+// hairline pairs (border on bg, border on surface) sit below 3:1 in both
+// themes. They separate surfaces that already differ in tone and never
+// carry state on their own; every state is also shown in text or shape.
+// These two pairs are exempt from the contrast test.
+// err_fill is FILL-ONLY, never text: assert it at >=3.0, never >=4.5 as
+// text. A dot with that fill must always pair with a visible word/shape
+// so no state is carried by color alone (mockup R8).
+// tests/test_overlay_settings_ui.cpp enforces this policy on this header.
 //
 // This header is deliberately free of Dear ImGui so the tokens can be unit
 // tested from lwf_tests without a windowing context. The ImGui style mapping
@@ -31,8 +41,8 @@ struct Palette {
     std::uint32_t border;    // 1 px hairlines
     std::uint32_t text;      // primary text
     std::uint32_t muted;     // secondary text
-    std::uint32_t accent;    // active nav, primary accent (brass dark / navy light)
-    std::uint32_t brass;     // brass as text and icons (matches accent in dark)
+    std::uint32_t accent;    // active nav, primary accent (brass in both themes)
+    std::uint32_t brass;     // brass as text and icons (matches accent)
     std::uint32_t on_accent; // text on an accent fill (derived: bg in dark, surface in light)
     std::uint32_t ok;        // Ready status
     std::uint32_t warn;      // "applies after restart" notes
@@ -60,26 +70,31 @@ inline constexpr Palette kDarkPalette{
     0.88f,     // surface_alpha
 };
 
-// Light theme, "Ivory and Navy".
+// Light theme, "Ivory and Brass" — PRIMARY theme (Phase 2 unify, 2026-11-08).
+// Single-accent invariant: accent == brass == focus == 0x7A5C25. The Phase 1
+// mockup dropped the navy accent (0x1F3A5F) in favour of Ivory primary, so
+// no light-theme surface, rail, focus ring or text accent may fall back to
+// navy. Dark keeps its own brass 0xC9A96E (different value, same role).
 inline constexpr Palette kLightPalette{
     0xF6F1E4,  // bg
     0xFFFDF7,  // surface
     0xD9CFBA,  // border
     0x1C2B26,  // text
     0x5B665F,  // muted
-    0x1F3A5F,  // accent (navy)
+    0x7A5C25,  // accent (brass; was navy 0x1F3A5F pre-unify)
     0x7A5C25,  // brass
     0xFFFDF7,  // on_accent
     0x3F6B52,  // ok
     0x7A5C25,  // warn
     0x7A2E3A,  // err
     0x7A2E3A,  // err_fill
-    0x1F3A5F,  // focus
+    0x7A5C25,  // focus (was navy 0x1F3A5F pre-unify)
     0.90f,     // surface_alpha
 };
 
 // Layout metrics from the mockup, section 5. Values are design pixels at
-// 1.0 scale; callers multiply by the window DPI scale.
+// 1.0 scale; callers multiply by the window DPI scale. Style is applied
+// once per actual change (init or live content-scale move).
 namespace metrics {
 
 inline constexpr float space_xs = 4.0f;   // hairline gaps inside rows
@@ -92,7 +107,7 @@ inline constexpr float radius_control = 6.0f;   // buttons, inputs, chips
 inline constexpr float radius_card = 10.0f;     // cards, windows
 inline constexpr float radius_pill = 999.0f;    // dot, pill, switches
 
-inline constexpr float rail_width = 208.0f;      // Full window navigation rail
+inline constexpr float rail_width = 220.0f;      // Full window navigation rail (was 208; live kRailWidth=220 wins — canonicalised)
 inline constexpr float content_max = 640.0f;     // widest page content, left aligned
 inline constexpr float control_min_height = 32.0f;  // controls are at least 32 px tall
 
@@ -103,7 +118,7 @@ inline constexpr float control_min_height = 32.0f;  // controls are at least 32 
 inline constexpr float font_wordmark_px = 18.0f;   // wordmark "Local Wisper Flow"
 inline constexpr float font_page_title_px = 28.0f; // page title
 inline constexpr float font_card_title_px = 15.0f; // card title
-inline constexpr float font_body_px = 13.0f;       // body / helper text
+inline constexpr float font_body_px = 14.0f;       // body text (approved bump from 13; helper keeps 13 via studio_metrics::font_helper_px until Phase 3 splits title/body)
 inline constexpr float font_mini_text_px = 8.5f;   // tiny status label font
 
 // Full window (native title bar on top of these).
@@ -125,7 +140,7 @@ inline constexpr float mini_active_alpha = 1.0f;    // badge opacity when hovere
 
 // Motion (seconds). All animations stop at a static pose when
 // reduce_motion is on.
-inline constexpr float fade_in = 0.12f;        // mini fade in
+inline constexpr float fade_in = 0.15f;        // mini fade in (functional motion band; was 0.12)
 inline constexpr float ring_breathe = 2.4f;    // listening ring period
 inline constexpr float bar_cycle = 1.2f;       // level bar wave period
 inline constexpr float think_dot_cycle = 0.9f; // thinking dots period

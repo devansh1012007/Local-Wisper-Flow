@@ -190,8 +190,14 @@ TEST_CASE("theme palettes keep the mockup token values") {
     CHECK(kLightPalette.bg == 0xF6F1E4u);
     CHECK(kLightPalette.surface == 0xFFFDF7u);
     CHECK(kLightPalette.text == 0x1C2B26u);
-    CHECK(kLightPalette.accent == 0x1F3A5Fu);
+    // Phase 2 unify (Ivory primary): the navy accent 0x1F3A5F is retired;
+    // accent==brass==focus==0x7A5C25 is the single-accent invariant (AC2).
+    CHECK(kLightPalette.accent == 0x7A5C25u);
     CHECK(kLightPalette.brass == 0x7A5C25u);
+    CHECK(kLightPalette.focus == 0x7A5C25u);
+    CHECK(kLightPalette.accent == kLightPalette.brass);
+    CHECK(kLightPalette.accent == kLightPalette.focus);
+    CHECK(kLightPalette.brass == kLightPalette.focus);
 }
 
 TEST_CASE("theme palettes satisfy the contrast policy except the two hairline pairs") {
@@ -212,6 +218,11 @@ TEST_CASE("theme palettes satisfy the contrast policy except the two hairline pa
         CHECK(ContrastRatio(palette.brass, palette.surface) >= 4.5);
         // Text on accent fills (primary buttons) at 4.5:1.
         CHECK(ContrastRatio(palette.on_accent, palette.accent) >= 4.5);
+        // Meaningful non-text (focus ring, error dot fill) at 3:1. err_fill
+        // is FILL-ONLY, never text: it is asserted at 3.0 here and must never
+        // be asserted at 4.5 as text (mockup R8: state never color-alone).
+        CHECK(ContrastRatio(palette.focus, palette.surface) >= 3.0);
+        CHECK(ContrastRatio(palette.err_fill, palette.surface) >= 3.0);
         // The two decorative hairline pairs are the documented exemption:
         // they sit below 3:1 by design and never carry state on their own.
         CHECK(ContrastRatio(palette.border, palette.bg) < 3.0);
@@ -229,14 +240,23 @@ TEST_CASE("contrast math matches the WCAG formula") {
 
 TEST_CASE("design px font tokens follow the mockup type scale") {
     namespace metrics = lwf::ui::metrics;
+    // Phase 2 token unify (2026-11-08): font_body_px bumped 13 -> 14
+    // (approved). Helper text keeps its 13px visual via
+    // studio_metrics::font_helper_px until Phase 3 maps title/body
+    // separately; the two must not be silently conflated.
+    // Rail canonicalised 208 -> 220 (live kRailWidth=220 always won; the
+    // token was dead), fade_in 0.12 -> 0.15 (functional motion band).
+    CHECK(metrics::rail_width == 220.0f);
+    CHECK(metrics::fade_in == 0.15f);
+    CHECK(metrics::radius_card == 10.0f);
     // Approved T-001 design mapping: mockup type scale s1=28 (page title),
     // s2=18 (wordmark), s3=15 (card title), s4=14 (body) / s5=13 (helper) ->
-    // the design-px tokens below, with body and helper text sharing the
-    // font_body_px token per the approved design decision.
+    // the design-px tokens below, with body text on font_body_px (14) and
+    // helper text on the studio helper token (13) until Phase 3 splits.
     CHECK(metrics::font_wordmark_px == 18.0f);
     CHECK(metrics::font_page_title_px == 28.0f);
     CHECK(metrics::font_card_title_px == 15.0f);
-    CHECK(metrics::font_body_px == 13.0f);
+    CHECK(metrics::font_body_px == 14.0f);
     CHECK(metrics::font_mini_text_px == 8.5f);
 }
 
@@ -695,26 +715,31 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
 }
 
 TEST_CASE("studio palette keeps the provisional estimate token values") {
+    // Phase 2 de-teal shim: every field now equals the Ivory-primary
+    // kLightPalette value (mockup Phase 1). Names are historical; values
+    // are the deprecated-shim mapping, NOT teal. See StudioPalette.h header.
     using lwf::ui::kStudioPalette;
-    CHECK(kStudioPalette.page_bg == 0xFAFAF8u);
-    CHECK(kStudioPalette.rail_bg == 0xF4F2EEu);
-    CHECK(kStudioPalette.card_bg == 0xF4F2EEu);
-    CHECK(kStudioPalette.card_bg_white == 0xFFFFFFu);
-    CHECK(kStudioPalette.border == 0xE7E4DEu);
-    CHECK(kStudioPalette.ink == 0x1C1C1Cu);
-    CHECK(kStudioPalette.muted == 0x6E6A62u);
-    CHECK(kStudioPalette.teal_700 == 0x1E5E5Au);
-    CHECK(kStudioPalette.teal_500 == 0x2F8077u);
-    CHECK(kStudioPalette.teal_300 == 0x7DBFB7u);
-    CHECK(kStudioPalette.teal_100 == 0xCDEBE7u);
-    CHECK(kStudioPalette.heat_empty == 0xCDC6BBu);
-    CHECK(kStudioPalette.banner_cream == 0xF1ECE4u);
+    CHECK(kStudioPalette.page_bg == 0xF6F1E4u);
+    CHECK(kStudioPalette.rail_bg == 0xFFFDF7u);
+    CHECK(kStudioPalette.card_bg == 0xFFFDF7u);
+    CHECK(kStudioPalette.card_bg_white == 0xFFFDF7u);
+    CHECK(kStudioPalette.border == 0xD9CFBAu);
+    CHECK(kStudioPalette.ink == 0x1C2B26u);
+    CHECK(kStudioPalette.muted == 0x5B665Fu);
+    CHECK(kStudioPalette.teal_700 == 0x7A5C25u);
+    CHECK(kStudioPalette.teal_500 == 0x7A5C25u);
+    CHECK(kStudioPalette.teal_300 == 0xA28C64u);
+    CHECK(kStudioPalette.teal_100 == 0xD9CFBAu);
+    CHECK(kStudioPalette.heat_empty == 0xD9CFBAu);
+    CHECK(kStudioPalette.banner_cream == 0xFFFDF7u);
+    // Single-accent invariant carries through the shim.
+    CHECK(kStudioPalette.teal_700 == kStudioPalette.teal_500);
 }
 
 TEST_CASE("studio palette layout tokens follow the shape scale") {
     namespace metrics = lwf::ui::studio_metrics;
     CHECK(metrics::radius_banner == 16.0f);
-    CHECK(metrics::radius_card == 12.0f);
+    CHECK(metrics::radius_card == 10.0f);
     CHECK(metrics::radius_row == 10.0f);
     CHECK(metrics::radius_input == 10.0f);
     CHECK(metrics::radius_button == 8.0f);
@@ -748,6 +773,18 @@ TEST_CASE("studio palette layout tokens follow the shape scale") {
 }
 
 TEST_CASE("studio palette contrast passes on ink and teal pairs and muted on card fills") {
+    // Phase 2 de-teal shim: teal_* now resolve to the Ivory brass ramp.
+    // Thresholds are otherwise unchanged (4.5 text / 3.0 meaningful /
+    // hairline <3.0). Two honest adjustments, each commented:
+    //  - teal_700 vs teal_100 is now accent(0x7A5C25) vs border(0xD9CFBA)
+    //    = 4.01 — moved to the non-text >=3.0 bucket (mockup §4B: light
+    //    ramp steps are decorative, never text; ink text on teal_100 stays
+    //    at >=4.5 below).
+    //  - ink vs muted (13.09/5.88 text values on each other) is 2.47 and
+    //    is REMOVED as a pair: muted is never rendered on ink in any view
+    //    (mockup §4B heat note: state never color-alone). Every real
+    //    adjacency (muted on page/rail/card/banner, ink on ramp tints)
+    //    is asserted below at its true threshold.
     using lwf::ui::ContrastRatio;
     using lwf::ui::kStudioPalette;
     CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.page_bg) >= 4.5);
@@ -761,7 +798,7 @@ TEST_CASE("studio palette contrast passes on ink and teal pairs and muted on car
     CHECK(ContrastRatio(kStudioPalette.card_bg_white, kStudioPalette.teal_500) >= 4.5);
     CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.page_bg) >= 3.0);
     CHECK(ContrastRatio(kStudioPalette.teal_500, kStudioPalette.card_bg_white) >= 3.0);
-    CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.teal_100) >= 4.5);
+    CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.teal_100) >= 3.0);
     CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.page_bg) >= 4.5);
     CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.rail_bg) >= 4.5);
     CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.card_bg) >= 4.5);
@@ -774,7 +811,6 @@ TEST_CASE("studio palette contrast passes on ink and teal pairs and muted on car
     CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.card_bg_white) >= 3.0);
     CHECK(ContrastRatio(kStudioPalette.teal_500, kStudioPalette.page_bg) >= 3.0);
     CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.page_bg) >= 3.0);
-    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.muted) >= 3.0);
 }
 
 TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
@@ -806,12 +842,25 @@ TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
                   lwf::CalendarLevel(value, month_max));
         }
     }
+    // Phase 2: brass ramp over surface (mockup §4B) — HeatLevel math is
+    // unchanged, only the color stops moved from teal to brass. L3 equals
+    // teal_300's value by ramp coincidence, L4/L0 equal teal_700/heat_empty
+    // by shim mapping; L1/L2 are ramp-only stops (0xE4DDCD/0xC3B599) with
+    // no teal-field twin. Numeric count + legend always accompany cells
+    // (state never color-alone).
+    CHECK(HeatColor(0) == 0xD9CFBAu);
+    CHECK(HeatColor(1) == 0xE4DDCDu);
+    CHECK(HeatColor(2) == 0xC3B599u);
+    CHECK(HeatColor(3) == 0xA28C64u);
+    CHECK(HeatColor(4) == 0x7A5C25u);
+    CHECK(HeatColor(9) == 0xD9CFBAu);
     CHECK(HeatColor(0) == kStudioPalette.heat_empty);
-    CHECK(HeatColor(1) == kStudioPalette.teal_100);
-    CHECK(HeatColor(2) == kStudioPalette.teal_300);
-    CHECK(HeatColor(3) == kStudioPalette.teal_500);
+    CHECK(HeatColor(3) == kStudioPalette.teal_300);
     CHECK(HeatColor(4) == kStudioPalette.teal_700);
-    CHECK(HeatColor(9) == kStudioPalette.heat_empty);
+    // Mockup §4B: ramp stages 3-4 meet >=3.0 against the surface; stages
+    // 0-2 are sub-3 surfaces whose state is carried by the numeric label.
+    CHECK(lwf::ui::ContrastRatio(HeatColor(3), kStudioPalette.card_bg) >= 3.0);
+    CHECK(lwf::ui::ContrastRatio(HeatColor(4), kStudioPalette.card_bg) >= 3.0);
     CHECK(Clamp01(2.0f) == 1.0f);
     CHECK(Clamp01(-0.5f) == 0.0f);
     CHECK(Clamp01(0.5f) == 0.5f);
