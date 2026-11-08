@@ -15,8 +15,7 @@ namespace {
 
 using lwf::ui::Color;
 using lwf::ui::Pack;
-using lwf::ui::kDarkPalette;
-using lwf::ui::kStudioPalette;
+using lwf::ui::kLightPalette;
 
 // Control design widths (Wave 2 T-003 file-local hoists, not spacing tokens).
 constexpr float kSearchWidth = 240.0f;
@@ -235,7 +234,7 @@ void DictionaryPage::DrawBanner(float scale) {
 
 void DictionaryPage::DrawRows(float scale) {
     const std::vector<DictionaryStore::Entry> rows = VisibleEntries(store_, state_);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kStudioPalette.card_bg_white));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kLightPalette.surface));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, studio_metrics::radius_row * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::BeginChild("##dict_rows", ImVec2(0.0f, 0.0f),
@@ -250,7 +249,7 @@ void DictionaryPage::DrawRows(float scale) {
         const ImVec2 text_size = ImGui::CalcTextSize(empty_text);
         draw.AddText(ImVec2(pos.x + 16.0f * scale,
                             pos.y + (studio_metrics::row_height * scale - text_size.y) * 0.5f),
-                     Pack(kStudioPalette.muted), empty_text);
+                     Pack(kLightPalette.muted), empty_text);
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::row_height * scale));
         ImGui::PopFont();
     } else {
@@ -261,7 +260,7 @@ void DictionaryPage::DrawRows(float scale) {
             if (i > 0) {
                 const ImVec2 sep = ImGui::GetCursorScreenPos();
                 draw.AddLine(ImVec2(sep.x, sep.y), ImVec2(sep.x + width, sep.y),
-                             Pack(kStudioPalette.border), 1.0f * scale);
+                             Pack(kLightPalette.border), 1.0f * scale);
             }
             const float row_h = studio_metrics::row_height * scale;
             const std::string row_id = std::string("##dict_row_") + std::to_string(entry.id);
@@ -276,24 +275,24 @@ void DictionaryPage::DrawRows(float scale) {
                 OpenEdit(entry.id);
             }
             if (hovered) {
-                draw.AddRectFilled(row_min, row_max, Pack(kStudioPalette.teal_100, 0.35f),
+                draw.AddRectFilled(row_min, row_max, Pack(kLightPalette.border, 0.35f),
                                    studio_metrics::radius_row * scale);
             }
             if (focused) {
                 draw.AddRect(ImVec2(row_min.x - 2.0f * scale, row_min.y - 2.0f * scale),
                              ImVec2(row_max.x + 2.0f * scale, row_max.y + 2.0f * scale),
-                             Pack(kStudioPalette.teal_700), 4.0f * scale, 0, 2.0f * scale);
+                             Pack(kLightPalette.accent), 4.0f * scale, 0, 2.0f * scale);
             }
             ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
             ImDrawList& row_draw = *ImGui::GetWindowDrawList();
             row_draw.AddText(ImVec2(row_min.x + 16.0f * scale, row_min.y + 8.0f * scale),
-                             Pack(kStudioPalette.ink), RowText(entry).c_str());
+                             Pack(kLightPalette.text), RowText(entry).c_str());
             ImGui::PopFont();
             const std::string detail = RowDetail(entry);
             if (!detail.empty()) {
                 ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
                 row_draw.AddText(ImVec2(row_min.x + 16.0f * scale, row_min.y + 30.0f * scale),
-                                 Pack(kStudioPalette.muted), detail.c_str());
+                                 Pack(kLightPalette.muted), detail.c_str());
                 ImGui::PopFont();
             }
             if (!hovered && !focused) {
@@ -329,7 +328,8 @@ void DictionaryPage::DrawRows(float scale) {
                     toast_.Show(std::string("Deleted \"") + entry.phrase + "\"", "Undo");
                 }
             }
-            ImGui::SetCursorScreenPos(saved_cursor);
+            ImGui::SetCursorScreenPos(ImVec2(saved_cursor.x, saved_cursor.y - ImGui::GetStyle().ItemSpacing.y));
+            ImGui::Dummy(ImVec2(0.0f, 0.0f));
         }
     }
     ImGui::EndChild();
@@ -364,7 +364,7 @@ void DictionaryPage::DrawDialog(float scale) {
         ImGui::SameLine();
         ImGui::TextDisabled("Not available locally");
         if (!dialog_error_.empty()) {
-            ImGui::TextColored(Color(kDarkPalette.err), "%s", dialog_error_.c_str());
+            ImGui::TextColored(Color(kLightPalette.err), "%s", dialog_error_.c_str());
         }
         if ((phrase_enter || replacement_enter) && AttemptSubmit()) {
             close_requested = true;
