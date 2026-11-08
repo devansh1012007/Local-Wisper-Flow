@@ -48,14 +48,19 @@ extern "C" void* glfwGetWin32Window(GLFWwindow* window);
 
 namespace {
 
+// Full window shell is Ivory primary (Phase 4, AC2 single accent): this file
+// applies kLightPalette everywhere. The dark variant is test-only + the Mini
+// badge in Overlay.cpp, which intentionally stays dark for desktop legibility
+// (Ph6 scope; do not switch Overlay here).
 namespace metrics = lwf::ui::metrics;
 using lwf::ui::Color;
-using lwf::ui::kDarkPalette;
+using lwf::ui::kLightPalette;
 using lwf::ui::Pack;
 
-// Rail is 220 on purpose: metrics::rail_width (208) is intentionally
-// unused until the rail/token drift is resolved (mission D-rail).
-constexpr float kRailWidth = 220.0f;
+// Rail width resolves from the canonical token instead of a second literal,
+// kept as kRailWidth so the kRailWidth pin stays while the value flows from
+// metrics::rail_width (220).
+constexpr float kRailWidth = metrics::rail_width;
 
 // Rail status-dot indent (Wave 2 T-003 file-local hoist): shared by the rail
 // and Home status dots ahead of the status word. No 14px spacing token.
@@ -92,19 +97,19 @@ bool ToggleSwitch(const char* id, bool value, float scale) {
     const bool toggled = ImGui::InvisibleButton(id, ImVec2(w, h), ImGuiButtonFlags_EnableNav);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     if (ImGui::IsItemFocused()) {
-        // 2px focus ring (kDarkPalette.focus) so keyboard focus is visible.
+        // 2px focus ring (kLightPalette.focus) so keyboard focus is visible.
         draw.AddRect(ImVec2(p.x - 2.0f * scale, p.y - 2.0f * scale),
                      ImVec2(p.x + w + 2.0f * scale, p.y + h + 2.0f * scale),
-                     Pack(kDarkPalette.focus), h * 0.5f + 2.0f * scale, 0, 2.0f * scale);
+                     Pack(kLightPalette.focus), h * 0.5f + 2.0f * scale, 0, 2.0f * scale);
     }
     draw.AddRectFilled(p, ImVec2(p.x + w, p.y + h),
-                       value ? Pack(kDarkPalette.accent) : Pack(kDarkPalette.text, 0.15f),
+                       value ? Pack(kLightPalette.accent) : Pack(kLightPalette.text, 0.15f),
                        h * 0.5f);
     const float knob = 24.0f * scale;
     const float pad = metrics::space_xs * scale;
     const float x = value ? p.x + w - pad - knob : p.x + pad;
     draw.AddCircleFilled(ImVec2(x + knob * 0.5f, p.y + h * 0.5f), knob * 0.5f,
-                         Pack(kDarkPalette.surface));
+                         Pack(kLightPalette.surface));
     return toggled;
 }
 
@@ -183,7 +188,7 @@ bool MainWindow::Init() {
         Shutdown();
         return false;
     }
-    lwf::ui::ApplyImGuiStyle(kDarkPalette, static_cast<float>(dpi_scale_));
+    lwf::ui::ApplyImGuiStyle(kLightPalette, static_cast<float>(dpi_scale_));
 
     if (FirstRunNeeded()) {
         page_ = Page::Welcome;
@@ -339,14 +344,14 @@ void MainWindow::RunOnce(float) {
     if (pending_dpi_scale_ > 0.0f) {
         dpi_scale_ = pending_dpi_scale_;
         pending_dpi_scale_ = 0.0f;
-        lwf::ui::ApplyImGuiStyle(kDarkPalette, static_cast<float>(dpi_scale_));
+        lwf::ui::ApplyImGuiStyle(kLightPalette, static_cast<float>(dpi_scale_));
     }
 
     int fb_width = 0;
     int fb_height = 0;
     glfwGetFramebufferSize(window_, &fb_width, &fb_height);
     glViewport(0, 0, fb_width, fb_height);
-    const ImVec4 clear = Color(kDarkPalette.bg);
+    const ImVec4 clear = Color(kLightPalette.bg);
     glClearColor(clear.x, clear.y, clear.z, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -399,7 +404,7 @@ void MainWindow::RunOnce(float) {
         const ImVec2 text_size = ImGui::CalcTextSize("Saved");
         const float right = content_pos.x + content_size.x - metrics::space_m * scale;
         draw.AddText(ImVec2(right - text_size.x, content_pos.y + 10.0f * scale),
-                     Pack(kDarkPalette.muted), "Saved");
+                     Pack(kLightPalette.muted), "Saved");
     }
 
     ImGui::End();
@@ -441,7 +446,7 @@ void MainWindow::RenderPages(float scale) {
 
 void MainWindow::DrawRail(float scale) {
     const ImVec2 size(kRailWidth * scale, ImGui::GetIO().DisplaySize.y);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kDarkPalette.surface));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kLightPalette.surface));
     ImGui::BeginChild("##rail", size, ImGuiChildFlags_None);
     ImGui::PopStyleColor();
     {
@@ -449,7 +454,7 @@ void MainWindow::DrawRail(float scale) {
         const float rail_right = rail_pos.x + size.x;
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         draw.AddLine(ImVec2(rail_right - 1.0f, rail_pos.y),
-                     ImVec2(rail_right - 1.0f, rail_pos.y + size.y), Pack(kDarkPalette.border));
+                     ImVec2(rail_right - 1.0f, rail_pos.y + size.y), Pack(kLightPalette.border));
 
         // Wordmark at the design size until real fonts land.
         ImGui::PushFont(nullptr, metrics::font_wordmark_px);
@@ -518,13 +523,13 @@ void MainWindow::DrawRail(float scale) {
             if (ImGui::IsItemFocused()) {
                 draw.AddRect(ImVec2(p.x - 2.0f * scale, p.y - 2.0f * scale),
                              ImVec2(p.x + w + 2.0f * scale, p.y + item_h + 2.0f * scale),
-                             Pack(kDarkPalette.focus), 2.0f * scale, 0, 2.0f * scale);
+                             Pack(kLightPalette.focus), 2.0f * scale, 0, 2.0f * scale);
             }
             const std::uint32_t color =
-                active ? kDarkPalette.text : (hovered ? kDarkPalette.text : kDarkPalette.muted);
+                active ? kLightPalette.text : (hovered ? kLightPalette.text : kLightPalette.muted);
             if (active) {
                 draw.AddRectFilled(p, ImVec2(p.x + w, p.y + item_h),
-                                   Pack(kDarkPalette.text, 0.10f), 8.0f * scale);
+                                   Pack(kLightPalette.text, 0.10f), 8.0f * scale);
             }
             draw.AddText(ImVec2(p.x + 19.0f * scale, p.y + (item_h - font_h) * 0.5f),
                          Pack(color), item.label);
@@ -544,17 +549,17 @@ void MainWindow::DrawRail(float scale) {
         const State fsm_state = fsm_.CurrentState();
         const bool enabled = settings_.GetBool("dictation_enabled");
         const char* status_word = "Ready";
-        std::uint32_t status_color = kDarkPalette.ok;
+        std::uint32_t status_color = kLightPalette.ok;
         if (!enabled) {
             status_word = "Paused";
-            status_color = kDarkPalette.muted;
+            status_color = kLightPalette.muted;
         } else if (fsm_state == State::CAPTURING) {
             status_word = "Listening";
-            status_color = kDarkPalette.accent;
+            status_color = kLightPalette.accent;
         } else if (fsm_state == State::TRANSCRIBING || fsm_state == State::POSTPROCESSING ||
                    fsm_state == State::EMITTING) {
             status_word = "Thinking";
-            status_color = kDarkPalette.text;
+            status_color = kLightPalette.text;
         }
         const ImVec2 status_pos = ImGui::GetCursorScreenPos();
         draw.AddCircleFilled(ImVec2(status_pos.x + 4.0f * scale, status_pos.y + line * 0.5f),
@@ -579,7 +584,7 @@ void MainWindow::DrawPageChrome(const char* title, const char* subtitle, float s
 }
 
 void MainWindow::BeginCard(const char* id, float width, float scale) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kDarkPalette.surface));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kLightPalette.surface));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, metrics::radius_card * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
                         ImVec2(metrics::space_m * scale, metrics::space_m * scale));
@@ -799,7 +804,7 @@ void MainWindow::DrawRestartBanner(float scale) {
     if (!restart_needed_) {
         return;
     }
-    ImGui::TextColored(Color(kDarkPalette.warn), "Applies after restart.");
+    ImGui::TextColored(Color(kLightPalette.warn), "Applies after restart.");
     ImGui::Dummy(ImVec2(0.0f, metrics::space_xs * scale));
 }
 
@@ -819,15 +824,15 @@ void MainWindow::DrawHotkeyChips(const std::string& chord, float scale) {
         const ImVec2 text_size = ImGui::CalcTextSize(parts[i].c_str());
         const float chip_w = text_size.x + 2.0f * pad_x;
         draw.AddRectFilled(ImVec2(x, y), ImVec2(x + chip_w, y + chip_h),
-                           Pack(kDarkPalette.text, 0.05f), metrics::radius_control * scale);
-        draw.AddRect(ImVec2(x, y), ImVec2(x + chip_w, y + chip_h), Pack(kDarkPalette.border),
+                           Pack(kLightPalette.text, 0.05f), metrics::radius_control * scale);
+        draw.AddRect(ImVec2(x, y), ImVec2(x + chip_w, y + chip_h), Pack(kLightPalette.border),
                      metrics::radius_control * scale, 0, 1.0f * scale);
         draw.AddText(ImVec2(x + pad_x, y + (chip_h - text_size.y) * 0.5f),
-                     Pack(kDarkPalette.text), parts[i].c_str());
+                     Pack(kLightPalette.text), parts[i].c_str());
         x += chip_w;
         if (i + 1 < parts.size()) {
             draw.AddText(ImVec2(x + 5.0f * scale, y + (chip_h - text_size.y) * 0.5f),
-                         Pack(kDarkPalette.muted), "+");
+                         Pack(kLightPalette.muted), "+");
             x += 18.0f * scale;
         }
     }
@@ -844,7 +849,7 @@ void MainWindow::DrawGeneralHotkeyRow(const std::string& config_key, const char*
     if (!current.empty() && role.has_value()) {
         const std::vector<Binding> registry = LoadBindings(settings_);
         if (HotkeyBinding::FindConflict(current, registry, role).has_value()) {
-            ImGui::TextColored(Color(kDarkPalette.err), "That shortcut is already in use");
+            ImGui::TextColored(Color(kLightPalette.err), "That shortcut is already in use");
         }
     }
     const bool armed = learn_target_ == config_key;
@@ -886,7 +891,7 @@ void MainWindow::DrawGeneralHotkeyRow(const std::string& config_key, const char*
         }
     }
     if (learn_error_target_ == config_key && !learn_error_.empty()) {
-        ImGui::TextColored(Color(kDarkPalette.err), "%s", learn_error_.c_str());
+        ImGui::TextColored(Color(kLightPalette.err), "%s", learn_error_.c_str());
     }
 }
 
@@ -904,20 +909,20 @@ void MainWindow::DrawHomePage(float scale) {
         ImGui::PopFont();
         const std::string hotkey = settings_.GetString("hotkey_ptt");
         const char* rest = nullptr;
-        std::uint32_t status_color = kDarkPalette.ok;
+        std::uint32_t status_color = kLightPalette.ok;
         const char* status_word = "Ready";
         if (!enabled) {
             status_word = "Paused";
-            status_color = kDarkPalette.muted;
+            status_color = kLightPalette.muted;
             rest = "Dictation is off.";
         } else if (fsm_state == State::CAPTURING) {
             status_word = "Listening";
-            status_color = kDarkPalette.accent;
+            status_color = kLightPalette.accent;
             rest = "Speak, then release.";
         } else if (fsm_state == State::TRANSCRIBING || fsm_state == State::POSTPROCESSING ||
                    fsm_state == State::EMITTING) {
             status_word = "Thinking";
-            status_color = kDarkPalette.text;
+            status_color = kLightPalette.text;
             rest = "Turning speech into text.";
         } else if (hotkey.empty()) {
             rest = "Set a hotkey to start.";
@@ -967,7 +972,7 @@ void MainWindow::DrawHomePage(float scale) {
                                 "computer.");
         }
         if (openrouter_cleanup) {
-            ImGui::TextColored(Color(kDarkPalette.warn),
+            ImGui::TextColored(Color(kLightPalette.warn),
                                "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
         }
         if (!cloud_active && !openrouter_cleanup) {
@@ -1054,7 +1059,7 @@ void MainWindow::DrawSpeechPage(float scale) {
                                  "whisper_model_path", validation_error_);
         }
         if (!validation_error_.empty()) {
-            ImGui::TextColored(Color(kDarkPalette.err), "%s", validation_error_.c_str());
+            ImGui::TextColored(Color(kLightPalette.err), "%s", validation_error_.c_str());
         }
         ImGui::TextDisabled("Restart is needed after changing the model path.");
         ImGui::Separator();
@@ -1081,7 +1086,7 @@ void MainWindow::DrawSpeechPage(float scale) {
                                  "llm_model_path", llm_model_error_);
         }
         if (!llm_model_error_.empty()) {
-            ImGui::TextColored(Color(kDarkPalette.err), "%s", llm_model_error_.c_str());
+            ImGui::TextColored(Color(kLightPalette.err), "%s", llm_model_error_.c_str());
         }
         ImGui::TextDisabled("Leave empty to turn off cleanup.");
     }
@@ -1203,7 +1208,7 @@ void MainWindow::DrawCloudPage(float scale) {
             ApplyAndSave();
         }
         if (consent && settings_.GetString("stt_provider") != "local") {
-            ImGui::TextColored(Color(kDarkPalette.warn),
+            ImGui::TextColored(Color(kLightPalette.warn),
                                "Cloud is active only while the service API key is present in "
                                "the environment.");
             ImGui::TextWrapped("The API key is read from the environment and is never written "
@@ -1280,7 +1285,7 @@ void MainWindow::DrawCleanupPage(float scale) {
             ImGui::TextDisabled("When snippets expand.");
         }
         if (!validation_error_.empty()) {
-            ImGui::TextColored(Color(kDarkPalette.err), "%s", validation_error_.c_str());
+            ImGui::TextColored(Color(kLightPalette.err), "%s", validation_error_.c_str());
         }
     }
     EndCard(scale);
@@ -1305,7 +1310,7 @@ void MainWindow::DrawCleanupPage(float scale) {
             ImGui::EndCombo();
         }
         if (settings_.GetString("llm_provider") == "openrouter") {
-            ImGui::TextColored(Color(kDarkPalette.warn),
+            ImGui::TextColored(Color(kLightPalette.warn),
                                "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
         } else {
             ImGui::TextDisabled("Local cleanup runs on this machine.");
@@ -1332,7 +1337,7 @@ void MainWindow::DrawPrivacyPage(float scale) {
             ApplyAndSave();
         }
         if (settings_.GetBool("debug_log_transcripts")) {
-            ImGui::TextColored(Color(kDarkPalette.err),
+            ImGui::TextColored(Color(kLightPalette.err),
                                "WARNING: dictated text will be written to the local log.");
         }
         ImGui::Separator();
@@ -1342,7 +1347,7 @@ void MainWindow::DrawPrivacyPage(float scale) {
         IntRow("history_max_age_days", "##history_max_age_days", 1, 3650, "delete after %d days");
         BoolRow("keep_usage_stats", "Keep usage statistics", "Used by Insights", scale);
         if (settings_.GetString("llm_provider") == "openrouter") {
-            ImGui::TextColored(Color(kDarkPalette.warn),
+            ImGui::TextColored(Color(kLightPalette.warn),
                                "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
             const std::string openrouter_model = settings_.GetString("openrouter_model");
             ImGui::Text("OpenRouter model: %s",
@@ -1367,7 +1372,7 @@ void MainWindow::DrawPrivacyPage(float scale) {
             }
             ImGui::TextDisabled("Removes statistics, dictionary, snippets, transforms, notes, history and saved API keys. Settings are kept.");
         } else {
-            ImGui::TextColored(Color(kDarkPalette.err),
+            ImGui::TextColored(Color(kLightPalette.err),
                                "This cannot be undone. The app keeps running.");
             if (ImGui::Button("Confirm delete")) {
                 DeleteLocalData();
@@ -1395,7 +1400,7 @@ void MainWindow::DrawAboutPage(float scale) {
                            "text cleanup, clipboard injection. Processing stays on this machine "
                            "unless you opt into cloud speech transcription or OpenRouter cleanup.");
         if (settings_.GetString("llm_provider") == "openrouter") {
-            ImGui::TextColored(Color(kDarkPalette.warn),
+            ImGui::TextColored(Color(kLightPalette.warn),
                                "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
         }
         ImGui::Text("Config version: %d", settings_.GetInt("schema_version"));
@@ -1536,7 +1541,7 @@ void MainWindow::DrawGeneralPage(float scale) {
         StringFieldRow("hotkey_paste_last", hotkey_paste_last_field_, "##hotkey_paste_last", false);
         ImGui::TextDisabled("Chords as text, e.g. Ctrl+Shift+T.");
         if (!validation_error_.empty()) {
-            ImGui::TextColored(Color(kDarkPalette.err), "%s", validation_error_.c_str());
+            ImGui::TextColored(Color(kLightPalette.err), "%s", validation_error_.c_str());
         }
     }
     EndCard(scale);
@@ -1589,14 +1594,14 @@ void MainWindow::DrawSettingsPage(float scale) {
         if (ImGui::IsItemFocused()) {
             draw.AddRect(ImVec2(p.x - 2.0f * scale, p.y - 2.0f * scale),
                          ImVec2(p.x + w + 2.0f * scale, p.y + tab_h + 2.0f * scale),
-                         Pack(kDarkPalette.focus), 8.0f * scale, 0, 2.0f * scale);
+                         Pack(kLightPalette.focus), 8.0f * scale, 0, 2.0f * scale);
         }
         if (active) {
             draw.AddRectFilled(p, ImVec2(p.x + w, p.y + tab_h),
-                               Pack(kDarkPalette.text, 0.10f), 8.0f * scale);
+                               Pack(kLightPalette.text, 0.10f), 8.0f * scale);
         }
         const std::uint32_t color =
-            active ? kDarkPalette.text : (hovered ? kDarkPalette.text : kDarkPalette.muted);
+            active ? kLightPalette.text : (hovered ? kLightPalette.text : kLightPalette.muted);
         draw.AddText(ImVec2(p.x + tab_pad, p.y + (tab_h - text_size.y) * 0.5f), Pack(color),
                      item.label);
     }
@@ -1672,7 +1677,7 @@ void MainWindow::DrawWelcomePage(float scale) {
                                   static_cast<double>(model.size_bytes) / 1048576.0);
                 if (model.sha256.empty()) {
                     ImGui::SameLine();
-                    ImGui::TextColored(Color(kDarkPalette.warn), "unverified file");
+                    ImGui::TextColored(Color(kLightPalette.warn), "unverified file");
                 }
             }
             for (const auto& model : catalog.llm) {
@@ -1680,7 +1685,7 @@ void MainWindow::DrawWelcomePage(float scale) {
                                   static_cast<double>(model.size_bytes) / 1048576.0);
                 if (model.sha256.empty()) {
                     ImGui::SameLine();
-                    ImGui::TextColored(Color(kDarkPalette.warn), "unverified file");
+                    ImGui::TextColored(Color(kLightPalette.warn), "unverified file");
                 }
             }
             ImGui::TextWrapped("%s",
@@ -1709,7 +1714,7 @@ void MainWindow::DrawWelcomePage(float scale) {
                                      "whisper_model_path", validation_error_);
             }
             if (!validation_error_.empty()) {
-                ImGui::TextColored(Color(kDarkPalette.err), "%s", validation_error_.c_str());
+                ImGui::TextColored(Color(kLightPalette.err), "%s", validation_error_.c_str());
             }
             if (ImGui::Button("Skip (I have models)")) {
                 welcome_step_ = 4;

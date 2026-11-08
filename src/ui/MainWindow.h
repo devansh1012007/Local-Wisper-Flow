@@ -36,6 +36,9 @@ class TransformsPage;
 
 // The Full window: rail navigation plus pages (Home, Insights, Dictionary,
 // Snippets, Transforms, Scratchpad, Settings, and the first-run Welcome).
+// Phase 4 Ivory primary: the shell applies kLightPalette everywhere; the dark
+// variant is test-only + the Mini badge in Overlay.cpp, which intentionally
+// stays dark for desktop legibility (Ph6 scope; do not switch Overlay here).
 // Owns its GLFW window and its Dear ImGui context (one context per OS window, docs/UI_AUDIT.md section 1).
 //
 // Closing the window hides it - the tray owns Quit. Settings changes apply
