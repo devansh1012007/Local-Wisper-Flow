@@ -112,21 +112,104 @@ bool IsPunctuationOnly(const std::string& token) {
     return true;
 }
 
+std::string ComparisonKey(const std::string& token) {
+    const std::string lower = ToLowerAscii(token);
+    if (lower.size() >= 3) {
+        bool allDots = true;
+        for (char c : lower) {
+            if (c != '.') {
+                allDots = false;
+                break;
+            }
+        }
+        if (allDots) {
+            return "...";
+        }
+    }
+    std::size_t end = lower.size();
+    while (end > 0) {
+        const char c = lower[end - 1];
+        if (c == ',' || c == ';' || c == ':' || c == '!' || c == '?') {
+            --end;
+        } else {
+            break;
+        }
+    }
+    if (end >= 3) {
+        bool allDots = true;
+        for (std::size_t i = 0; i < end; ++i) {
+            if (lower[i] != '.') {
+                allDots = false;
+                break;
+            }
+        }
+        if (allDots) {
+            return "...";
+        }
+    }
+    while (end > 0) {
+        const char c = lower[end - 1];
+        if (c == ',' || c == '.' || c == ';' || c == ':' || c == '!' || c == '?') {
+            --end;
+        } else {
+            break;
+        }
+    }
+    return lower.substr(0, end);
+}
+
+std::string NormalizeCrLf(const std::string& input) {
+    std::string out;
+    out.reserve(input.size());
+    for (std::size_t i = 0; i < input.size(); ++i) {
+        if (input[i] == '\r' && i + 1 < input.size() && input[i + 1] == '\n') {
+            out.push_back('\n');
+            ++i;
+        } else {
+            out.push_back(input[i]);
+        }
+    }
+    return out;
+}
+
+std::vector<std::string> SplitLines(const std::string& input) {
+    std::vector<std::string> lines;
+    if (input.empty()) {
+        lines.push_back({});
+        return lines;
+    }
+    std::size_t begin = 0;
+    while (begin < input.size()) {
+        const std::size_t pos = input.find('\n', begin);
+        if (pos == std::string::npos) {
+            lines.push_back(input.substr(begin));
+            break;
+        }
+        lines.push_back(input.substr(begin, pos - begin));
+        begin = pos + 1;
+        if (begin == input.size()) {
+            lines.push_back({});
+            break;
+        }
+    }
+    return lines;
+}
+
 struct Span {
     std::size_t start;
     std::size_t end;
 };
 
-std::string FilterImpl(const std::string& transcript) {
+std::string FilterLine(const std::string& transcript) {
     const std::string withoutBrackets = RemoveBracketMarkers(transcript);
     std::vector<std::string> tokens = SplitByWhitespace(withoutBrackets);
     if (tokens.empty()) {
         return {};
     }
-    std::vector<std::string> lowerTokens;
-    lowerTokens.reserve(tokens.size());
+    std::vector<std::string> keys;
+    keys.reserve(tokens.size());
     for (const std::string& token : tokens) {
-        lowerTokens.push_back(ToLowerAscii(token));
+        keys.push_back(ComparisonKey(token));
     }
     std::vector<std::vector<std::string>> markerSequences;
     markerSequences.reserve(10);
@@ -148,7 +231,7 @@ std::string FilterImpl(const std::string& transcript) {
             }
             bool match = true;
             for (std::size_t k = 0; k < len; ++k) {
-                if (lowerTokens[i + k] != seq[k]) {
+                if (keys[i + k] != seq[k]) {
                     match = false;
                     break;
                 }
@@ -216,11 +299,42 @@ std::string FilterImpl(const std::string& transcript) {
 namespace WhisperText {
 
 std::string FilterHallucinations(const std::string& transcript) {
-    return FilterImpl(transcript);
+    const std::string normalized = NormalizeCrLf(transcript);
+    const std::vector<std::string> lines = SplitLines(normalized);
+    std::vector<std::string> kept;
+    kept.reserve(lines.size());
+    for (const std::string& line : lines) {
+        if (SplitByWhitespace(line).empty()) {
+            kept.push_back({});
+        } else {
+            const std::string filtered = FilterLine(line);
+            if (!filtered.empty()) {
+                kept.push_back(filtered);
+            }
+        }
+    }
+    std::string out;
+    for (std::size_t i = 0; i < kept.size(); ++i) {
+        if (i > 0) {
+            out.push_back('\n');
+        }
+        out += kept[i];
+    }
+    bool hasContent = false;
+    for (char c : out) {
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
+            hasContent = true;
+            break;
+        }
+    }
+    if (!hasContent) {
+        return {};
+    }
+    return out;
 }
 
 bool IsOnlyHallucination(const std::string& transcript) {
-    return FilterImpl(transcript).empty();
+    return FilterHallucinations(transcript).empty();
 }
 
 }  // namespace WhisperText

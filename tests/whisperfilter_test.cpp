@@ -42,3 +42,20 @@ TEST_CASE("hallucination detection is case insensitive and bracket tolerant") {
     CHECK_FALSE(WhisperText::IsOnlyHallucination("music was playing"));
     CHECK(WhisperText::IsOnlyHallucination("[Music]"));
 }
+
+TEST_CASE("multiline hallucination filter preserves newlines") {
+    CHECK(WhisperText::FilterHallucinations("hello\nworld") == "hello\nworld");
+    CHECK(WhisperText::FilterHallucinations("hello\n[BLANK_AUDIO]\nworld") == "hello\nworld");
+    CHECK(WhisperText::FilterHallucinations("line one\n\nline two") == "line one\n\nline two");
+    CHECK(WhisperText::FilterHallucinations("hello\r\nworld") == "hello\nworld");
+}
+
+TEST_CASE("soft markers tolerate trailing punctuation") {
+    CHECK(WhisperText::FilterHallucinations("(no speech).") == "");
+    CHECK(WhisperText::FilterHallucinations("hello (music),") == "hello");
+    CHECK(WhisperText::FilterHallucinations("(music), hello") == "hello");
+    CHECK(WhisperText::FilterHallucinations("the song had (music), in the title") ==
+          "the song had (music), in the title");
+    CHECK(WhisperText::FilterHallucinations("...,") == "");
+    CHECK(WhisperText::FilterHallucinations("hello ...,") == "hello");
+}
