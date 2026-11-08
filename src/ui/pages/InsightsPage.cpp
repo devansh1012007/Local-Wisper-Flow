@@ -16,14 +16,17 @@ namespace lwf::ui::insights {
 
 namespace {
 
+// DECISION: single Ivory palette for this page (Phase 5). The share-badge fill
+// uses HeatColor(3) so the brass ramp L3 value survives without any hex
+// literal in the page; HeatColor owns the ramp stops.
 using lwf::ui::Color;
 using lwf::ui::HeatColor;
 using lwf::ui::Pack;
-using lwf::ui::kStudioPalette;
+using lwf::ui::kLightPalette;
 namespace studio_metrics = lwf::ui::studio_metrics;
 
 void BeginCard(const char* id, float width, float scale) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kStudioPalette.card_bg_white));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kLightPalette.surface));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, studio_metrics::radius_card * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f * scale, 16.0f * scale));
     ImGui::BeginChild(id, ImVec2(width, 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
@@ -39,7 +42,7 @@ void DrawDivider(float scale) {
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const float width = ImGui::GetContentRegionAvail().x;
     ImDrawList& draw = *ImGui::GetWindowDrawList();
-    draw.AddLine(pos, ImVec2(pos.x + width, pos.y), Pack(kStudioPalette.border), 1.0f * scale);
+    draw.AddLine(pos, ImVec2(pos.x + width, pos.y), Pack(kLightPalette.border), 1.0f * scale);
     ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_section * scale));
 }
 
@@ -66,7 +69,7 @@ void DrawLegend(float scale) {
     const ImVec2 empty_pos = ImGui::GetCursorScreenPos();
     ImGui::Dummy(ImVec2(cell, cell));
     draw.AddRectFilled(empty_pos, ImVec2(empty_pos.x + cell, empty_pos.y + cell),
-                       Pack(kStudioPalette.heat_empty), studio_metrics::activity_corner * scale);
+                       Pack(kLightPalette.border), studio_metrics::activity_corner * scale);
 }
 
 void DrawInfoRow(const char* id, const std::string& text, const char* tooltip, float scale) {
@@ -104,7 +107,7 @@ void InsightsPage::DrawHeader(float scale) {
     const float avail = ImGui::GetContentRegionAvail().x;
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
-    draw.AddText(origin, Pack(kStudioPalette.ink), kPageTitle);
+    draw.AddText(origin, Pack(kLightPalette.text), kPageTitle);
     ImGui::PopFont();
     const float badge = 56.0f * scale;
     const ImVec2 badge_pos(origin.x + avail - badge, origin.y);
@@ -113,7 +116,7 @@ void InsightsPage::DrawHeader(float scale) {
                                                 ImGuiButtonFlags_EnableNav);
     const ImVec2 center(badge_pos.x + badge * 0.5f, badge_pos.y + badge * 0.5f);
     const float radius = badge * 0.5f;
-    draw.AddCircleFilled(center, radius, Pack(kStudioPalette.teal_300));
+    draw.AddCircleFilled(center, radius, Pack(HeatColor(3)));
     std::vector<std::string> glyphs;
     for (char step : std::string(kShareBadgeLabel)) {
         glyphs.push_back(std::string(1, step));
@@ -131,23 +134,23 @@ void InsightsPage::DrawHeader(float scale) {
                                                          static_cast<float>(total);
         const ImVec2 glyph_pos(center.x + std::cos(angle) * ring_radius - 3.0f * scale,
                                center.y + std::sin(angle) * ring_radius - 5.0f * scale);
-        draw.AddText(glyph_pos, Pack(kStudioPalette.ink), glyph.c_str());
+        draw.AddText(glyph_pos, Pack(kLightPalette.text), glyph.c_str());
     }
     ImGui::PopFont();
     const float shaft_top = center.y - 7.0f * scale;
     const float shaft_bottom = center.y + 9.0f * scale;
     draw.AddLine(ImVec2(center.x, shaft_bottom), ImVec2(center.x, shaft_top),
-                 Pack(kStudioPalette.ink), 2.0f * scale);
+                 Pack(kLightPalette.text), 2.0f * scale);
     draw.AddLine(ImVec2(center.x - 5.0f * scale, center.y - 2.0f * scale), ImVec2(center.x, shaft_top),
-                 Pack(kStudioPalette.ink), 2.0f * scale);
+                 Pack(kLightPalette.text), 2.0f * scale);
     draw.AddLine(ImVec2(center.x, shaft_top),
-                 ImVec2(center.x + 5.0f * scale, center.y - 2.0f * scale), Pack(kStudioPalette.ink),
+                 ImVec2(center.x + 5.0f * scale, center.y - 2.0f * scale), Pack(kLightPalette.text),
                  2.0f * scale);
     draw.AddLine(ImVec2(center.x - 7.0f * scale, center.y + 12.0f * scale),
-                 ImVec2(center.x + 7.0f * scale, center.y + 12.0f * scale), Pack(kStudioPalette.ink),
+                 ImVec2(center.x + 7.0f * scale, center.y + 12.0f * scale), Pack(kLightPalette.text),
                  2.0f * scale);
     if (ImGui::IsItemFocused()) {
-        draw.AddCircle(center, radius + 2.0f * scale, Pack(kStudioPalette.teal_700), 48, 2.0f * scale);
+        draw.AddCircle(center, radius + 2.0f * scale, Pack(kLightPalette.accent), 48, 2.0f * scale);
     }
     if (pressed) {
         OpenShare();
@@ -193,13 +196,13 @@ void InsightsPage::DrawCardA(float width, float scale) {
         ImGui::SetTooltip("%s", kWpmTooltip);
     }
     ImGui::PushFont(nullptr, studio_metrics::font_caps_px);
-    ImGui::TextColored(Color(kStudioPalette.muted), "%s", kWpmCaption);
+    ImGui::TextColored(Color(kLightPalette.muted), "%s", kWpmCaption);
     ImGui::PopFont();
     widgets::RadialGauge("##insights_gauge", GaugeFraction(summary_.wpm), kGaugeCenter, wpm.c_str(),
                          scale);
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 16.0f * scale);
-    ImGui::TextColored(Color(kStudioPalette.muted), "%s", kGaugeFootnote);
+    ImGui::TextColored(Color(kLightPalette.muted), "%s", kGaugeFootnote);
     ImGui::PopTextWrapPos();
     ImGui::PopFont();
     EndCard();
@@ -211,7 +214,7 @@ void InsightsPage::DrawCardB(float width, float scale) {
     ImGui::TextUnformatted(std::to_string(summary_.fixes_total).c_str());
     ImGui::PopFont();
     ImGui::PushFont(nullptr, studio_metrics::font_caps_px);
-    ImGui::TextColored(Color(kStudioPalette.muted), "%s", kFixesCaption);
+    ImGui::TextColored(Color(kLightPalette.muted), "%s", kFixesCaption);
     ImGui::PopFont();
     DrawDivider(scale);
     const std::string corrected =
@@ -229,7 +232,7 @@ void InsightsPage::DrawCardC(float width, float scale) {
     ImGui::TextUnformatted(std::to_string(summary_.total_words).c_str());
     ImGui::PopFont();
     ImGui::PushFont(nullptr, studio_metrics::font_caps_px);
-    ImGui::TextColored(Color(kStudioPalette.muted), "%s", kTotalWordsCaption);
+    ImGui::TextColored(Color(kLightPalette.muted), "%s", kTotalWordsCaption);
     ImGui::PopFont();
     DrawDivider(scale);
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
@@ -264,12 +267,12 @@ void InsightsPage::DrawCardD(float width, float scale) {
     ImGui::TextUnformatted(kUsageTitle);
     ImGui::PopFont();
     ImGui::PushFont(nullptr, studio_metrics::font_caps_px);
-    ImGui::TextColored(Color(kStudioPalette.muted), "%s", TotalAppsCaption(summary_.total_apps).c_str());
+    ImGui::TextColored(Color(kLightPalette.muted), "%s", TotalAppsCaption(summary_.total_apps).c_str());
     ImGui::PopFont();
     if (!summary_.has_data) {
         ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
         ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 16.0f * scale);
-        ImGui::TextColored(Color(kStudioPalette.muted), "%s", kDesktopEmpty);
+        ImGui::TextColored(Color(kLightPalette.muted), "%s", kDesktopEmpty);
         ImGui::PopTextWrapPos();
         ImGui::PopFont();
         EndCard();
@@ -281,17 +284,18 @@ void InsightsPage::DrawCardD(float width, float scale) {
         const float row_h = studio_metrics::progress_height * scale;
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         const ImVec2 icon_center(row_pos.x + 14.0f * scale, row_pos.y + row_h * 0.5f);
-        draw.AddCircle(icon_center, 12.0f * scale, Pack(kStudioPalette.border), 24, 1.0f * scale);
+        draw.AddCircle(icon_center, 12.0f * scale, Pack(kLightPalette.border), 24, 1.0f * scale);
         ImGui::PushFont(nullptr, studio_metrics::font_glyph_px);
         const ImVec2 icon_size = ImGui::CalcTextSize(row.icon.c_str());
         draw.AddText(ImVec2(icon_center.x - icon_size.x * 0.5f, icon_center.y - icon_size.y * 0.5f),
-                     Pack(kStudioPalette.teal_700), row.icon.c_str());
+                     Pack(kLightPalette.accent), row.icon.c_str());
         ImGui::PopFont();
         ImGui::SetCursorScreenPos(ImVec2(row_pos.x + 32.0f * scale, row_pos.y));
         const std::string pill_id = std::string("##insights_pill_") + row.key;
         widgets::ProgressPill(pill_id.c_str(), row.fraction,
                               PillLabel(row.words, row.display_label).c_str(), scale);
-        ImGui::SetCursorScreenPos(ImVec2(row_pos.x, row_pos.y + row_h + 8.0f * scale));
+        ImGui::SetCursorScreenPos(ImVec2(row_pos.x, row_pos.y + row_h + 8.0f * scale - ImGui::GetStyle().ItemSpacing.y));
+        ImGui::Dummy(ImVec2(0.0f, 0.0f));
     }
     EndCard();
 }
@@ -302,7 +306,7 @@ void InsightsPage::DrawCardE(float width, float scale) {
     ImGui::TextUnformatted(StreakTitle(summary_.current_streak).c_str());
     ImGui::PopFont();
     ImGui::PushFont(nullptr, studio_metrics::font_caps_px);
-    ImGui::TextColored(Color(kStudioPalette.muted), "%s", LongestCaption(summary_.longest_streak).c_str());
+    ImGui::TextColored(Color(kLightPalette.muted), "%s", LongestCaption(summary_.longest_streak).c_str());
     ImGui::PopFont();
     const std::string month_label = MonthLabelFor(ViewMonth());
     if (!CanPrevMonth()) {
@@ -374,7 +378,7 @@ void InsightsPage::DrawShareDialog(float scale) {
         ImGui::EndDisabled();
         ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
         ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-        ImGui::TextColored(Color(kStudioPalette.muted), "%s", kComingSoon);
+        ImGui::TextColored(Color(kLightPalette.muted), "%s", kComingSoon);
         ImGui::PopFont();
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
         if (widgets::LightButton("insights_share_close", "Close", scale)) {
