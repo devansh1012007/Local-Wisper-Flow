@@ -331,7 +331,9 @@ int main() {
                 "config.json was corrupt and has been moved aside; defaults loaded");
         }
 
-        MiniaudioCapture audio(kSampleRate, 1);
+        // INVARIANT: config.Store() is loaded in the ConfigManager/SettingsStore ctor
+        // above, so mic_device (hot_apply=false, restart banner) is readable here.
+        MiniaudioCapture audio(kSampleRate, 1, config.Store().GetString("mic_device"));
         std::unique_ptr<LocalWhisperProvider> local_stt;
         try {
             local_stt = std::make_unique<LocalWhisperProvider>(
