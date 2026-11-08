@@ -397,7 +397,7 @@ TEST_CASE("mini status word is drawn at badge alpha without a discount") {
     REQUIRE(static_cast<bool>(overlay));
     const std::string content((std::istreambuf_iterator<char>(overlay)),
                               std::istreambuf_iterator<char>());
-    CHECK(content.find("Pack(kDarkPalette.muted, badge_alpha)") != std::string::npos);
+    CHECK(content.find("Pack(kLightPalette.muted, badge_alpha)") != std::string::npos);
     // R-W2-003-003: forbid the CLASS, not one literal. "* badge_alpha" must
     // appear exactly once (the intended surface base dimming
     // `surface_alpha * badge_alpha` on the badge circle); any numeric

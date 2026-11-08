@@ -21,7 +21,8 @@
 namespace {
 
 namespace metrics = lwf::ui::metrics;
-using lwf::ui::kDarkPalette;
+// Ivory primary for Mini (Ph6); dark variant remains test-only; real-hardware light-wallpaper check owed Ph7.
+using lwf::ui::kLightPalette;
 using lwf::ui::Pack;
 
 constexpr float kPi = 3.14159265358979323846f;
@@ -122,7 +123,7 @@ bool Overlay::Init() {
     glfwSwapInterval(1);
     ImGui_ImplGlfw_InitForOpenGL(window_, true);
     ImGui_ImplOpenGL3_Init("#version 130");
-    lwf::ui::ApplyImGuiStyle(kDarkPalette, static_cast<float>(dpi_scale_));
+    lwf::ui::ApplyImGuiStyle(kLightPalette, static_cast<float>(dpi_scale_));
 
     // Topmost tool window, never activates, click-through until hovered.
     WindowStyles::ApplyOverlayStyles(glfwGetWin32Window(window_));
@@ -336,7 +337,7 @@ void Overlay::RenderFrame(float delta_seconds) {
     if (pending_dpi_scale_ > 0.0f) {
         dpi_scale_ = pending_dpi_scale_;
         pending_dpi_scale_ = 0.0f;
-        lwf::ui::ApplyImGuiStyle(kDarkPalette, static_cast<float>(dpi_scale_));
+        lwf::ui::ApplyImGuiStyle(kLightPalette, static_cast<float>(dpi_scale_));
         cached_status_valid_ = false;  // font scale changed: remap cache key
         ApplyWindowGeometry();
     }
@@ -446,31 +447,31 @@ void Overlay::DrawBadge() {
     }
     const float breathe = reduce_motion_ ? 0.75f : 0.6f + 0.4f * Wave01(animation_time_, metrics::ring_breathe);
 
-    draw.AddCircleFilled(center, radius, Pack(kDarkPalette.surface, kDarkPalette.surface_alpha * badge_alpha), 0);
-    draw.AddCircle(center, radius, Pack(kDarkPalette.border, badge_alpha), 0, 1.0f * scale);
+    draw.AddCircleFilled(center, radius, Pack(kLightPalette.surface, kLightPalette.surface_alpha * badge_alpha), 0);
+    draw.AddCircle(center, radius, Pack(kLightPalette.border, badge_alpha), 0, 1.0f * scale);
 
     if (scratchpad_visible_) {
         const float note_px = 16.0f * scale;
         const ImVec2 note_min(dot_max.x + 4.0f * scale, dot_min.y + (dot - note_px) * 0.5f);
         const ImVec2 note_max(note_min.x + note_px, note_min.y + note_px);
-        draw.AddRectFilled(note_min, note_max, Pack(kDarkPalette.surface, badge_alpha), 4.0f * scale);
-        draw.AddRect(note_min, note_max, Pack(kDarkPalette.border, badge_alpha), 4.0f * scale, 0, 1.0f * scale);
+        draw.AddRectFilled(note_min, note_max, Pack(kLightPalette.surface, badge_alpha), 4.0f * scale);
+        draw.AddRect(note_min, note_max, Pack(kLightPalette.border, badge_alpha), 4.0f * scale, 0, 1.0f * scale);
         const ImVec2 glyph_min(note_min.x + 4.0f * scale, note_min.y + 4.0f * scale);
-        draw.AddRect(glyph_min, ImVec2(note_max.x - 4.0f * scale, note_max.y - 4.0f * scale), Pack(kDarkPalette.text, badge_alpha), 1.0f * scale, 0, 1.0f * scale);
-        draw.AddLine(ImVec2(glyph_min.x + 2.0f * scale, glyph_min.y + 4.0f * scale), ImVec2(note_max.x - 6.0f * scale, glyph_min.y + 4.0f * scale), Pack(kDarkPalette.text, badge_alpha), 1.0f * scale);
+        draw.AddRect(glyph_min, ImVec2(note_max.x - 4.0f * scale, note_max.y - 4.0f * scale), Pack(kLightPalette.text, badge_alpha), 1.0f * scale, 0, 1.0f * scale);
+        draw.AddLine(ImVec2(glyph_min.x + 2.0f * scale, glyph_min.y + 4.0f * scale), ImVec2(note_max.x - 6.0f * scale, glyph_min.y + 4.0f * scale), Pack(kLightPalette.text, badge_alpha), 1.0f * scale);
     }
 
     switch (state_) {
         case OverlayModel::PillState::Ready:
-            DrawMic(draw, center, scale, Pack(kDarkPalette.text, badge_alpha), false);
+            DrawMic(draw, center, scale, Pack(kLightPalette.text, badge_alpha), false);
             break;
         case OverlayModel::PillState::Listening: {
             // Filled brass mic, breathing ring, five level bars.
             // INVARIANT: levels_scratch_ is reused across frames so this
             // path performs zero heap allocations (WaveformRing::SnapshotInto).
             draw.AddCircle(center, radius + 6.0f * scale,
-                           Pack(kDarkPalette.accent, breathe * fade_alpha_), 0, 2.0f * scale);
-            DrawMic(draw, center, scale, Pack(kDarkPalette.accent, fade_alpha_), true);
+                           Pack(kLightPalette.accent, breathe * fade_alpha_), 0, 2.0f * scale);
+            DrawMic(draw, center, scale, Pack(kLightPalette.accent, fade_alpha_), true);
             waveform_.SnapshotInto(levels_scratch_);
             const std::vector<float>& levels = levels_scratch_;
             float avg = 0.0f;
@@ -493,7 +494,7 @@ void Overlay::DrawBadge() {
                 }
                 const float h = std::clamp(2.0f + level * max_h, 2.0f * scale, max_h);
                 draw.AddRectFilled(ImVec2(x, base_y - h), ImVec2(x + bar_w, base_y),
-                                   Pack(kDarkPalette.accent, fade_alpha_), bar_w * 0.5f);
+                                   Pack(kLightPalette.accent, fade_alpha_), bar_w * 0.5f);
                 x += bar_w + bar_gap;
             }
             break;
@@ -513,7 +514,7 @@ void Overlay::DrawBadge() {
                 }
                 const ImVec2 p(center.x + (static_cast<float>(i) - 1.0f) * 7.0f * scale, center.y);
                 draw.AddCircleFilled(p, 2.2f * scale,
-                                     Pack(kDarkPalette.text, alpha * fade_alpha_), 0);
+                                     Pack(kLightPalette.text, alpha * fade_alpha_), 0);
             }
             break;
         }
@@ -521,22 +522,22 @@ void Overlay::DrawBadge() {
             // A check for 600 ms, then back to Ready (dwell handled above).
             const float s = scale;
             draw.AddLine(ImVec2(center.x - 6.0f * s, center.y), ImVec2(center.x - 1.5f * s, center.y + 5.0f * s),
-                         Pack(kDarkPalette.ok, fade_alpha_), 2.0f * s);
+                         Pack(kLightPalette.ok, fade_alpha_), 2.0f * s);
             draw.AddLine(ImVec2(center.x - 1.5f * s, center.y + 5.0f * s), ImVec2(center.x + 6.5f * s, center.y - 6.0f * s),
-                         Pack(kDarkPalette.ok, fade_alpha_), 2.0f * s);
+                         Pack(kLightPalette.ok, fade_alpha_), 2.0f * s);
             break;
         }
         case OverlayModel::PillState::Paused: {
             // Outline mic with a bar through it; click resumes.
-            DrawMic(draw, center, scale, Pack(kDarkPalette.muted, fade_alpha_), false);
+            DrawMic(draw, center, scale, Pack(kLightPalette.muted, fade_alpha_), false);
             draw.AddLine(ImVec2(center.x - 8.0f * scale, center.y + 8.0f * scale),
                          ImVec2(center.x + 8.0f * scale, center.y - 8.0f * scale),
-                         Pack(kDarkPalette.muted, fade_alpha_), 1.5f * scale);
+                         Pack(kLightPalette.muted, fade_alpha_), 1.5f * scale);
             break;
         }
         case OverlayModel::PillState::Attention: {
             draw.AddCircleFilled(center, 5.0f * scale,
-                                  Pack(kDarkPalette.err_fill, fade_alpha_), 0);
+                                  Pack(kLightPalette.err_fill, fade_alpha_), 0);
             if (hovered_ && !message_.empty()) {
                 DrawAttentionMessage(draw, dot_min, scale);
             }
@@ -568,7 +569,7 @@ void Overlay::DrawBadge() {
             }
             const ImVec2 text_size = cached_status_size_;
             draw.AddText(ImVec2(center.x - text_size.x * 0.5f, dot_max.y + 2.0f * scale),
-                         Pack(kDarkPalette.muted, badge_alpha), status_word);
+                         Pack(kLightPalette.muted, badge_alpha), status_word);
         }
     }
 
@@ -665,11 +666,11 @@ void Overlay::DrawAttentionMessage(ImDrawList& draw, const ImVec2& dot_min, floa
     const ImVec2 text_size = ImGui::CalcTextSize(message_.c_str(), nullptr, false, text_w);
     const ImVec2 box_min(0.0f, dot_min.y + metrics::mini_dot * scale);
     const ImVec2 box_max(display.x, box_min.y + text_size.y + 2.0f * pad);
-    draw.AddRectFilled(box_min, box_max, Pack(kDarkPalette.surface, 0.97f * fade_alpha_),
+    draw.AddRectFilled(box_min, box_max, Pack(kLightPalette.surface, 0.97f * fade_alpha_),
                        metrics::radius_control * scale);
-    draw.AddRect(box_min, box_max, Pack(kDarkPalette.border, fade_alpha_),
+    draw.AddRect(box_min, box_max, Pack(kLightPalette.border, fade_alpha_),
                  metrics::radius_control * scale, 0, 1.0f * scale);
     draw.AddText(ImGui::GetFont(), ImGui::GetFontSize(), text_pos,
-                 Pack(kDarkPalette.err, fade_alpha_), message_.c_str(), nullptr, text_w);
+                 Pack(kLightPalette.err, fade_alpha_), message_.c_str(), nullptr, text_w);
     ImGui::PopFont();
 }

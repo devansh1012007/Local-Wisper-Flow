@@ -386,7 +386,8 @@ TEST_CASE("scratchpad editor window source keeps its own context and sizes") {
     CHECK(win_cpp.find("ImGui::GetCurrentContext()") == std::string::npos);
     CHECK(win_cpp.find("ImGui::SetCurrentContext") != std::string::npos);
     CHECK(win_cpp.find("glfwMakeContextCurrent") != std::string::npos);
-    CHECK(win_cpp.find("ApplyStudioStyle") != std::string::npos);
+    CHECK(win_cpp.find("ApplyImGuiStyle") != std::string::npos);
+    CHECK(win_cpp.find("kLightPalette") != std::string::npos);
     CHECK(win_cpp.find("InputTextMultiline") != std::string::npos);
     CHECK(win_cpp.find("CallbackAlways") != std::string::npos);
     CHECK(win_cpp.find("Bold") != std::string::npos);
