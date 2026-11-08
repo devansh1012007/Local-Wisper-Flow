@@ -173,6 +173,13 @@ private:
     bool PickAndApplyModelPath(char* buffer, std::size_t buffer_size, const char* setting_key,
                                std::string& error);
     void DeleteLocalData();
+    // Masked key entry row shared by Cloud (Gnani, ElevenLabs, Muse) and
+    // Cleanup (OpenRouter). Never seeds buffer with stored value.
+    void DrawApiKeyRow(const char* store_id, const char* display_name, const char* env_name,
+                       const char* confirm_question, const char* confirm_button, char* buffer,
+                       std::size_t buffer_size, bool& remove_armed, bool& focus_keep_pending,
+                       std::string& error, float scale);
+    void ClearApiKeyInputs();
 
     struct TextField {
         char buffer[512] = {};
@@ -230,6 +237,25 @@ private:
     bool delete_data_armed_ = false;
     char model_path_buffer_[512] = {};
     char llm_model_path_buffer_[512] = {};
+    // API key entry state (Cloud + Cleanup). Buffers hold uncommitted
+    // masked input only; they are cleared on save, remove, cancel and
+    // page/tab switch. Armed flags drive the named two-step removal.
+    char gnani_key_buffer_[512] = {};
+    char elevenlabs_key_buffer_[512] = {};
+    char muse_key_buffer_[512] = {};
+    char openrouter_key_buffer_[512] = {};
+    bool gnani_remove_armed_ = false;
+    bool elevenlabs_remove_armed_ = false;
+    bool muse_remove_armed_ = false;
+    bool openrouter_remove_armed_ = false;
+    bool gnani_keep_focus_pending_ = false;
+    bool elevenlabs_keep_focus_pending_ = false;
+    bool muse_keep_focus_pending_ = false;
+    bool openrouter_keep_focus_pending_ = false;
+    std::string gnani_key_error_;
+    std::string elevenlabs_key_error_;
+    std::string muse_key_error_;
+    std::string openrouter_key_error_;
     TextField hotkey_handsfree_field_;
     TextField hotkey_cancel_field_;
     TextField hotkey_command_field_;

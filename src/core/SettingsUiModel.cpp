@@ -63,6 +63,56 @@ std::string ValidateLanguage(const std::string& code) {
     return {};
 }
 
+ApiKeySource ApiKeySourceFor(bool has_saved, bool has_env) {
+    if (has_saved) {
+        return ApiKeySource::Saved;
+    }
+    if (has_env) {
+        return ApiKeySource::Environment;
+    }
+    return ApiKeySource::NotSet;
+}
+
+const char* ApiKeySourceLabel(ApiKeySource source) {
+    switch (source) {
+        case ApiKeySource::Saved:
+            return "Saved key";
+        case ApiKeySource::Environment:
+            return "Environment key";
+        case ApiKeySource::NotSet:
+            return "Not set";
+    }
+    return "Not set";
+}
+
+const char* ApiKeyStatusWord(ApiKeySource source) {
+    switch (source) {
+        case ApiKeySource::Saved:
+            return "Ready";
+        case ApiKeySource::Environment:
+            return "Ready";
+        case ApiKeySource::NotSet:
+            return "Not set";
+    }
+    return "Not set";
+}
+
+std::string TrimApiKeyInput(const std::string& raw) {
+    const std::size_t first = raw.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return {};
+    }
+    const std::size_t last = raw.find_last_not_of(" \t\r\n");
+    return raw.substr(first, last - first + 1);
+}
+
+std::string ApiKeySaveError(const std::string& trimmed) {
+    if (trimmed.empty()) {
+        return "Enter a key to save.";
+    }
+    return {};
+}
+
 void DictionaryEditorModel::AddWord(std::string value) {
     if (!value.empty()) {
         words.push_back({std::move(value)});

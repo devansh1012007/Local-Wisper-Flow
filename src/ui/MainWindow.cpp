@@ -3,6 +3,7 @@
 #include "audio/MiniaudioCapture.h"
 #include "core/AppVersion.h"
 #include "core/ApiKeyStore.h"
+#include "core/ConsentGate.h"
 #include "core/DictionaryStore.h"
 #include "core/HistoryStore.h"
 #include "core/HotkeyBinding.h"
@@ -42,6 +43,8 @@ extern "C" void* glfwGetWin32Window(GLFWwindow* window);
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -111,6 +114,36 @@ bool ToggleSwitch(const char* id, bool value, float scale) {
     draw.AddCircleFilled(ImVec2(x + knob * 0.5f, p.y + h * 0.5f), knob * 0.5f,
                          Pack(kLightPalette.surface));
     return toggled;
+}
+
+// Button for the masked key rows: at least 32px tall (R10), accent fill
+// for the primary action, and a 2px focus ring when keyboard focused
+// (R11). The label carries the meaning; color never carries state alone.
+bool KeyButton(const char* id, const char* label, bool accent, float scale) {
+    const float height = metrics::control_min_height * scale;
+    const std::string button_label =
+        std::string(label == nullptr ? "" : label) + "##" + (id == nullptr ? "" : id);
+    bool pressed = false;
+    if (accent) {
+        ImGui::PushStyleColor(ImGuiCol_Button, Color(kLightPalette.accent));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kLightPalette.accent));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, Color(kLightPalette.accent));
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(kLightPalette.on_accent));
+        pressed = ImGui::Button(button_label.c_str(), ImVec2(0.0f, height));
+        ImGui::PopStyleColor(4);
+    } else {
+        pressed = ImGui::Button(button_label.c_str(), ImVec2(0.0f, height));
+    }
+    if (ImGui::IsItemFocused()) {
+        const ImVec2 item_min = ImGui::GetItemRectMin();
+        const ImVec2 item_max = ImGui::GetItemRectMax();
+        ImDrawList& draw = *ImGui::GetWindowDrawList();
+        draw.AddRect(ImVec2(item_min.x - 2.0f * scale, item_min.y - 2.0f * scale),
+                     ImVec2(item_max.x + 2.0f * scale, item_max.y + 2.0f * scale),
+                     Pack(kLightPalette.focus), metrics::radius_control * scale, 0,
+                     2.0f * scale);
+    }
+    return pressed;
 }
 
 }  // namespace
@@ -513,6 +546,7 @@ void MainWindow::DrawRail(float scale) {
                 page_ = item.page;
                 PersistPage();
                 validation_error_.clear();  // errors belong to the page that set them
+                ClearApiKeyInputs();
                 // Focus is already on the pressed item; never arm the restore
                 // here (mouse or keyboard). A stale arm would yank focus to
                 // the first rail button on a later Tab (R-W2-003).
@@ -756,6 +790,152 @@ void MainWindow::DeleteLocalData() {
         reset_stores_.history->Clear();
     }
     delete_data_armed_ = false;
+    ClearApiKeyInputs();
+}
+
+void MainWindow::ClearApiKeyInputs() {
+    std::memset(gnani_key_buffer_, 0, sizeof(gnani_key_buffer_));
+    std::memset(elevenlabs_key_buffer_, 0, sizeof(elevenlabs_key_buffer_));
+    std::memset(muse_key_buffer_, 0, sizeof(muse_key_buffer_));
+    std::memset(openrouter_key_buffer_, 0, sizeof(openrouter_key_buffer_));
+    gnani_remove_armed_ = false;
+    elevenlabs_remove_armed_ = false;
+    muse_remove_armed_ = false;
+    openrouter_remove_armed_ = false;
+    gnani_keep_focus_pending_ = false;
+    elevenlabs_keep_focus_pending_ = false;
+    muse_keep_focus_pending_ = false;
+    openrouter_keep_focus_pending_ = false;
+    gnani_key_error_.clear();
+    elevenlabs_key_error_.clear();
+    muse_key_error_.clear();
+    openrouter_key_error_.clear();
+}
+
+void MainWindow::DrawApiKeyRow(const char* store_id, const char* display_name,
+                               const char* env_name, const char* confirm_question,
+                               const char* confirm_button, char* buffer,
+                               std::size_t buffer_size, bool& remove_armed,
+                               bool& focus_keep_pending, std::string& error, float scale) {
+    ApiKeyStore* store = reset_stores_.api_keys;
+    if (store == nullptr || store_id == nullptr || display_name == nullptr || buffer == nullptr ||
+        confirm_question == nullptr || confirm_button == nullptr || buffer_size == 0) {
+        ImGui::TextUnformatted(display_name != nullptr ? display_name : "Key");
+        ImGui::TextDisabled("Keys are not available right now.");
+        return;
+    }
+    const bool has_saved = store->Has(store_id);
+    bool has_env = false;
+    if (env_name != nullptr) {
+        const char* env_value = std::getenv(env_name);
+        has_env = env_value != nullptr && env_value[0] != '\0';
+    }
+    const SettingsUiModel::ApiKeySource source =
+        SettingsUiModel::ApiKeySourceFor(has_saved, has_env);
+    const char* status_word = SettingsUiModel::ApiKeyStatusWord(source);
+    const char* source_label = SettingsUiModel::ApiKeySourceLabel(source);
+    // Status: dot shape + word + source word (never color alone, R8).
+    const std::uint32_t dot_color =
+        source == SettingsUiModel::ApiKeySource::NotSet ? kLightPalette.muted : kLightPalette.ok;
+    ImGui::TextUnformatted(display_name);
+    ImGui::SameLine();
+    const ImVec2 dot_pos = ImGui::GetCursorScreenPos();
+    const float line = ImGui::GetTextLineHeight();
+    ImDrawList& status_draw = *ImGui::GetWindowDrawList();
+    status_draw.AddCircleFilled(
+        ImVec2(dot_pos.x + 4.0f * scale + 2.0f * scale, dot_pos.y + line * 0.5f),
+        4.0f * scale, Pack(dot_color));
+    ImGui::Dummy(ImVec2(kStatusDotIndent * scale, 0.0f));
+    ImGui::SameLine();
+    ImGui::TextUnformatted(status_word);
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", source_label);
+    if (remove_armed) {
+        // Esc cancels the named confirmation without touching the saved key.
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            remove_armed = false;
+            focus_keep_pending = false;
+            std::memset(buffer, 0, buffer_size);
+            error.clear();
+            return;
+        }
+        // SECURITY: the question names the service so the destructive
+        // action is explicit (R13); the key value never appears here.
+        ImGui::TextColored(Color(kLightPalette.err), "%s", confirm_question);
+        const std::string remove_id = std::string("##remove_") + store_id;
+        bool do_remove = false;
+        bool do_keep = false;
+        do_remove = KeyButton(remove_id.c_str(), confirm_button, false, scale);
+        ImGui::SameLine();
+        if (focus_keep_pending) {
+            ImGui::SetKeyboardFocusHere();
+            focus_keep_pending = false;
+        }
+        const std::string keep_id = std::string("##keep_") + store_id;
+        do_keep = KeyButton(keep_id.c_str(), "Keep key", false, scale);
+        if (do_remove) {
+            if (store->Remove(store_id)) {
+                std::memset(buffer, 0, buffer_size);
+                error.clear();
+                remove_armed = false;
+                focus_keep_pending = false;
+                restart_needed_ = true;
+                ShowSaved();
+            } else {
+                error = "Could not remove the key.";
+            }
+        } else if (do_keep) {
+            std::memset(buffer, 0, buffer_size);
+            error.clear();
+            remove_armed = false;
+            focus_keep_pending = false;
+        }
+        if (!error.empty()) {
+            ImGui::TextColored(Color(kLightPalette.err), "%s", error.c_str());
+        }
+        return;
+    }
+    const std::string input_id = std::string("##key_") + store_id;
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputText(input_id.c_str(), buffer, buffer_size, ImGuiInputTextFlags_Password);
+    if (ImGui::IsItemFocused()) {
+        const ImVec2 input_min = ImGui::GetItemRectMin();
+        const ImVec2 input_max = ImGui::GetItemRectMax();
+        ImDrawList& input_draw = *ImGui::GetWindowDrawList();
+        input_draw.AddRect(ImVec2(input_min.x - 2.0f * scale, input_min.y - 2.0f * scale),
+                           ImVec2(input_max.x + 2.0f * scale, input_max.y + 2.0f * scale),
+                           Pack(kLightPalette.focus), metrics::radius_control * scale, 0,
+                           2.0f * scale);
+    }
+    ImGui::TextDisabled("Paste a key to save");
+    if (!error.empty()) {
+        ImGui::TextColored(Color(kLightPalette.err), "%s", error.c_str());
+    }
+    const std::string save_id = std::string("##save_") + store_id;
+    if (KeyButton(save_id.c_str(), "Save key", true, scale)) {
+        const std::string trimmed = SettingsUiModel::TrimApiKeyInput(buffer);
+        const std::string save_error = SettingsUiModel::ApiKeySaveError(trimmed);
+        if (!save_error.empty()) {
+            error = save_error;
+        } else if (store->Set(store_id, trimmed)) {
+            std::memset(buffer, 0, buffer_size);
+            error.clear();
+            restart_needed_ = true;
+            ShowSaved();
+        } else {
+            error = "Could not save the key.";
+        }
+    }
+    if (has_saved) {
+        ImGui::SameLine();
+        const std::string remove_id = std::string("##remove_saved_") + store_id;
+        if (KeyButton(remove_id.c_str(), "Remove saved key", false, scale)) {
+            std::memset(buffer, 0, buffer_size);
+            error.clear();
+            remove_armed = true;
+            focus_keep_pending = true;
+        }
+    }
 }
 
 void MainWindow::PersistPage() {
@@ -1209,6 +1389,30 @@ void MainWindow::DrawCloudPage(float scale) {
     }
     EndCard(scale);
 
+    BeginCard("##card_cloud_keys", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Saved keys");
+        ImGui::PopFont();
+        ImGui::TextWrapped("Saved keys take precedence over environment variables. "
+                           "Keys are kept apart from settings and are never shown again "
+                           "after saving.");
+        DrawApiKeyRow("gnani", "Gnani", ApiKeyEnvFor("gnani"), "Remove saved Gnani key?",
+                      "Remove Gnani key", gnani_key_buffer_, sizeof(gnani_key_buffer_),
+                      gnani_remove_armed_, gnani_keep_focus_pending_, gnani_key_error_, scale);
+        ImGui::Separator();
+        DrawApiKeyRow("elevenlabs", "ElevenLabs", ApiKeyEnvFor("elevenlabs"),
+                      "Remove saved ElevenLabs key?", "Remove ElevenLabs key",
+                      elevenlabs_key_buffer_, sizeof(elevenlabs_key_buffer_),
+                      elevenlabs_remove_armed_, elevenlabs_keep_focus_pending_,
+                      elevenlabs_key_error_, scale);
+        ImGui::Separator();
+        DrawApiKeyRow("muse", "Muse", ApiKeyEnvFor("muse"), "Remove saved Muse key?",
+                      "Remove Muse key", muse_key_buffer_, sizeof(muse_key_buffer_),
+                      muse_remove_armed_, muse_keep_focus_pending_, muse_key_error_, scale);
+    }
+    EndCard(scale);
+
     BeginCard("##card_remote_engine", width, scale);
     {
         ImGui::PushFont(nullptr, metrics::font_card_title_px);
@@ -1234,11 +1438,11 @@ void MainWindow::DrawCloudPage(float scale) {
         }
         if (consent && settings_.GetString("stt_provider") != "local") {
             ImGui::TextColored(Color(kLightPalette.warn),
-                               "Cloud is active only while the service API key is present in "
-                               "the environment.");
-            ImGui::TextWrapped("The API key is read from the environment and is never written "
-                               "to config.json, logs, or history. If a cloud request fails, "
-                               "that sentence is still dictated on this computer.");
+                               "Cloud is active only while a key is present.");
+            ImGui::TextWrapped("Saved keys take precedence over environment variables. "
+                               "The key is never written to config.json, logs, or history. "
+                               "If a cloud request fails, that sentence is still dictated "
+                               "on this computer.");
         }
     }
     EndCard(scale);
@@ -1340,6 +1544,16 @@ void MainWindow::DrawCleanupPage(float scale) {
         } else {
             ImGui::TextDisabled("Local cleanup runs on this machine.");
         }
+        ImGui::Separator();
+        ImGui::TextWrapped("Saved keys take precedence over environment variables. "
+                           "Keys are kept apart from settings and are never shown again "
+                           "after saving.");
+        DrawApiKeyRow("openrouter", "OpenRouter", "OPENROUTER_API_KEY",
+                      "Remove saved OpenRouter key?", "Remove OpenRouter key",
+                      openrouter_key_buffer_, sizeof(openrouter_key_buffer_),
+                      openrouter_remove_armed_, openrouter_keep_focus_pending_,
+                      openrouter_key_error_, scale);
+        ImGui::TextDisabled("The model is set in config.json; see the Privacy tab.");
     }
     EndCard(scale);
 }
@@ -1613,6 +1827,7 @@ void MainWindow::DrawSettingsPage(float scale) {
             settings_tab_ = item.tab;
             validation_error_.clear();
             llm_model_error_.clear();
+            ClearApiKeyInputs();
         }
         const bool active = settings_tab_ == item.tab;
         const bool hovered = ImGui::IsItemHovered();

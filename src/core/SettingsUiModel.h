@@ -20,6 +20,20 @@ std::string ValidateInt(const std::string& key, int value, int min_value, int ma
 std::string ValidateModelPath(const std::string& path);
 std::string ValidateLanguage(const std::string& code);
 
+// API key entry helpers (Settings UI). Pure logic only: trim, source
+// derivation from live store/env state, and user-facing status labels.
+// Key material never crosses these functions; callers keep the secret in
+// a masked buffer and persist it through ApiKeyStore directly. Labels are
+// sentence-case and avoid internal terms per the F9 copy lint.
+enum class ApiKeySource { Saved, Environment, NotSet };
+
+ApiKeySource ApiKeySourceFor(bool has_saved, bool has_env);
+const char* ApiKeySourceLabel(ApiKeySource source);
+const char* ApiKeyStatusWord(ApiKeySource source);
+std::string TrimApiKeyInput(const std::string& raw);
+// Returns the inline error for a trimmed value, empty when save may proceed.
+std::string ApiKeySaveError(const std::string& trimmed);
+
 class DictionaryEditorModel {
 public:
     struct Word {

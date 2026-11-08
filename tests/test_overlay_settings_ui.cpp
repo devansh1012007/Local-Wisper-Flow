@@ -1496,3 +1496,78 @@ TEST_CASE("layout literal ban fires on violations and cap-exceeds") {
         "ImGui::Dummy(ImVec2(0.0f, 1.0f));\n");
     CHECK(dummy_universal.empty());
 }
+
+TEST_CASE("api key entry helpers trim, source and labels") {
+    // Pure logic for the masked key rows: trim preserves inner bytes, the
+    // source prefers a saved key over the environment, labels stay in
+    // sentence case, and an empty trimmed value blocks the save.
+    CHECK(SettingsUiModel::TrimApiKeyInput("  sk-abc  ") == "sk-abc");
+    CHECK(SettingsUiModel::TrimApiKeyInput("\t key \r\n") == "key");
+    CHECK(SettingsUiModel::TrimApiKeyInput("   ").empty());
+    CHECK(SettingsUiModel::TrimApiKeyInput(" a b ") == "a b");
+    CHECK(SettingsUiModel::ApiKeySourceFor(true, true) == SettingsUiModel::ApiKeySource::Saved);
+    CHECK(SettingsUiModel::ApiKeySourceFor(true, false) == SettingsUiModel::ApiKeySource::Saved);
+    CHECK(SettingsUiModel::ApiKeySourceFor(false, true) ==
+          SettingsUiModel::ApiKeySource::Environment);
+    CHECK(SettingsUiModel::ApiKeySourceFor(false, false) == SettingsUiModel::ApiKeySource::NotSet);
+    CHECK(std::string(SettingsUiModel::ApiKeySourceLabel(SettingsUiModel::ApiKeySource::Saved)) ==
+          "Saved key");
+    CHECK(std::string(SettingsUiModel::ApiKeySourceLabel(
+              SettingsUiModel::ApiKeySource::Environment)) == "Environment key");
+    CHECK(std::string(SettingsUiModel::ApiKeySourceLabel(
+              SettingsUiModel::ApiKeySource::NotSet)) == "Not set");
+    CHECK(std::string(SettingsUiModel::ApiKeyStatusWord(
+              SettingsUiModel::ApiKeySource::Saved)) == "Ready");
+    CHECK(std::string(SettingsUiModel::ApiKeyStatusWord(
+              SettingsUiModel::ApiKeySource::Environment)) == "Ready");
+    CHECK(std::string(SettingsUiModel::ApiKeyStatusWord(
+              SettingsUiModel::ApiKeySource::NotSet)) == "Not set");
+    CHECK(SettingsUiModel::ApiKeySaveError("sk-abc").empty());
+    CHECK(SettingsUiModel::ApiKeySaveError("") == "Enter a key to save.");
+}
+
+TEST_CASE("api key rows use masked input and named removal") {
+    // lwf_tests does not link ImGui, so the row wiring is guarded lexically:
+    // masked input, verb-first save, per-service named removal, Esc cancel,
+    // focus on Keep, and buffer clear on commit and page switch.
+    const std::string content = ReadSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(content.empty());
+    CHECK(content.find("ImGuiInputTextFlags_Password") != std::string::npos);
+    CHECK(content.find("DrawApiKeyRow(\"gnani\"") != std::string::npos);
+    CHECK(content.find("##card_cloud_keys") != std::string::npos);
+    CHECK(content.find("##card_cleanup_backend") != std::string::npos);
+    CHECK(content.find("\"Save key\"") != std::string::npos);
+    CHECK(content.find("\"Remove saved key\"") != std::string::npos);
+    CHECK(content.find("\"Remove saved Gnani key?\"") != std::string::npos);
+    CHECK(content.find("\"Remove Gnani key\"") != std::string::npos);
+    CHECK(content.find("\"Remove saved ElevenLabs key?\"") != std::string::npos);
+    CHECK(content.find("\"Remove ElevenLabs key\"") != std::string::npos);
+    CHECK(content.find("\"Remove saved Muse key?\"") != std::string::npos);
+    CHECK(content.find("\"Remove Muse key\"") != std::string::npos);
+    CHECK(content.find("\"Remove saved OpenRouter key?\"") != std::string::npos);
+    CHECK(content.find("\"Remove OpenRouter key\"") != std::string::npos);
+    CHECK(content.find("\"Keep key\"") != std::string::npos);
+    CHECK(content.find("ImGuiKey_Escape") != std::string::npos);
+    CHECK(content.find("SetKeyboardFocusHere()") != std::string::npos);
+    CHECK(content.find("ClearApiKeyInputs();") != std::string::npos);
+    CHECK(content.find("Saved keys take precedence over environment variables") !=
+          std::string::npos);
+    CHECK(content.find("\"The model is set in config.json; see the Privacy tab.\"") !=
+          std::string::npos);
+    // Stale env-only copy is gone from the Cloud page.
+    CHECK(content.find("read from the environment") == std::string::npos);
+    // The key value is never seeded into the buffer from the store.
+    CHECK(content.find("Seed(") != std::string::npos);
+    const std::string row_start = content.substr(content.find("void MainWindow::DrawApiKeyRow"));
+    CHECK(row_start.find("store->Get(") == std::string::npos);
+    CHECK(row_start.find("store->Set(store_id") != std::string::npos);
+    CHECK(row_start.find("store->Remove(store_id)") != std::string::npos);
+    // Schema carries no key entry: keys stay in api_keys.json only.
+    bool schema_has_api_key = false;
+    for (const SettingsStore::SchemaEntry& entry : SettingsStore::Schema()) {
+        if (entry.key == "api_key") {
+            schema_has_api_key = true;
+        }
+    }
+    CHECK_FALSE(schema_has_api_key);
+}
