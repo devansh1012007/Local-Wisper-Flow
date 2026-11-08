@@ -3,14 +3,19 @@
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
-<title>Local Wisper Flow, GUI design reference (D0)</title>
+<title>Local Wisper Flow, Full UI redesign reference (Phase 1, Full Unify + Ivory Light primary)</title>
 <style>
 :root {
   --serif: "EB Garamond", Georgia, "Times New Roman", serif;
   --sans: "Inter", "Segoe UI", "Noto Sans", system-ui, sans-serif;
-  --doc-bg: #F0EDE3;
-  --doc-text: #2B2A24;
-  --doc-muted: #6E6C60;
+  --doc-bg: #F6F1E4;
+  --doc-surface: #FFFDF7;
+  --doc-border: #D9CFBA;
+  --doc-text: #1C2B26;
+  --doc-muted: #5B665F;
+  --doc-accent: #7A5C25;
+  --doc-ok: #3F6B52;
+  --doc-err: #7A2E3A;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--doc-bg); color: var(--doc-text);
@@ -19,162 +24,476 @@ main { max-width: 1060px; margin: 0 auto; padding: 32px 24px 64px; }
 h1 { font-family: var(--serif); font-size: 28px; font-weight: 500; margin: 0 0 8px; }
 h2 { font-family: var(--serif); font-size: 22px; font-weight: 500; margin: 48px 0 4px; }
 h3 { font-size: 15px; font-weight: 600; margin: 24px 0 4px; }
+h4 { font-size: 14px; font-weight: 600; margin: 16px 0 4px; }
 p { margin: 4px 0 12px; }
+ul, ol { margin: 4px 0 12px; padding-left: 22px; }
+li { margin: 2px 0; }
 .cap { font-size: 13px; color: var(--doc-muted); }
 .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; }
-.doc-head { border-bottom: 1px solid #D8D3C2; padding-bottom: 16px; }
+.doc-head { border-bottom: 1px solid var(--doc-border); padding-bottom: 16px; }
 .toc { font-size: 13px; color: var(--doc-muted); margin: 12px 0 0; }
 .toc a { color: var(--doc-muted); }
 table { border-collapse: collapse; width: 100%; margin: 8px 0 16px; }
-th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #D8D3C2;
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--doc-border);
          font-size: 13px; vertical-align: middle; }
 th { font-weight: 600; }
 td.num { text-align: right; font-family: ui-monospace, Consolas, monospace; }
-td.pass { color: #3F6B52; }
-td.fail { color: #7A2E3A; }
-.swatch { display: inline-block; width: 14px; height: 14px; border-radius: 4px;
-          border: 1px solid rgba(0,0,0,0.18); margin-right: 8px; vertical-align: -2px; }
-.swatch.big { width: 44px; height: 22px; border-radius: 5px; }
-.theme-block { margin: 0 0 28px; }
-.desktop-sim { border-radius: 10px; padding: 24px; display: grid;
-               grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 28px 20px; }
-.mini-cell { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
-.mini-pair { display: flex; align-items: center; gap: 14px; min-height: 64px; }
-.mini-name { font-size: 13px; font-weight: 600; color: inherit; }
-.mini-note { font-size: 13px; opacity: 0.75; max-width: 230px; }
-.mini-dot { position: relative; width: 44px; height: 44px; border-radius: 999px;
-            border: 1px solid; display: inline-flex; align-items: center;
-            justify-content: center; flex-direction: column; flex: none; }
-.mini-dot.ready { opacity: 0.55; }
-.mini-dot.ready:hover { opacity: 1; }
-.mini-dot .mic { position: relative; z-index: 1; }
-.mini-dot.listening, .mini-dot.thinking { flex-direction: row; gap: 5px; }
-.ring { position: absolute; inset: -6px; border-radius: 999px;
-        border: 2px solid; opacity: 0.8; animation: breathe 2.4s ease-in-out infinite; }
-.ring.static { animation: none; opacity: 0.75; }
-.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
-.bars .bar { width: 3px; border-radius: 1.5px; background: currentColor; }
-.bars.live .bar { animation: bar 1.2s ease-in-out infinite; }
-.tdots { display: inline-flex; gap: 3px; align-items: center; }
-.tdots .tdot { width: 3.5px; height: 3.5px; border-radius: 999px; background: currentColor; }
-.tdots.live .tdot { animation: think 0.9s ease-in-out infinite; }
-.mini-pill { display: inline-flex; align-items: center; gap: 8px; height: 40px;
-             padding: 0 14px; border-radius: 999px; border: 1px solid; }
-.pill-icon { display: inline-flex; align-items: center; gap: 6px; }
-.pill-label { font-size: 13px; white-space: nowrap; }
-.att-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
-.hover-msg { display: none; position: absolute; top: 54px; left: 50%;
-             transform: translateX(-50%); width: 250px; padding: 8px 10px;
-             border-radius: 6px; border: 1px solid; font-size: 13px; line-height: 1.45;
-             z-index: 5; text-align: left; }
-.mini-dot.attention:hover .hover-msg { display: block; }
-.window { width: 960px; max-width: 100%; margin: 8px 0 0; border: 1px solid;
-          border-radius: 8px; overflow: hidden; }
-.window.slim { width: 560px; }
-.titlebar { height: 36px; display: flex; align-items: center; justify-content: space-between;
-            padding: 0 12px; border-bottom: 1px solid rgba(128,128,128,0.25); }
-.tb-title { font-size: 13px; }
-.tb-controls { display: inline-flex; gap: 18px; align-items: center; }
-.tb-glyph { width: 10px; height: 1.5px; background: #9a9a9a; position: relative; display: inline-block; }
-.tb-glyph.square { width: 9px; height: 9px; background: none; border: 1.2px solid #9a9a9a; }
-.tb-glyph.x { width: 11px; height: 11px; background: none; }
-.tb-glyph.x::before, .tb-glyph.x::after { content: ""; position: absolute; left: 0; top: 5px;
-          width: 11px; height: 1.2px; background: #9a9a9a; }
-.tb-glyph.x::before { transform: rotate(45deg); }
-.tb-glyph.x::after { transform: rotate(-45deg); }
-.window-body { display: flex; align-items: stretch; }
-.rail { width: 208px; flex: none; border-right: 1px solid; display: flex;
-        flex-direction: column; padding: 12px 0; }
-.wordmark { font-family: var(--serif); font-size: 18px; padding: 8px 16px 16px; }
-.nav-item { height: 36px; display: flex; align-items: center; padding-left: 19px;
-            font-size: 14px; position: relative; }
-.nav-bar { position: absolute; left: 0; top: 8px; width: 3px; height: 20px; border-radius: 2px; }
-.rail-bottom { margin-top: auto; padding: 12px 16px 4px; display: flex;
-               flex-direction: column; gap: 8px; }
-.switch-mini { font-size: 14px; }
-.status { display: inline-flex; align-items: center; font-size: 14px; }
-.status .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
-.content { padding: 32px; flex: 1; }
-.page-title { font-family: var(--serif); font-size: 28px; font-weight: 500; }
-.page-sub { font-size: 14px; margin: 4px 0 24px; }
-.cards { display: flex; flex-direction: column; gap: 16px; max-width: 640px; }
-.card { border: 1px solid; border-radius: 10px; padding: 16px; }
-.card-title { font-size: 15px; font-weight: 500; margin-bottom: 10px; }
-.card-body { display: flex; flex-direction: column; gap: 4px; }
-.big-line { font-size: 14px; }
-.hotkey-row { display: flex; gap: 10px; align-items: center; }
-.chip { display: inline-flex; align-items: center; justify-content: center;
-        min-width: 44px; height: 36px; padding: 0 14px; border: 1px solid;
-        border-radius: 6px; font-size: 14px; }
-.chip-plus { font-size: 14px; }
-.action { font-size: 14px; margin-top: 6px; }
-.row { min-height: 44px; display: flex; justify-content: space-between; align-items: center;
-       gap: 24px; padding: 2px 0; }
-.row + .row { border-top: 1px solid rgba(128,128,128,0.12); }
-.label { font-size: 14px; }
-.helper { font-size: 13px; margin-top: 2px; max-width: 420px; }
-.note { font-size: 13px; margin-top: 4px; }
-.row-control { display: flex; align-items: center; gap: 10px; flex: none; }
-.value { font-size: 14px; }
-.transcript { font-size: 14px; line-height: 1.55; }
-.row-actions { margin-top: 10px; display: flex; gap: 12px; }
-.btn { display: inline-flex; align-items: center; height: 32px; padding: 0 16px;
-       border: 1px solid; border-radius: 6px; font-size: 14px; }
-.btn.primary { border: none; }
-.toggle { position: relative; width: 52px; height: 32px; border-radius: 999px;
-          display: inline-block; flex: none; }
-.knob { position: absolute; top: 4px; width: 24px; height: 24px; border-radius: 999px; }
-.dropdown { display: inline-flex; align-items: center; justify-content: space-between;
-            gap: 16px; height: 32px; min-width: 200px; padding: 0 12px;
-            border: 1px solid; border-radius: 6px; font-size: 14px; }
-.chev { width: 0; height: 0; border-left: 4px solid transparent;
-        border-right: 4px solid transparent; border-top: 5px solid; }
-.token-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 8px; }
-.token-h { font-size: 13px; font-weight: 600; text-transform: uppercase;
-           letter-spacing: 0.06em; color: var(--doc-muted); margin-bottom: 10px; }
+td.pass { color: var(--doc-ok); font-weight: 600; }
+td.exempt { color: #8A7A52; font-weight: 600; }
+.sw { display: inline-block; width: 14px; height: 14px; border-radius: 4px;
+      border: 1px solid rgba(0,0,0,0.18); margin-right: 8px; vertical-align: -2px; }
+.sw.big { width: 44px; height: 22px; border-radius: 5px; }
+.notice { border: 1px solid var(--doc-border); background: var(--doc-surface);
+          border-radius: 10px; padding: 14px 16px; margin: 12px 0; font-size: 13px; color: var(--doc-muted); }
+.notice strong { color: var(--doc-text); }
+.pill-label-sm { font-size: 13px; }
 .type-row { display: flex; flex-direction: column; gap: 2px; padding: 8px 0;
-            border-bottom: 1px solid #D8D3C2; }
+            border-bottom: 1px solid var(--doc-border); }
 .s1 { font-family: var(--serif); font-size: 28px; }
-.s2 { font-family: var(--serif); font-size: 18px; }
-.s3 { font-size: 15px; font-weight: 500; }
-.s4 { font-size: 14px; }
-.s5 { font-size: 13px; color: #5B665F; }
+.s2 { font-size: 15px; font-weight: 500; }
+.s3 { font-size: 14px; }
+.s4 { font-size: 13px; color: var(--doc-muted); }
+.s-mini { font-size: 9px; letter-spacing: 0.02em; }
 .space-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
-.space-bar { height: 10px; border-radius: 3px; display: inline-block; }
+.space-bar { height: 10px; border-radius: 3px; display: inline-block; background: var(--doc-accent); }
 .radii-row { display: flex; gap: 12px; flex-wrap: wrap; }
 .radius-chip { display: inline-flex; align-items: center; justify-content: center;
-               height: 44px; padding: 0 14px; border: 1px solid; font-size: 13px; }
-.r6 { border-radius: 6px; }
-.r10 { border-radius: 10px; }
-.r999 { border-radius: 999px; }
+               height: 44px; padding: 0 14px; border: 1px solid var(--doc-border);
+               background: var(--doc-surface); font-size: 13px; }
+.r6 { border-radius: 6px; } .r10 { border-radius: 10px; } .r999 { border-radius: 999px; }
+.btn { display: inline-flex; align-items: center; height: 32px; padding: 0 16px;
+       border: 1px solid var(--doc-border); border-radius: 6px; background: var(--doc-surface);
+       color: var(--doc-text); font-size: 14px; min-height: 32px; }
+.btn.primary { background: var(--doc-accent); color: #FFFDF7; border: 1px solid var(--doc-accent); }
+.input { display: inline-flex; align-items: center; height: 32px; padding: 0 12px;
+         border: 1px solid var(--doc-border); border-radius: 6px; background: var(--doc-surface);
+         font-size: 14px; min-width: 200px; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; height: 32px; }
+.toggle-track { width: 52px; height: 32px; border-radius: 999px; display: inline-block;
+                background: var(--doc-accent); border: 1px solid var(--doc-accent); position: relative; }
+.toggle-track.off { background: var(--doc-surface); border: 1px solid var(--doc-muted); }
+.toggle-knob { position: absolute; top: 4px; left: 24px; width: 22px; height: 22px;
+               border-radius: 999px; background: #FFFDF7; border: 1px solid var(--doc-border); }
+.toggle-track.off .toggle-knob { left: 4px; }
 .focus-sample { display: inline-flex; align-items: center; height: 36px; padding: 0 14px;
-               border: 1px solid; border-radius: 6px; font-size: 14px;
-               outline: 2px solid; outline-offset: 2px; }
+               border: 1px solid var(--doc-border); border-radius: 6px; background: var(--doc-surface);
+               font-size: 14px; outline: 2px solid var(--doc-accent); outline-offset: 2px; }
 .controls-strip { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
-.saved { font-size: 13px; }
-.mini-table td { border-bottom: 1px solid #D8D3C2; }
-.notice { border: 1px solid #D8D3C2; background: #F6F3E8; border-radius: 10px;
-          padding: 14px 16px; margin: 12px 0; font-size: 13px; color: #5B565F; }
+.window { width: 960px; max-width: 100%; margin: 8px 0 0; border: 1px solid var(--doc-border);
+          border-radius: 10px; overflow: hidden; background: var(--doc-bg); }
+.titlebar { height: 36px; display: flex; align-items: center; justify-content: space-between;
+            padding: 0 12px; background: var(--doc-surface); border-bottom: 1px solid var(--doc-border); }
+.window-body { display: flex; align-items: stretch; }
+.rail { width: 220px; flex: none; background: var(--doc-surface);
+        border-right: 1px solid var(--doc-border); display: flex; flex-direction: column; padding: 12px 0; }
+.wordmark { font-family: var(--serif); font-size: 18px; padding: 8px 16px 16px; }
+.nav-item { height: 36px; display: flex; align-items: center; padding-left: 19px;
+            font-size: 14px; position: relative; min-height: 32px; }
+.nav-item.active { font-weight: 600; color: var(--doc-accent); }
+.nav-bar { position: absolute; left: 0; top: 8px; width: 3px; height: 20px; border-radius: 2px;
+           background: var(--doc-accent); }
+.content { padding: 32px; flex: 1; }
+.page-title { font-family: var(--serif); font-size: 28px; font-weight: 500; }
+.page-sub { font-size: 14px; margin: 4px 0 24px; color: var(--doc-muted); }
+.cards { display: flex; flex-direction: column; gap: 16px; max-width: 640px; }
+.card { border: 1px solid var(--doc-border); border-radius: 10px; padding: 16px;
+        background: var(--doc-surface); }
+.card-title { font-size: 15px; font-weight: 500; margin-bottom: 10px; }
+.card-body { display: flex; flex-direction: column; gap: 4px; }
+.row { min-height: 44px; display: flex; justify-content: space-between; align-items: center;
+       gap: 24px; padding: 2px 0; }
+.row + .row { border-top: 1px solid var(--doc-border); }
+.helper { font-size: 13px; margin-top: 2px; color: var(--doc-muted); max-width: 420px; }
+.saved { font-size: 13px; color: var(--doc-ok); }
+.heat { display: inline-flex; gap: 4px; }
+.heat-cell { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--doc-border); }
+.desktop-sim { border-radius: 10px; padding: 24px; display: grid;
+               grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 28px 20px;
+               background: #E9E2D0; }
+.mini-cell { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.mini-pair { display: flex; align-items: center; gap: 14px; min-height: 64px; }
+.mini-dot { position: relative; width: 44px; height: 44px; border-radius: 999px;
+            border: 1px solid var(--doc-border); background: var(--doc-surface);
+            display: inline-flex; align-items: center; justify-content: center;
+            flex-direction: column; flex: none; }
+.mini-pill { display: inline-flex; align-items: center; gap: 8px; height: 40px;
+             padding: 0 14px; border-radius: 999px; border: 1px solid var(--doc-border);
+             background: var(--doc-surface); }
+.att-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block;
+           background: var(--doc-err); border: 1px solid var(--doc-err); }
 @keyframes breathe { 0%, 100% { opacity: 0.6; } 50% { opacity: 1.0; } }
-@keyframes bar { 0%, 100% { transform: scaleY(0.55); } 50% { transform: scaleY(1.0); } }
-@keyframes think { 0%, 100% { opacity: 0.25; } 30% { opacity: 1.0; } }
+.ring { position: absolute; inset: -6px; border-radius: 999px; border: 2px solid var(--doc-accent);
+        opacity: 0.8; animation: breathe 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .ring, .bars.live .bar, .tdots.live .tdot { animation: none; }
+  .ring { animation: none; }
 }
 </style>
 </head>
 <body>
 <main>
 <header class='doc-head'>
-<h1>Local Wisper Flow, GUI design reference (D0)</h1>
-<p class='cap'>Reference for color and spacing only, not a pixel spec. Values shown are samples.</p>
-<p class='cap'>Fonts shown are system stand-ins. EB Garamond, Inter and Noto Sans Devanagari are proposed and not yet added.</p>
-<p class='cap'>Branch feature/gui-redesign, cut from origin/main at 8e4945a. Written 2026-11-04.</p>
-<p class='toc'>Contents: <a href='#palette'>Palette and contrast</a>, <a href='#mini'>Mini mode</a>, <a href='#home'>Full app, Home</a>, <a href='#speech'>Full app, Speech</a>, <a href='#tokens'>Type, spacing and motion</a></p>
+<h1>Local Wisper Flow — Full UI redesign reference</h1>
+<p class='cap'>Phase 1 (Full Unify + Ivory Light primary). This file is the visual source of truth for Phase 2 token work. Single Palette struct, Ivory Light primary, dark as named variant.</p>
+<p class='cap'>Fonts shown are system stand-ins. EB Garamond (serif display) and Inter (sans body) remain a proposal pending bundling — no font files added in this phase; the app keeps the scaled default font. Type sizes below are design px at 1.0 scale and map to metrics::font_* tokens.</p>
+<p class='cap'>Contrast is computed with the WCAG relative-luminance formula: L = 0.2126R + 0.7152G + 0.0722B over linearized sRGB channels (c/12.92 if c&lt;=0.03928 else ((c+0.055)/1.055)^2.4), ratio = (Lhi+0.05)/(Llo+0.05). Policy: all text pairs &gt;=4.5:1, meaningful non-text &gt;=3:1, only the two declared hairlines (border/bg, border/surface) exempt below 3:1.</p>
+<p class='toc'>Contents:
+<a href='#palette'>Single Palette</a>,
+<a href='#contrast'>Contrast</a>,
+<a href='#type'>Type, spacing, radii, controls</a>,
+<a href='#deprecation'>Deprecation + heat ramp</a>,
+<a href='#shell'>Full shell</a>,
+<a href='#home'>Home</a>,
+<a href='#speech'>Speech / Settings</a>,
+<a href='#studio'>Studio pages</a>,
+<a href='#mini'>Mini states</a>,
+<a href='#motion'>Motion, state, accessibility</a>,
+<a href='#contract'>Phase 2 contract</a>
+</p>
+<div class='notice'><strong>What changed in Phase 1 (summary).</strong>
+Single accent per view: brass only. Light accent unified from navy #1F3A5F to brass #7A5C25 (accent/brass/focus all brass on light); navy eliminated. Dark Hunter/Brass values retained as the named variant so the struct shape is unchanged. Studio teal deprecated and absorbed into the same Palette. Radius reconciled to one radius_card = 10px. Rail canonicalized to 220px (token 208 retired). Mini fade-in standardized to 150&nbsp;ms to meet the 150–240&nbsp;ms functional-motion band.</div>
 </header>
-<section id='palette'><h2>1. Palette and contrast</h2><p class='cap'>Every ratio is computed with the WCAG relative-luminance formula from the exact tokens below. Body text needs 4.5:1, large text, icons and meaningful borders 3:1.</p><div class='theme-block'><h3>Dark theme, Hunter and Brass</h3><table><thead><tr><th>Token</th><th>Value</th><th></th><th>Used for</th></tr></thead><tbody><tr><td class='mono'>bg</td><td class='mono'>#0E1714</td><td><span class='swatch big' style='background:#0E1714'></span></td><td>page background</td></tr><tr><td class='mono'>surface</td><td class='mono'>#14221D</td><td><span class='swatch big' style='background:#14221D'></span></td><td>cards, rail, mini background</td></tr><tr><td class='mono'>border</td><td class='mono'>#29392F</td><td><span class='swatch big' style='background:#29392F'></span></td><td>1 px hairlines</td></tr><tr><td class='mono'>text</td><td class='mono'>#EDE6D6</td><td><span class='swatch big' style='background:#EDE6D6'></span></td><td>primary text</td></tr><tr><td class='mono'>muted</td><td class='mono'>#A8B3AA</td><td><span class='swatch big' style='background:#A8B3AA'></span></td><td>secondary text</td></tr><tr><td class='mono'>accent</td><td class='mono'>#C9A96E</td><td><span class='swatch big' style='background:#C9A96E'></span></td><td>brass in dark, navy in light</td></tr><tr><td class='mono'>brass</td><td class='mono'>#C9A96E</td><td><span class='swatch big' style='background:#C9A96E'></span></td><td>brass as text and icons in light</td></tr><tr><td class='mono'>ok</td><td class='mono'>#8FB39A</td><td><span class='swatch big' style='background:#8FB39A'></span></td><td>Ready</td></tr><tr><td class='mono'>warn</td><td class='mono'>#D0A65A</td><td><span class='swatch big' style='background:#D0A65A'></span></td><td>restart notes</td></tr><tr><td class='mono'>err</td><td class='mono'>#D98A8F</td><td><span class='swatch big' style='background:#D98A8F'></span></td><td>error copy</td></tr><tr><td class='mono'>err_fill</td><td class='mono'>#B5565F</td><td><span class='swatch big' style='background:#B5565F'></span></td><td>attention dot</td></tr><tr><td class='mono'>focus</td><td class='mono'>#C9A96E</td><td><span class='swatch big' style='background:#C9A96E'></span></td><td>focus ring, 2 px</td></tr></tbody></table><table><thead><tr><th>Pair</th><th>Against</th><th>Usage</th><th>Ratio</th><th>Needs</th><th>Result</th></tr></thead><tbody><tr><td><span class='swatch' style='background:#EDE6D6'></span>text</td><td><span class='swatch' style='background:#0E1714'></span>bg</td><td>body text on the page background</td><td class='num'>14.67:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#EDE6D6'></span>text</td><td><span class='swatch' style='background:#14221D'></span>surface</td><td>body text on cards</td><td class='num'>13.23:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#A8B3AA'></span>muted</td><td><span class='swatch' style='background:#0E1714'></span>bg</td><td>page subtitles on the page background</td><td class='num'>8.42:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#A8B3AA'></span>muted</td><td><span class='swatch' style='background:#14221D'></span>surface</td><td>helper text on cards</td><td class='num'>7.59:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#C9A96E'></span>accent</td><td><span class='swatch' style='background:#14221D'></span>surface</td><td>active nav label and primary accents</td><td class='num'>7.35:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#8FB39A'></span>ok</td><td><span class='swatch' style='background:#14221D'></span>surface</td><td>Ready status line</td><td class='num'>7.12:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#D0A65A'></span>warn</td><td><span class='swatch' style='background:#14221D'></span>surface</td><td>Applies after restart notes</td><td class='num'>7.27:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#D98A8F'></span>err</td><td><span class='swatch' style='background:#14221D'></span>surface</td><td>error copy</td><td class='num'>6.25:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#C9A96E'></span>focus</td><td><span class='swatch' style='background:#0E1714'></span>bg</td><td>focus ring on the page background</td><td class='num'>8.15:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#C9A96E'></span>focus</td><td><span class='swatch' style='background:#14221D'></span>surface</td><td>focus ring on cards</td><td class='num'>7.35:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#C9A96E'></span>accent</td><td><span class='swatch' style='background:#14221D'></span>surface</td><td>filled mic icon, active toggle track</td><td class='num'>7.35:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#8FB39A'></span>ok</td><td><span class='swatch' style='background:#14221D'></span>surface</td><td>status dot</td><td class='num'>7.12:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#B5565F'></span>err_fill</td><td><span class='swatch' style='background:#14221D'></span>surface</td><td>attention dot</td><td class='num'>3.50:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#0E1714'></span>on_accent</td><td><span class='swatch' style='background:#C9A96E'></span>accent</td><td>primary button label</td><td class='num'>8.15:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#29392F'></span>border</td><td><span class='swatch' style='background:#0E1714'></span>bg</td><td>1 px hairline between page and card</td><td class='num'>1.49:1</td><td class='num'>3.0:1</td><td class='fail'>below</td></tr><tr><td><span class='swatch' style='background:#29392F'></span>border</td><td><span class='swatch' style='background:#14221D'></span>surface</td><td>1 px hairline between card and page</td><td class='num'>1.35:1</td><td class='num'>3.0:1</td><td class='fail'>below</td></tr></tbody></table></div><div class='theme-block'><h3>Light theme, Ivory and Navy</h3><table><thead><tr><th>Token</th><th>Value</th><th></th><th>Used for</th></tr></thead><tbody><tr><td class='mono'>bg</td><td class='mono'>#F6F1E4</td><td><span class='swatch big' style='background:#F6F1E4'></span></td><td>page background</td></tr><tr><td class='mono'>surface</td><td class='mono'>#FFFDF7</td><td><span class='swatch big' style='background:#FFFDF7'></span></td><td>cards, rail, mini background</td></tr><tr><td class='mono'>border</td><td class='mono'>#D9CFBA</td><td><span class='swatch big' style='background:#D9CFBA'></span></td><td>1 px hairlines</td></tr><tr><td class='mono'>text</td><td class='mono'>#1C2B26</td><td><span class='swatch big' style='background:#1C2B26'></span></td><td>primary text</td></tr><tr><td class='mono'>muted</td><td class='mono'>#5B665F</td><td><span class='swatch big' style='background:#5B665F'></span></td><td>secondary text</td></tr><tr><td class='mono'>accent</td><td class='mono'>#1F3A5F</td><td><span class='swatch big' style='background:#1F3A5F'></span></td><td>brass in dark, navy in light</td></tr><tr><td class='mono'>brass</td><td class='mono'>#7A5C25</td><td><span class='swatch big' style='background:#7A5C25'></span></td><td>brass as text and icons in light</td></tr><tr><td class='mono'>ok</td><td class='mono'>#3F6B52</td><td><span class='swatch big' style='background:#3F6B52'></span></td><td>Ready</td></tr><tr><td class='mono'>warn</td><td class='mono'>#7A5C25</td><td><span class='swatch big' style='background:#7A5C25'></span></td><td>restart notes</td></tr><tr><td class='mono'>err</td><td class='mono'>#7A2E3A</td><td><span class='swatch big' style='background:#7A2E3A'></span></td><td>error copy</td></tr><tr><td class='mono'>err_fill</td><td class='mono'>#7A2E3A</td><td><span class='swatch big' style='background:#7A2E3A'></span></td><td>attention dot</td></tr><tr><td class='mono'>focus</td><td class='mono'>#1F3A5F</td><td><span class='swatch big' style='background:#1F3A5F'></span></td><td>focus ring, 2 px</td></tr></tbody></table><table><thead><tr><th>Pair</th><th>Against</th><th>Usage</th><th>Ratio</th><th>Needs</th><th>Result</th></tr></thead><tbody><tr><td><span class='swatch' style='background:#1C2B26'></span>text</td><td><span class='swatch' style='background:#F6F1E4'></span>bg</td><td>body text on the page background</td><td class='num'>13.09:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#1C2B26'></span>text</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>body text on cards</td><td class='num'>14.51:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#5B665F'></span>muted</td><td><span class='swatch' style='background:#F6F1E4'></span>bg</td><td>page subtitles on the page background</td><td class='num'>5.30:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#5B665F'></span>muted</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>helper text on cards</td><td class='num'>5.88:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#1F3A5F'></span>accent</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>active nav label and primary accents</td><td class='num'>11.29:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#3F6B52'></span>ok</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>Ready status line</td><td class='num'>6.01:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#7A5C25'></span>warn</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>Applies after restart notes</td><td class='num'>6.10:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#7A2E3A'></span>err</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>error copy</td><td class='num'>9.06:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#7A5C25'></span>brass</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>brass as text and icons in light</td><td class='num'>6.10:1</td><td class='num'>4.5:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#1F3A5F'></span>focus</td><td><span class='swatch' style='background:#F6F1E4'></span>bg</td><td>focus ring on the page background</td><td class='num'>10.18:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#1F3A5F'></span>focus</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>focus ring on cards</td><td class='num'>11.29:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#1F3A5F'></span>accent</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>filled mic icon, active toggle track</td><td class='num'>11.29:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#3F6B52'></span>ok</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>status dot</td><td class='num'>6.01:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#7A2E3A'></span>err_fill</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>attention dot</td><td class='num'>9.06:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#F6F1E4'></span>on_accent</td><td><span class='swatch' style='background:#1F3A5F'></span>accent</td><td>primary button label</td><td class='num'>10.18:1</td><td class='num'>3.0:1</td><td class='pass'>pass</td></tr><tr><td><span class='swatch' style='background:#D9CFBA'></span>border</td><td><span class='swatch' style='background:#F6F1E4'></span>bg</td><td>1 px hairline between page and card</td><td class='num'>1.37:1</td><td class='num'>3.0:1</td><td class='fail'>below</td></tr><tr><td><span class='swatch' style='background:#D9CFBA'></span>border</td><td><span class='swatch' style='background:#FFFDF7'></span>surface</td><td>1 px hairline between card and page</td><td class='num'>1.52:1</td><td class='num'>3.0:1</td><td class='fail'>below</td></tr></tbody></table></div><div class='notice'>The two hairline border pairs (border on bg, border on surface) sit below 3:1 in both themes. They are decorative separators between surfaces that already differ in tone, and every state that carries meaning is also shown in text or shape. The recommendation is to keep the exact palette and exempt these two pairs in the contrast test, documented in ThemePalette.h. If you prefer borders to pass 3:1 as well, the border tokens need a nudge, which changes the palette.</div></section><section id='mini'><h2>2. Mini mode, dot and pill</h2><p class='cap'>Always on top, never takes keyboard focus, no taskbar button. The badge background is the surface token at 88 percent in dark and 90 percent in light, over whatever is on screen. Ready sits at 55 percent opacity and rises on hover. No transcript text is ever shown here.</p><div class='theme-block'><h3>Dark theme, Hunter and Brass</h3><p class='cap'>Left of each pair is the dot style, 44 by 44. Right is the pill style, 168 by 40. The strip behind them is a simulated desktop, not a token. The default style is the dot. Hover the attention badge to read its message.</p><div class='desktop-sim' style='background:#1D2420;color:#D8D4C4'><div class='mini-cell'><div class='mini-pair'><span class='mini-dot ready' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><svg class='mic' width='22' height='22' viewBox='0 0 24 24' aria-hidden='true' opacity='0.55'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#EDE6D6' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#EDE6D6' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#EDE6D6' stroke-width='1.6' stroke-linecap='round'/></svg></span><span class='mini-pill' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><span class='pill-icon'><svg class='mic' width='18' height='18' viewBox='0 0 24 24' aria-hidden='true' opacity='0.55'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#EDE6D6' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#EDE6D6' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#EDE6D6' stroke-width='1.6' stroke-linecap='round'/></svg></span><span class='pill-label' style='color:#EDE6D6'>Ready</span></span></div><div class='mini-name'>Ready</div><div class='mini-note'>outline mic, whole badge at 55 percent opacity, 100 on hover</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot listening' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><span class='ring' style='border-color:#C9A96E'></span><svg class='mic' width='16' height='16' viewBox='0 0 24 24' aria-hidden='true'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='#C9A96E'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#C9A96E' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#C9A96E' stroke-width='1.6' stroke-linecap='round'/></svg><span class='bars live' style='color:#C9A96E'><span class='bar' style='height:7px;animation-delay:0.0s'></span><span class='bar' style='height:12px;animation-delay:0.12s'></span><span class='bar' style='height:9px;animation-delay:0.24s'></span><span class='bar' style='height:14px;animation-delay:0.36s'></span><span class='bar' style='height:10px;animation-delay:0.48s'></span></span></span><span class='mini-pill' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><span class='pill-icon'><svg class='mic' width='18' height='18' viewBox='0 0 24 24' aria-hidden='true'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='#C9A96E'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#C9A96E' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#C9A96E' stroke-width='1.6' stroke-linecap='round'/></svg><span class='bars live' style='color:#C9A96E'><span class='bar' style='height:7px;animation-delay:0.0s'></span><span class='bar' style='height:12px;animation-delay:0.12s'></span><span class='bar' style='height:9px;animation-delay:0.24s'></span><span class='bar' style='height:14px;animation-delay:0.36s'></span><span class='bar' style='height:10px;animation-delay:0.48s'></span></span></span><span class='pill-label' style='color:#C9A96E'>Listening</span></span></div><div class='mini-name'>Listening</div><div class='mini-note'>filled brass mic, breathing ring 2.4 s, five level bars</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot thinking' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><svg class='mic' width='16' height='16' viewBox='0 0 24 24' aria-hidden='true' opacity='0.9'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#EDE6D6' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#EDE6D6' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#EDE6D6' stroke-width='1.6' stroke-linecap='round'/></svg><span class='tdots live' style='color:#EDE6D6'><span class='tdot' style='animation-delay:0.0s'></span><span class='tdot' style='animation-delay:0.3s'></span><span class='tdot' style='animation-delay:0.6s'></span></span></span><span class='mini-pill' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><span class='pill-icon'><svg class='mic' width='18' height='18' viewBox='0 0 24 24' aria-hidden='true' opacity='0.9'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#EDE6D6' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#EDE6D6' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#EDE6D6' stroke-width='1.6' stroke-linecap='round'/></svg><span class='tdots live' style='color:#EDE6D6'><span class='tdot' style='animation-delay:0.0s'></span><span class='tdot' style='animation-delay:0.3s'></span><span class='tdot' style='animation-delay:0.6s'></span></span></span><span class='pill-label' style='color:#EDE6D6'>Thinking</span></span></div><div class='mini-name'>Thinking</div><div class='mini-note'>three dots fade in sequence, one every 300 ms</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot done' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><svg width='22' height='22' viewBox='0 0 24 24' aria-hidden='true'><polyline points='5 12.5 10 17.5 19 7' fill='none' stroke='#8FB39A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg></span><span class='mini-pill' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><span class='pill-icon'><svg width='18' height='18' viewBox='0 0 24 24' aria-hidden='true'><polyline points='5 12.5 10 17.5 19 7' fill='none' stroke='#8FB39A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg></span><span class='pill-label' style='color:#EDE6D6'>Done</span></span></div><div class='mini-name'>Done</div><div class='mini-note'>check for 600 ms, then fades back to Ready</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot paused' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><svg class='mic' width='22' height='22' viewBox='0 0 24 24' aria-hidden='true'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#A8B3AA' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#A8B3AA' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#A8B3AA' stroke-width='1.6' stroke-linecap='round'/><line x1='5' y1='12' x2='19' y2='12' stroke='#A8B3AA' stroke-width='1.6' stroke-linecap='round' opacity='0.9'/></svg></span><span class='mini-pill' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><span class='pill-icon'><svg class='mic' width='18' height='18' viewBox='0 0 24 24' aria-hidden='true'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#A8B3AA' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#A8B3AA' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#A8B3AA' stroke-width='1.6' stroke-linecap='round'/><line x1='5' y1='12' x2='19' y2='12' stroke='#A8B3AA' stroke-width='1.6' stroke-linecap='round' opacity='0.9'/></svg></span><span class='pill-label' style='color:#A8B3AA'>Paused</span></span></div><div class='mini-name'>Paused</div><div class='mini-note'>outline mic with a bar through it, click resumes</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot attention' style='background:#B5565F;border-color:#B5565F;color:#EDE6D6'><span class='hover-msg' style='background:#14221D;border-color:#29392F;color:#EDE6D6'>Microphone is busy. Close the other app using it, then try again. Nothing was typed.</span><svg width='22' height='22' viewBox='0 0 24 24' aria-hidden='true'><rect x='11' y='6.5' width='2' height='8.5' rx='1' fill='#14221D'/><circle cx='12' cy='18.5' r='1.4' fill='#14221D'/></svg></span><span class='mini-pill' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><span class='pill-icon'><span class='att-dot' style='background:#B5565F'></span></span><span class='pill-label' style='color:#D98A8F'>Check app</span></span></div><div class='mini-name'>Check app</div><div class='mini-note'>attention dot, hover shows one line, clears after 6 s</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot listening' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><span class='ring static' style='border-color:#C9A96E'></span><svg class='mic' width='16' height='16' viewBox='0 0 24 24' aria-hidden='true'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='#C9A96E'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#C9A96E' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#C9A96E' stroke-width='1.6' stroke-linecap='round'/></svg><span class='bars' style='color:#C9A96E'><span class='bar' style='height:7px;animation-delay:0.0s'></span><span class='bar' style='height:12px;animation-delay:0.12s'></span><span class='bar' style='height:9px;animation-delay:0.24s'></span><span class='bar' style='height:14px;animation-delay:0.36s'></span><span class='bar' style='height:10px;animation-delay:0.48s'></span></span></span><span class='mini-pill' style='background:rgba(20,34,29,0.88);border-color:#29392F;color:#EDE6D6'><span class='pill-icon'><svg class='mic' width='18' height='18' viewBox='0 0 24 24' aria-hidden='true' opacity='0.9'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#EDE6D6' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#EDE6D6' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#EDE6D6' stroke-width='1.6' stroke-linecap='round'/></svg><span class='tdots' style='color:#EDE6D6'><span class='tdot' style='animation-delay:0.0s'></span><span class='tdot' style='animation-delay:0.3s'></span><span class='tdot' style='animation-delay:0.6s'></span></span></span><span class='pill-label' style='color:#EDE6D6'>Thinking</span></span></div><div class='mini-name'>Reduce motion</div><div class='mini-note'>ring and dots become static, level bars settle</div></div></div></div><div class='theme-block'><h3>Light theme, Ivory and Navy</h3><p class='cap'>Left of each pair is the dot style, 44 by 44. Right is the pill style, 168 by 40. The strip behind them is a simulated desktop, not a token. The default style is the dot. Hover the attention badge to read its message.</p><div class='desktop-sim' style='background:#E3DFD2;color:#45443C'><div class='mini-cell'><div class='mini-pair'><span class='mini-dot ready' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><svg class='mic' width='22' height='22' viewBox='0 0 24 24' aria-hidden='true' opacity='0.55'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#1C2B26' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#1C2B26' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#1C2B26' stroke-width='1.6' stroke-linecap='round'/></svg></span><span class='mini-pill' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><span class='pill-icon'><svg class='mic' width='18' height='18' viewBox='0 0 24 24' aria-hidden='true' opacity='0.55'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#1C2B26' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#1C2B26' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#1C2B26' stroke-width='1.6' stroke-linecap='round'/></svg></span><span class='pill-label' style='color:#1C2B26'>Ready</span></span></div><div class='mini-name'>Ready</div><div class='mini-note'>outline mic, whole badge at 55 percent opacity, 100 on hover</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot listening' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><span class='ring' style='border-color:#7A5C25'></span><svg class='mic' width='16' height='16' viewBox='0 0 24 24' aria-hidden='true'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='#7A5C25'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#7A5C25' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#7A5C25' stroke-width='1.6' stroke-linecap='round'/></svg><span class='bars live' style='color:#7A5C25'><span class='bar' style='height:7px;animation-delay:0.0s'></span><span class='bar' style='height:12px;animation-delay:0.12s'></span><span class='bar' style='height:9px;animation-delay:0.24s'></span><span class='bar' style='height:14px;animation-delay:0.36s'></span><span class='bar' style='height:10px;animation-delay:0.48s'></span></span></span><span class='mini-pill' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><span class='pill-icon'><svg class='mic' width='18' height='18' viewBox='0 0 24 24' aria-hidden='true'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='#7A5C25'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#7A5C25' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#7A5C25' stroke-width='1.6' stroke-linecap='round'/></svg><span class='bars live' style='color:#7A5C25'><span class='bar' style='height:7px;animation-delay:0.0s'></span><span class='bar' style='height:12px;animation-delay:0.12s'></span><span class='bar' style='height:9px;animation-delay:0.24s'></span><span class='bar' style='height:14px;animation-delay:0.36s'></span><span class='bar' style='height:10px;animation-delay:0.48s'></span></span></span><span class='pill-label' style='color:#7A5C25'>Listening</span></span></div><div class='mini-name'>Listening</div><div class='mini-note'>filled brass mic, breathing ring 2.4 s, five level bars</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot thinking' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><svg class='mic' width='16' height='16' viewBox='0 0 24 24' aria-hidden='true' opacity='0.9'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#1C2B26' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#1C2B26' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#1C2B26' stroke-width='1.6' stroke-linecap='round'/></svg><span class='tdots live' style='color:#1C2B26'><span class='tdot' style='animation-delay:0.0s'></span><span class='tdot' style='animation-delay:0.3s'></span><span class='tdot' style='animation-delay:0.6s'></span></span></span><span class='mini-pill' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><span class='pill-icon'><svg class='mic' width='18' height='18' viewBox='0 0 24 24' aria-hidden='true' opacity='0.9'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#1C2B26' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#1C2B26' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#1C2B26' stroke-width='1.6' stroke-linecap='round'/></svg><span class='tdots live' style='color:#1C2B26'><span class='tdot' style='animation-delay:0.0s'></span><span class='tdot' style='animation-delay:0.3s'></span><span class='tdot' style='animation-delay:0.6s'></span></span></span><span class='pill-label' style='color:#1C2B26'>Thinking</span></span></div><div class='mini-name'>Thinking</div><div class='mini-note'>three dots fade in sequence, one every 300 ms</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot done' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><svg width='22' height='22' viewBox='0 0 24 24' aria-hidden='true'><polyline points='5 12.5 10 17.5 19 7' fill='none' stroke='#3F6B52' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg></span><span class='mini-pill' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><span class='pill-icon'><svg width='18' height='18' viewBox='0 0 24 24' aria-hidden='true'><polyline points='5 12.5 10 17.5 19 7' fill='none' stroke='#3F6B52' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg></span><span class='pill-label' style='color:#1C2B26'>Done</span></span></div><div class='mini-name'>Done</div><div class='mini-note'>check for 600 ms, then fades back to Ready</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot paused' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><svg class='mic' width='22' height='22' viewBox='0 0 24 24' aria-hidden='true'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#5B665F' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#5B665F' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#5B665F' stroke-width='1.6' stroke-linecap='round'/><line x1='5' y1='12' x2='19' y2='12' stroke='#5B665F' stroke-width='1.6' stroke-linecap='round' opacity='0.9'/></svg></span><span class='mini-pill' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><span class='pill-icon'><svg class='mic' width='18' height='18' viewBox='0 0 24 24' aria-hidden='true'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#5B665F' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#5B665F' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#5B665F' stroke-width='1.6' stroke-linecap='round'/><line x1='5' y1='12' x2='19' y2='12' stroke='#5B665F' stroke-width='1.6' stroke-linecap='round' opacity='0.9'/></svg></span><span class='pill-label' style='color:#5B665F'>Paused</span></span></div><div class='mini-name'>Paused</div><div class='mini-note'>outline mic with a bar through it, click resumes</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot attention' style='background:#7A2E3A;border-color:#7A2E3A;color:#1C2B26'><span class='hover-msg' style='background:#FFFDF7;border-color:#D9CFBA;color:#1C2B26'>Microphone is busy. Close the other app using it, then try again. Nothing was typed.</span><svg width='22' height='22' viewBox='0 0 24 24' aria-hidden='true'><rect x='11' y='6.5' width='2' height='8.5' rx='1' fill='#FFFDF7'/><circle cx='12' cy='18.5' r='1.4' fill='#FFFDF7'/></svg></span><span class='mini-pill' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><span class='pill-icon'><span class='att-dot' style='background:#7A2E3A'></span></span><span class='pill-label' style='color:#7A2E3A'>Check app</span></span></div><div class='mini-name'>Check app</div><div class='mini-note'>attention dot, hover shows one line, clears after 6 s</div></div><div class='mini-cell'><div class='mini-pair'><span class='mini-dot listening' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><span class='ring static' style='border-color:#7A5C25'></span><svg class='mic' width='16' height='16' viewBox='0 0 24 24' aria-hidden='true'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='#7A5C25'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#7A5C25' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#7A5C25' stroke-width='1.6' stroke-linecap='round'/></svg><span class='bars' style='color:#7A5C25'><span class='bar' style='height:7px;animation-delay:0.0s'></span><span class='bar' style='height:12px;animation-delay:0.12s'></span><span class='bar' style='height:9px;animation-delay:0.24s'></span><span class='bar' style='height:14px;animation-delay:0.36s'></span><span class='bar' style='height:10px;animation-delay:0.48s'></span></span></span><span class='mini-pill' style='background:rgba(255,253,247,0.90);border-color:#D9CFBA;color:#1C2B26'><span class='pill-icon'><svg class='mic' width='18' height='18' viewBox='0 0 24 24' aria-hidden='true' opacity='0.9'><rect x='8.5' y='3' width='7' height='11' rx='3.5' fill='none' stroke='#1C2B26' stroke-width='1.6'/><path d='M5.5 11a6.5 6.5 0 0 0 13 0' fill='none' stroke='#1C2B26' stroke-width='1.6' stroke-linecap='round'/><line x1='12' y1='17.5' x2='12' y2='21' stroke='#1C2B26' stroke-width='1.6' stroke-linecap='round'/></svg><span class='tdots' style='color:#1C2B26'><span class='tdot' style='animation-delay:0.0s'></span><span class='tdot' style='animation-delay:0.3s'></span><span class='tdot' style='animation-delay:0.6s'></span></span></span><span class='pill-label' style='color:#1C2B26'>Thinking</span></span></div><div class='mini-name'>Reduce motion</div><div class='mini-note'>ring and dots become static, level bars settle</div></div></div></div></section><section id='home'><h2>3. Full app, Home</h2><div class='theme-block'><h3>Dark theme, Hunter and Brass</h3><p class='cap'>Window 960 by 640 by default, minimum 760 by 520, native title bar. Rail 208 px. Content padding 32 px, widest 640 px, left aligned. The title bar strip is a simulation of the system one, not a token.</p><div class='window' style='background:#0E1714;border-color:#29392F'><div class='titlebar' style='background:#1C1C1C'><span class='tb-title' style='color:#EDE6D6;opacity:0.85'>Local Wisper Flow</span><span class='tb-controls'><span class='tb-glyph'></span><span class='tb-glyph square'></span><span class='tb-glyph x'></span></span></div><div class='window-body'><div class='rail' style='background:#14221D;border-color:#29392F'><div class='wordmark' style='color:#EDE6D6'>Local Wisper Flow</div><div class='nav-item active' style='color:#EDE6D6'><span class='nav-bar' style='background:#C9A96E'></span>Home</div><div class='nav-item' style='color:#A8B3AA'>Dictation</div><div class='nav-item' style='color:#A8B3AA'>Speech</div><div class='nav-item' style='color:#A8B3AA'>Cleanup</div><div class='nav-item' style='color:#A8B3AA'>Dictionary</div><div class='nav-item' style='color:#A8B3AA'>Snippets</div><div class='nav-item' style='color:#A8B3AA'>History</div><div class='nav-item' style='color:#A8B3AA'>Privacy</div><div class='nav-item' style='color:#A8B3AA'>About</div><div class='rail-bottom'><span class='status'><span class='dot' style='background:#8FB39A'></span><span style='color:#EDE6D6'>&nbsp;Ready</span></span><div class='switch-mini' style='color:#A8B3AA'>Switch to mini</div></div></div><div class='content'><div class='page-title' style='color:#EDE6D6'>Home</div><div class='page-sub' style='color:#A8B3AA'>Dictation runs on this computer and starts with one hotkey.</div><div class='cards'><div class='card' style='background:#14221D;border-color:#29392F'><div class='card-title' style='color:#EDE6D6'>Right now</div><div class='card-body'><div class='big-line' style='color:#EDE6D6'>Ready. Hold Ctrl + Win to dictate.</div></div></div><div class='card' style='background:#14221D;border-color:#29392F'><div class='card-title' style='color:#EDE6D6'>Hotkey</div><div class='card-body'><div class='hotkey-row'><span class='chip' style='background:#0E1714;border-color:#29392F;color:#EDE6D6'>Ctrl</span><span class='chip-plus' style='color:#A8B3AA'>+</span><span class='chip' style='background:#0E1714;border-color:#29392F;color:#EDE6D6'>Win</span></div><div class='action' style='color:#A8B3AA'>Hold to speak, release to type.</div></div></div><div class='card' style='background:#14221D;border-color:#29392F'><div class='card-title' style='color:#EDE6D6'>Trust</div><div class='card-body'><div style='color:#EDE6D6'>Everything runs on this computer.</div><div class='helper' style='color:#A8B3AA'>Cloud speech is off.</div></div></div><div class='card' style='background:#14221D;border-color:#29392F'><div class='card-title' style='color:#EDE6D6'>Quick settings</div><div class='card-body'><div class='row'><div class='row-label'><div class='label' style='color:#EDE6D6'>Dictation</div></div><div class='row-control'><span class='toggle on' style='background:#C9A96E'><span class='knob' style='right:4px;background:#14221D;border:none'></span></span></div></div><div class='row'><div class='row-label'><div class='label' style='color:#EDE6D6'>Clean up text</div></div><div class='row-control'><span class='toggle on' style='background:#C9A96E'><span class='knob' style='right:4px;background:#14221D;border:none'></span></span></div></div><div class='row'><div class='row-label'><div class='label' style='color:#EDE6D6'>Hands-free</div></div><div class='row-control'><span class='toggle off' style='background:#29392F'><span class='knob' style='left:4px;background:#14221D;border:1px solid #29392F'></span></span></div></div></div></div><div class='card' style='background:#14221D;border-color:#29392F'><div class='card-title' style='color:#EDE6D6'>Last dictation</div><div class='card-body'><div class='transcript' style='color:#EDE6D6'>The quarterly review moved to Thursday at four. I sent the updated plan by email this morning.</div><div class='row-actions'><span class='btn' style='border-color:#A8B3AA;color:#EDE6D6'>Copy</span></div></div></div></div></div></div></div></div><div class='theme-block'><h3>Light theme, Ivory and Navy</h3><p class='cap'>Window 960 by 640 by default, minimum 760 by 520, native title bar. Rail 208 px. Content padding 32 px, widest 640 px, left aligned. The title bar strip is a simulation of the system one, not a token.</p><div class='window' style='background:#F6F1E4;border-color:#D9CFBA'><div class='titlebar' style='background:#E9E9E9'><span class='tb-title' style='color:#1C2B26;opacity:0.85'>Local Wisper Flow</span><span class='tb-controls'><span class='tb-glyph'></span><span class='tb-glyph square'></span><span class='tb-glyph x'></span></span></div><div class='window-body'><div class='rail' style='background:#FFFDF7;border-color:#D9CFBA'><div class='wordmark' style='color:#1C2B26'>Local Wisper Flow</div><div class='nav-item active' style='color:#1C2B26'><span class='nav-bar' style='background:#1F3A5F'></span>Home</div><div class='nav-item' style='color:#5B665F'>Dictation</div><div class='nav-item' style='color:#5B665F'>Speech</div><div class='nav-item' style='color:#5B665F'>Cleanup</div><div class='nav-item' style='color:#5B665F'>Dictionary</div><div class='nav-item' style='color:#5B665F'>Snippets</div><div class='nav-item' style='color:#5B665F'>History</div><div class='nav-item' style='color:#5B665F'>Privacy</div><div class='nav-item' style='color:#5B665F'>About</div><div class='rail-bottom'><span class='status'><span class='dot' style='background:#3F6B52'></span><span style='color:#1C2B26'>&nbsp;Ready</span></span><div class='switch-mini' style='color:#5B665F'>Switch to mini</div></div></div><div class='content'><div class='page-title' style='color:#1C2B26'>Home</div><div class='page-sub' style='color:#5B665F'>Dictation runs on this computer and starts with one hotkey.</div><div class='cards'><div class='card' style='background:#FFFDF7;border-color:#D9CFBA'><div class='card-title' style='color:#1C2B26'>Right now</div><div class='card-body'><div class='big-line' style='color:#1C2B26'>Ready. Hold Ctrl + Win to dictate.</div></div></div><div class='card' style='background:#FFFDF7;border-color:#D9CFBA'><div class='card-title' style='color:#1C2B26'>Hotkey</div><div class='card-body'><div class='hotkey-row'><span class='chip' style='background:#F6F1E4;border-color:#D9CFBA;color:#1C2B26'>Ctrl</span><span class='chip-plus' style='color:#5B665F'>+</span><span class='chip' style='background:#F6F1E4;border-color:#D9CFBA;color:#1C2B26'>Win</span></div><div class='action' style='color:#5B665F'>Hold to speak, release to type.</div></div></div><div class='card' style='background:#FFFDF7;border-color:#D9CFBA'><div class='card-title' style='color:#1C2B26'>Trust</div><div class='card-body'><div style='color:#1C2B26'>Everything runs on this computer.</div><div class='helper' style='color:#5B665F'>Cloud speech is off.</div></div></div><div class='card' style='background:#FFFDF7;border-color:#D9CFBA'><div class='card-title' style='color:#1C2B26'>Quick settings</div><div class='card-body'><div class='row'><div class='row-label'><div class='label' style='color:#1C2B26'>Dictation</div></div><div class='row-control'><span class='toggle on' style='background:#1F3A5F'><span class='knob' style='right:4px;background:#FFFDF7;border:none'></span></span></div></div><div class='row'><div class='row-label'><div class='label' style='color:#1C2B26'>Clean up text</div></div><div class='row-control'><span class='toggle on' style='background:#1F3A5F'><span class='knob' style='right:4px;background:#FFFDF7;border:none'></span></span></div></div><div class='row'><div class='row-label'><div class='label' style='color:#1C2B26'>Hands-free</div></div><div class='row-control'><span class='toggle off' style='background:#D9CFBA'><span class='knob' style='left:4px;background:#FFFDF7;border:1px solid #D9CFBA'></span></span></div></div></div></div><div class='card' style='background:#FFFDF7;border-color:#D9CFBA'><div class='card-title' style='color:#1C2B26'>Last dictation</div><div class='card-body'><div class='transcript' style='color:#1C2B26'>The quarterly review moved to Thursday at four. I sent the updated plan by email this morning.</div><div class='row-actions'><span class='btn' style='border-color:#5B665F;color:#1C2B26'>Copy</span></div></div></div></div></div></div></div></div><div class='theme-block'><h3>Trust card when cloud speech is on</h3><p class='cap'>The Home page shows this variant whenever cloud speech is on. It stays visible the whole time cloud is on.</p><div class='window slim' style='background:#0E1714;border-color:#29392F'><div class='content'><div class='cards'><div class='card' style='background:#14221D;border-color:#29392F'><div class='card-title' style='color:#EDE6D6'>Trust</div><div class='card-body'><div style='color:#EDE6D6'>Speech is sent to Gnani for each sentence. Last sent: 2 min ago.</div></div></div></div></div></div></div></section><section id='speech'><h2>4. Full app, Speech</h2><div class='theme-block'><h3>Dark theme, Hunter and Brass</h3><p class='cap'>Window 960 by 640 by default, minimum 760 by 520, native title bar. Rail 208 px. Content padding 32 px, widest 640 px, left aligned. The title bar strip is a simulation of the system one, not a token.</p><div class='window' style='background:#0E1714;border-color:#29392F'><div class='titlebar' style='background:#1C1C1C'><span class='tb-title' style='color:#EDE6D6;opacity:0.85'>Local Wisper Flow</span><span class='tb-controls'><span class='tb-glyph'></span><span class='tb-glyph square'></span><span class='tb-glyph x'></span></span></div><div class='window-body'><div class='rail' style='background:#14221D;border-color:#29392F'><div class='wordmark' style='color:#EDE6D6'>Local Wisper Flow</div><div class='nav-item' style='color:#A8B3AA'>Home</div><div class='nav-item' style='color:#A8B3AA'>Dictation</div><div class='nav-item active' style='color:#EDE6D6'><span class='nav-bar' style='background:#C9A96E'></span>Speech</div><div class='nav-item' style='color:#A8B3AA'>Cleanup</div><div class='nav-item' style='color:#A8B3AA'>Dictionary</div><div class='nav-item' style='color:#A8B3AA'>Snippets</div><div class='nav-item' style='color:#A8B3AA'>History</div><div class='nav-item' style='color:#A8B3AA'>Privacy</div><div class='nav-item' style='color:#A8B3AA'>About</div><div class='rail-bottom'><span class='status'><span class='dot' style='background:#8FB39A'></span><span style='color:#EDE6D6'>&nbsp;Ready</span></span><div class='switch-mini' style='color:#A8B3AA'>Switch to mini</div></div></div><div class='content'><div class='page-title' style='color:#EDE6D6'>Speech</div><div class='page-sub' style='color:#A8B3AA'>Choose how your speech is turned into text.</div><div class='cards'><div class='card' style='background:#14221D;border-color:#29392F'><div class='card-title' style='color:#EDE6D6'>Speech on this computer</div><div class='card-body'><div class='row'><div class='row-label'><div class='label' style='color:#EDE6D6'>Speech model</div></div><div class='row-control'><span class='value' style='color:#EDE6D6'>English and Hindi, 244 MB</span><span class='status'><span class='dot' style='background:#8FB39A'></span><span style='color:#EDE6D6'>&nbsp;Ready</span></span></div></div><div class='row'><div class='row-label'><div class='label' style='color:#EDE6D6'>Language</div></div><div class='row-control'><span class='dropdown' style='background:#14221D;border-color:#29392F;color:#EDE6D6'><span>Hindi (हिन्दी)</span><span class='chev' style='border-top-color:#A8B3AA'></span></span></div></div><div class='row'><div class='row-label'><div class='label' style='color:#EDE6D6'>Use graphics card</div><div class='helper' style='color:#A8B3AA'>Runs the speech model on the graphics card when one is available.</div><div class='note' style='color:#D0A65A'>Applies after restart.</div></div><div class='row-control'><span class='toggle on' style='background:#C9A96E'><span class='knob' style='right:4px;background:#14221D;border:none'></span></span></div></div></div></div><div class='card' style='background:#14221D;border-color:#29392F'><div class='card-title' style='color:#EDE6D6'>Cloud speech (optional)</div><div class='card-body'><div class='row'><div class='row-label'><div class='label' style='color:#EDE6D6'>Use cloud speech for better Indian languages</div><div class='helper' style='color:#A8B3AA'>Off by default. When on, each sentence is sent to Gnani over the internet while you dictate.</div></div><div class='row-control'><span class='toggle off' style='background:#29392F'><span class='knob' style='left:4px;background:#14221D;border:1px solid #29392F'></span></span></div></div><div class='helper' style='color:#A8B3AA'>Cloud speech is off.</div></div></div></div></div></div></div></div><div class='theme-block'><h3>Light theme, Ivory and Navy</h3><p class='cap'>Window 960 by 640 by default, minimum 760 by 520, native title bar. Rail 208 px. Content padding 32 px, widest 640 px, left aligned. The title bar strip is a simulation of the system one, not a token.</p><div class='window' style='background:#F6F1E4;border-color:#D9CFBA'><div class='titlebar' style='background:#E9E9E9'><span class='tb-title' style='color:#1C2B26;opacity:0.85'>Local Wisper Flow</span><span class='tb-controls'><span class='tb-glyph'></span><span class='tb-glyph square'></span><span class='tb-glyph x'></span></span></div><div class='window-body'><div class='rail' style='background:#FFFDF7;border-color:#D9CFBA'><div class='wordmark' style='color:#1C2B26'>Local Wisper Flow</div><div class='nav-item' style='color:#5B665F'>Home</div><div class='nav-item' style='color:#5B665F'>Dictation</div><div class='nav-item active' style='color:#1C2B26'><span class='nav-bar' style='background:#1F3A5F'></span>Speech</div><div class='nav-item' style='color:#5B665F'>Cleanup</div><div class='nav-item' style='color:#5B665F'>Dictionary</div><div class='nav-item' style='color:#5B665F'>Snippets</div><div class='nav-item' style='color:#5B665F'>History</div><div class='nav-item' style='color:#5B665F'>Privacy</div><div class='nav-item' style='color:#5B665F'>About</div><div class='rail-bottom'><span class='status'><span class='dot' style='background:#3F6B52'></span><span style='color:#1C2B26'>&nbsp;Ready</span></span><div class='switch-mini' style='color:#5B665F'>Switch to mini</div></div></div><div class='content'><div class='page-title' style='color:#1C2B26'>Speech</div><div class='page-sub' style='color:#5B665F'>Choose how your speech is turned into text.</div><div class='cards'><div class='card' style='background:#FFFDF7;border-color:#D9CFBA'><div class='card-title' style='color:#1C2B26'>Speech on this computer</div><div class='card-body'><div class='row'><div class='row-label'><div class='label' style='color:#1C2B26'>Speech model</div></div><div class='row-control'><span class='value' style='color:#1C2B26'>English and Hindi, 244 MB</span><span class='status'><span class='dot' style='background:#3F6B52'></span><span style='color:#1C2B26'>&nbsp;Ready</span></span></div></div><div class='row'><div class='row-label'><div class='label' style='color:#1C2B26'>Language</div></div><div class='row-control'><span class='dropdown' style='background:#FFFDF7;border-color:#D9CFBA;color:#1C2B26'><span>Hindi (हिन्दी)</span><span class='chev' style='border-top-color:#5B665F'></span></span></div></div><div class='row'><div class='row-label'><div class='label' style='color:#1C2B26'>Use graphics card</div><div class='helper' style='color:#5B665F'>Runs the speech model on the graphics card when one is available.</div><div class='note' style='color:#7A5C25'>Applies after restart.</div></div><div class='row-control'><span class='toggle on' style='background:#1F3A5F'><span class='knob' style='right:4px;background:#FFFDF7;border:none'></span></span></div></div></div></div><div class='card' style='background:#FFFDF7;border-color:#D9CFBA'><div class='card-title' style='color:#1C2B26'>Cloud speech (optional)</div><div class='card-body'><div class='row'><div class='row-label'><div class='label' style='color:#1C2B26'>Use cloud speech for better Indian languages</div><div class='helper' style='color:#5B665F'>Off by default. When on, each sentence is sent to Gnani over the internet while you dictate.</div></div><div class='row-control'><span class='toggle off' style='background:#D9CFBA'><span class='knob' style='left:4px;background:#FFFDF7;border:1px solid #D9CFBA'></span></span></div></div><div class='helper' style='color:#5B665F'>Cloud speech is off.</div></div></div></div></div></div></div></div></section><section id='tokens'><h2>5. Type, spacing, radii, controls and motion</h2><div class='theme-block'><h3>Type scale, spacing, radii and controls, shown in the dark theme</h3><div class='token-grid'><div><div class='token-h'>Type scale</div><div class='type-row'><span class='type-sample s1' style='color:#EDE6D6'>Home</span><span class='cap'>28 px, serif, page title</span></div><div class='type-row'><span class='type-sample s2' style='color:#EDE6D6'>Local Wisper Flow</span><span class='cap'>18 px, serif, wordmark</span></div><div class='type-row'><span class='type-sample s3' style='color:#EDE6D6'>Right now</span><span class='cap'>15 px, sans, medium, section title</span></div><div class='type-row'><span class='type-sample s4' style='color:#EDE6D6'>Hold to speak, release to type.</span><span class='cap'>14 px, sans, body and controls</span></div><div class='type-row'><span class='type-sample s5' style='color:#EDE6D6'>Applies after restart.</span><span class='cap'>13 px, sans, helper text</span></div></div><div><div class='token-h'>Spacing, 8 px grid</div><div class='space-row'><span class='space-bar' style='width:12px;background:#C9A96E'></span><span class='cap'>4 px</span></div><div class='space-row'><span class='space-bar' style='width:24px;background:#C9A96E'></span><span class='cap'>8 px</span></div><div class='space-row'><span class='space-bar' style='width:48px;background:#C9A96E'></span><span class='cap'>16 px</span></div><div class='space-row'><span class='space-bar' style='width:72px;background:#C9A96E'></span><span class='cap'>24 px</span></div><div class='space-row'><span class='space-bar' style='width:96px;background:#C9A96E'></span><span class='cap'>32 px</span></div><div class='token-h' style='margin-top:16px'>Corner radii</div><div class='radii-row'><span class='radius-chip r6' style='background:#14221D;border-color:#29392F;color:#A8B3AA'>6 px, controls</span><span class='radius-chip r10' style='background:#14221D;border-color:#29392F;color:#A8B3AA'>10 px, cards</span><span class='radius-chip r999' style='background:#14221D;border-color:#29392F;color:#A8B3AA'>round, mini</span></div><div class='token-h' style='margin-top:16px'>Focus ring, 2 px</div><span class='focus-sample' style='outline-color:#C9A96E;color:#EDE6D6;background:#14221D;border-color:#29392F'>Speech model</span></div><div><div class='token-h'>Controls, at least 32 px tall</div><div class='controls-strip'><span class='btn primary' style='background:#C9A96E;color:#0E1714'>Continue</span><span class='btn' style='border-color:#A8B3AA;color:#EDE6D6'>Copy</span><span class='toggle on' style='background:#C9A96E'><span class='knob' style='right:4px;background:#14221D;border:none'></span></span><span class='toggle off' style='background:#29392F'><span class='knob' style='left:4px;background:#14221D;border:1px solid #29392F'></span></span><span class='dropdown' style='background:#14221D;border-color:#29392F;color:#EDE6D6'><span>Hindi (हिन्दी)</span><span class='chev' style='border-top-color:#A8B3AA'></span></span><span class='chip' style='background:#0E1714;border-color:#29392F;color:#EDE6D6'>Ctrl</span><span class='chip-plus' style='color:#A8B3AA'>+</span><span class='chip' style='background:#0E1714;border-color:#29392F;color:#EDE6D6'>Win</span><span class='saved' style='color:#A8B3AA'>Saved</span><span class='note' style='color:#D0A65A'>Applies after restart.</span></div><div class='token-h' style='margin-top:16px'>Motion</div><table class='mini-table'><tbody><tr><td>Mini, Listening ring</td><td>2.4 s cycle, opacity 60 to 100, ease in and out</td></tr><tr><td>Mini, Thinking dots</td><td>one dot every 300 ms</td></tr><tr><td>Mini, Done check</td><td>600 ms, then fade to Ready</td></tr><tr><td>Mini, Attention message</td><td>clears after 6 s or on the next dictation</td></tr><tr><td>Theme switch and page change</td><td>150 to 240 ms, ease-out</td></tr><tr><td>Saved note</td><td>1.5 s, then it disappears</td></tr><tr><td>Reduce motion</td><td>ring and dots become static, everything else unchanged</td></tr></tbody></table></div></div></div></section>
+
+<section id='palette'>
+<h2>1. Single Palette — token table</h2>
+<p class='cap'>One struct (<span class='mono'>Palette</span>) with identical field names in both themes. Ivory Light is the primary theme (Full window + Mini). Dark is a named variant with the same fields. Phase 2 implements these exact hex values; do not edit without recomputing §2.</p>
+<table>
+<thead><tr><th>Field</th><th>Ivory Light (PRIMARY)<br>“Ivory and Brass”</th><th>Dark (VARIANT)<br>“Hunter and Brass”</th><th>Used for</th></tr></thead>
+<tbody>
+<tr><td class='mono'>bg</td><td class='mono'><span class='sw big' style='background:#F6F1E4'></span>0xF6F1E4</td><td class='mono'><span class='sw big' style='background:#0E1714'></span>0x0E1714</td><td>window background</td></tr>
+<tr><td class='mono'>surface</td><td class='mono'><span class='sw big' style='background:#FFFDF7'></span>0xFFFDF7</td><td class='mono'><span class='sw big' style='background:#14221D'></span>0x14221D</td><td>cards, rail, inputs, mini badge</td></tr>
+<tr><td class='mono'>border</td><td class='mono'><span class='sw big' style='background:#D9CFBA'></span>0xD9CFBA</td><td class='mono'><span class='sw big' style='background:#29392F'></span>0x29392F</td><td>1 px hairlines (exempt pair, see §2)</td></tr>
+<tr><td class='mono'>text</td><td class='mono'><span class='sw big' style='background:#1C2B26'></span>0x1C2B26</td><td class='mono'><span class='sw big' style='background:#EDE6D6'></span>0xEDE6D6</td><td>primary text</td></tr>
+<tr><td class='mono'>muted</td><td class='mono'><span class='sw big' style='background:#5B665F'></span>0x5B665F</td><td class='mono'><span class='sw big' style='background:#A8B3AA'></span>0xA8B3AA</td><td>secondary / helper text</td></tr>
+<tr><td class='mono'>accent</td><td class='mono'><span class='sw big' style='background:#7A5C25'></span>0x7A5C25</td><td class='mono'><span class='sw big' style='background:#C9A96E'></span>0xC9A96E</td><td>the one accent: active nav, primary actions (= brass)</td></tr>
+<tr><td class='mono'>brass</td><td class='mono'><span class='sw big' style='background:#7A5C25'></span>0x7A5C25</td><td class='mono'><span class='sw big' style='background:#C9A96E'></span>0xC9A96E</td><td>brass as text, icons, heat level 4 (= accent)</td></tr>
+<tr><td class='mono'>on_accent</td><td class='mono'><span class='sw big' style='background:#FFFDF7'></span>0xFFFDF7</td><td class='mono'><span class='sw big' style='background:#0E1714'></span>0x0E1714</td><td>text on an accent fill</td></tr>
+<tr><td class='mono'>ok</td><td class='mono'><span class='sw big' style='background:#3F6B52'></span>0x3F6B52</td><td class='mono'><span class='sw big' style='background:#8FB39A'></span>0x8FB39A</td><td>Ready status (word + dot + color)</td></tr>
+<tr><td class='mono'>warn</td><td class='mono'><span class='sw big' style='background:#7A5C25'></span>0x7A5C25</td><td class='mono'><span class='sw big' style='background:#D0A65A'></span>0xD0A65A</td><td>“applies after restart” notes (word + icon + color)</td></tr>
+<tr><td class='mono'>err</td><td class='mono'><span class='sw big' style='background:#7A2E3A'></span>0x7A2E3A</td><td class='mono'><span class='sw big' style='background:#D98A8F'></span>0xD98A8F</td><td>error copy (never fill)</td></tr>
+<tr><td class='mono'>err_fill</td><td class='mono'><span class='sw big' style='background:#7A2E3A'></span>0x7A2E3A</td><td class='mono'><span class='sw big' style='background:#B5565F'></span>0xB5565F</td><td>attention dot fill only (non-text)</td></tr>
+<tr><td class='mono'>focus</td><td class='mono'><span class='sw big' style='background:#7A5C25'></span>0x7A5C25</td><td class='mono'><span class='sw big' style='background:#C9A96E'></span>0xC9A96E</td><td>focus ring 2 px (= accent)</td></tr>
+<tr><td class='mono'>surface_alpha</td><td class='mono'>0.90</td><td class='mono'>0.88</td><td>mini badge opacity over desktop</td></tr>
+</tbody>
+</table>
+<p class='cap'>Invariants: <span class='mono'>accent == brass == focus</span> in both themes (single-accent rule). <span class='mono'>warn == brass</span> on light; warn diverges on dark only in exact hex but remains in the brass family. Error copy uses <span class='mono'>err</span>; <span class='mono'>err_fill</span> is the dot fill and must never carry text.</p>
+</section>
+
+<section id='contrast'>
+<h2>2. Contrast tables (recomputed, WCAG formula)</h2>
+<p class='cap'>Text PASS = ratio &gt;=4.5. Non-text PASS = ratio &gt;=3.0. HAIRLINE EXEMPT = border on bg/surface, below 3.0 by design; these separate surfaces that already differ in tone and never carry state alone (every state also has word + shape). Values below were recomputed from the §1 hex in Phase 1; three spot-checks are recorded in the phase-1 appendix.</p>
+<h3>2A. Ivory Light (PRIMARY) — text pairs need &gt;=4.5</h3>
+<table>
+<thead><tr><th>Pair (fg on bg)</th><th>Ratio</th><th>Verdict</th><th>Kind</th></tr></thead>
+<tbody>
+<tr><td class='mono'>text / bg (#1C2B26 on #F6F1E4)</td><td class='num'>13.09</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>text / surface (#1C2B26 on #FFFDF7)</td><td class='num'>14.51</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>muted / bg (#5B665F on #F6F1E4)</td><td class='num'>5.30</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>muted / surface (#5B665F on #FFFDF7)</td><td class='num'>5.88</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>accent / surface (#7A5C25 on #FFFDF7)</td><td class='num'>6.10</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>accent / bg (#7A5C25 on #F6F1E4)</td><td class='num'>5.50</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>brass / surface (#7A5C25 on #FFFDF7)</td><td class='num'>6.10</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>brass / bg (#7A5C25 on #F6F1E4)</td><td class='num'>5.50</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>ok / surface (#3F6B52 on #FFFDF7)</td><td class='num'>6.01</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>ok / bg (#3F6B52 on #F6F1E4)</td><td class='num'>5.42</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>warn / surface (#7A5C25 on #FFFDF7)</td><td class='num'>6.10</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>warn / bg (#7A5C25 on #F6F1E4)</td><td class='num'>5.50</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>err / surface (#7A2E3A on #FFFDF7)</td><td class='num'>9.06</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>err / bg (#7A2E3A on #F6F1E4)</td><td class='num'>8.17</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>on_accent / accent (#FFFDF7 on #7A5C25)</td><td class='num'>6.10</td><td class='pass'>PASS</td><td>text</td></tr>
+</tbody>
+</table>
+<h3>2B. Ivory Light — meaningful non-text need &gt;=3.0; hairlines exempt</h3>
+<table>
+<thead><tr><th>Pair</th><th>Ratio</th><th>Verdict</th><th>Kind</th></tr></thead>
+<tbody>
+<tr><td class='mono'>focus / bg (#7A5C25 on #F6F1E4)</td><td class='num'>5.50</td><td class='pass'>PASS</td><td>non-text (focus ring)</td></tr>
+<tr><td class='mono'>focus / surface (#7A5C25 on #FFFDF7)</td><td class='num'>6.10</td><td class='pass'>PASS</td><td>non-text (focus ring)</td></tr>
+<tr><td class='mono'>err_fill / surface (#7A2E3A on #FFFDF7)</td><td class='num'>9.06</td><td class='pass'>PASS</td><td>non-text (dot fill)</td></tr>
+<tr><td class='mono'>err_fill / bg (#7A2E3A on #F6F1E4)</td><td class='num'>8.17</td><td class='pass'>PASS</td><td>non-text (dot fill)</td></tr>
+<tr><td class='mono'>border / bg (#D9CFBA on #F6F1E4)</td><td class='num'>1.37</td><td class='exempt'>EXEMPT (hairline)</td><td>hairline</td></tr>
+<tr><td class='mono'>border / surface (#D9CFBA on #FFFDF7)</td><td class='num'>1.52</td><td class='exempt'>EXEMPT (hairline)</td><td>hairline</td></tr>
+</tbody>
+</table>
+<h3>2C. Dark (VARIANT) — text pairs need &gt;=4.5</h3>
+<table>
+<thead><tr><th>Pair (fg on bg)</th><th>Ratio</th><th>Verdict</th><th>Kind</th></tr></thead>
+<tbody>
+<tr><td class='mono'>text / bg (#EDE6D6 on #0E1714)</td><td class='num'>14.67</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>text / surface (#EDE6D6 on #14221D)</td><td class='num'>13.23</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>muted / bg (#A8B3AA on #0E1714)</td><td class='num'>8.42</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>muted / surface (#A8B3AA on #14221D)</td><td class='num'>7.59</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>accent / surface (#C9A96E on #14221D)</td><td class='num'>7.35</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>accent / bg (#C9A96E on #0E1714)</td><td class='num'>8.15</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>brass / surface (#C9A96E on #14221D)</td><td class='num'>7.35</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>brass / bg (#C9A96E on #0E1714)</td><td class='num'>8.15</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>ok / surface (#8FB39A on #14221D)</td><td class='num'>7.12</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>ok / bg (#8FB39A on #0E1714)</td><td class='num'>7.89</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>warn / surface (#D0A65A on #14221D)</td><td class='num'>7.27</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>warn / bg (#D0A65A on #0E1714)</td><td class='num'>8.06</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>err / surface (#D98A8F on #14221D)</td><td class='num'>6.25</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>err / bg (#D98A8F on #0E1714)</td><td class='num'>6.93</td><td class='pass'>PASS</td><td>text</td></tr>
+<tr><td class='mono'>on_accent / accent (#0E1714 on #C9A96E)</td><td class='num'>8.15</td><td class='pass'>PASS</td><td>text</td></tr>
+</tbody>
+</table>
+<h3>2D. Dark — meaningful non-text need &gt;=3.0; hairlines exempt</h3>
+<table>
+<thead><tr><th>Pair</th><th>Ratio</th><th>Verdict</th><th>Kind</th></tr></thead>
+<tbody>
+<tr><td class='mono'>focus / bg (#C9A96E on #0E1714)</td><td class='num'>8.15</td><td class='pass'>PASS</td><td>non-text (focus ring)</td></tr>
+<tr><td class='mono'>focus / surface (#C9A96E on #14221D)</td><td class='num'>7.35</td><td class='pass'>PASS</td><td>non-text (focus ring)</td></tr>
+<tr><td class='mono'>err_fill / surface (#B5565F on #14221D)</td><td class='num'>3.50</td><td class='pass'>PASS (non-text band)</td><td>non-text (dot fill)</td></tr>
+<tr><td class='mono'>err_fill / bg (#B5565F on #0E1714)</td><td class='num'>3.87</td><td class='pass'>PASS (non-text band)</td><td>non-text (dot fill)</td></tr>
+<tr><td class='mono'>border / bg (#29392F on #0E1714)</td><td class='num'>1.49</td><td class='exempt'>EXEMPT (hairline)</td><td>hairline</td></tr>
+<tr><td class='mono'>border / surface (#29392F on #14221D)</td><td class='num'>1.35</td><td class='exempt'>EXEMPT (hairline)</td><td>hairline</td></tr>
+</tbody>
+</table>
+<p class='cap'>Reading note: dark <span class='mono'>err_fill</span> (3.50/3.87) sits in the non-text band (&gt;=3.0) and is fill-only. It must never be used as text; error copy uses <span class='mono'>err</span> (6.25/6.93). This is the same split as the current runtime palette, now made explicit.</p>
+</section>
+
+<section id='type'>
+<h2>3. Type, spacing, radii, controls</h2>
+<h3>3A. Type scale (design px @1.0; caller applies once via FontScaleMain)</h3>
+<div class='type-row'><span class='s1'>Page title — 28 px serif display</span><span class='cap'>font_page_title_px 28. Wordmark 18 px serif (font_wordmark_px). One title per page, serif.</span></div>
+<div class='type-row'><span class='s2'>Card / section title — 15 px</span><span class='cap'>font_card_title_px 15. Column headers, card titles. Sans, weight 500–600.</span></div>
+<div class='type-row'><span class='s3'>Body — 14 px</span><span class='cap'>body/row text. Sans 14. Unifies the current 13 px body metric upward; Phase 2 updates the token to 14.</span></div>
+<div class='type-row'><span class='s4'>Helper / secondary — 13 px</span><span class='cap'>helper, notes, Saved, table captions. Sans 13, muted color, still &gt;=4.5.</span></div>
+<div class='type-row'><span class='s-mini'>MINI LABEL — 8.5 px status label</span><span class='cap'>Mini badge tiny label (font_mini_text_px 8.5). Never used for body.</span></div>
+<p class='cap'>Font proposal (pending bundling, not in this phase): EB Garamond for serif display, Inter for sans body. Until fonts ship, the scaled default font at these sizes is the truth.</p>
+<h3>3B. Spacing — 4/8 grid</h3>
+<p><span class='mono'>space_xs 4</span> hairline gaps inside rows &nbsp;·&nbsp; <span class='mono'>space_s 8</span> inside cards &nbsp;·&nbsp; <span class='mono'>space_m 16</span> card padding / rail gaps &nbsp;·&nbsp; <span class='mono'>space_l 24</span> between groups &nbsp;·&nbsp; <span class='mono'>space_xl 32</span> page padding.</p>
+<div class='space-row'><span class='space-bar' style='width:4px'></span><span class='cap'>4 · space_xs</span></div>
+<div class='space-row'><span class='space-bar' style='width:8px'></span><span class='cap'>8 · space_s</span></div>
+<div class='space-row'><span class='space-bar' style='width:16px'></span><span class='cap'>16 · space_m</span></div>
+<div class='space-row'><span class='space-bar' style='width:24px'></span><span class='cap'>24 · space_l</span></div>
+<div class='space-row'><span class='space-bar' style='width:32px'></span><span class='cap'>32 · space_xl</span></div>
+<h3>3C. Radii — reconciled to one value</h3>
+<p><span class='mono'>radius_control 6</span> buttons, inputs, chips &nbsp;·&nbsp; <span class='mono'>radius_card 10</span> cards, windows, banners (ONE value) &nbsp;·&nbsp; <span class='mono'>radius_pill 999</span> dot, pill, switches.</p>
+<div class='radii-row'>
+<span class='radius-chip r6'>6 · control</span>
+<span class='radius-chip r10'>10 · card (single value)</span>
+<span class='radius-chip r999'>999 · pill</span>
+</div>
+<div class='notice'><strong>Radius decision.</strong> Native 10 is the mockup (D0) value; studio 12 was screenshot-derived. One value wins: <strong>radius_card = 10</strong>. Studio sites that used 12 migrate to 10 in Phase 2; the 2 px difference is covered by border + spacing, not by a second radius.</div>
+<h3>3D. Controls — &gt;=32 px, 2 px focus ring</h3>
+<div class='controls-strip'>
+<span class='btn primary'>Primary</span>
+<span class='btn'>Secondary</span>
+<span class='input'>Text input (32 px)</span>
+<span class='toggle'><span class='toggle-track'><span class='toggle-knob'></span></span> On (word)</span>
+<span class='toggle'><span class='toggle-track off'><span class='toggle-knob'></span></span> Off (word)</span>
+<span class='focus-sample'>Focused control (2 px ring, offset 2 px)</span>
+</div>
+<table>
+<thead><tr><th>Control</th><th>Minimum</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td>buttons, inputs, dropdowns, chips, toggles</td><td>min-height 32 px (control_min_height)</td><td>No sub-32 hit target; icon buttons keep 32 px hit box with 10 px glyph.</td></tr>
+<tr><td>focus ring</td><td>2 px outline, offset 2 px, focus color</td><td>Always visible on keyboard focus; not clipped by card radius.</td></tr>
+<tr><td>toggle track</td><td>52 × 32 px</td><td>On = accent fill with on_accent knob; Off = surface with muted border. Word label required (never toggle alone).</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id='deprecation'>
+<h2>4. Deprecation: StudioPalette teal + heatmap ramp</h2>
+<h3>4A. What is deprecated</h3>
+<p>All of <span class='mono'>StudioPalette</span> teal tokens are deprecated in Phase 1 and deleted in Phase 2:</p>
+<table>
+<thead><tr><th>Deprecated token</th><th>Value</th><th>Replacement (single Palette)</th></tr></thead>
+<tbody>
+<tr><td class='mono'>page_bg #FAFAF8</td><td>page background</td><td>Palette <span class='mono'>bg</span> (Ivory #F6F1E4 / dark #0E1714)</td></tr>
+<tr><td class='mono'>rail_bg / card_bg #F4F2EE</td><td>rail / cards</td><td>Palette <span class='mono'>surface</span></td></tr>
+<tr><td class='mono'>card_bg_white #FFFFFF</td><td>white cards</td><td>Palette <span class='mono'>surface</span> (#FFFDF7 / #14221D)</td></tr>
+<tr><td class='mono'>border #E7E4DE</td><td>hairlines</td><td>Palette <span class='mono'>border</span></td></tr>
+<tr><td class='mono'>ink #1C1C1C</td><td>primary text</td><td>Palette <span class='mono'>text</span></td></tr>
+<tr><td class='mono'>muted #6E6A62</td><td>secondary text</td><td>Palette <span class='mono'>muted</span></td></tr>
+<tr><td class='mono'>teal_700 #1E5E5A / teal_500 #2F8077 / teal_300 #7DBFB7 / teal_100 #CDEBE7</td><td>accents + heat</td><td>Palette <span class='mono'>accent / brass / focus</span> + §4B ramp</td></tr>
+<tr><td class='mono'>heat_empty #CDC6BB</td><td>empty cell</td><td>Palette <span class='mono'>border</span> as the empty fill</td></tr>
+<tr><td class='mono'>banner_cream #F1ECE4</td><td>banner</td><td>Palette <span class='mono'>bg</span> or <span class='mono'>surface</span> by role</td></tr>
+<tr><td class='mono'>studio_metrics::radius_card 12</td><td>studio card radius</td><td><span class='mono'>metrics::radius_card 10</span> (single value)</td></tr>
+</tbody>
+</table>
+<h3>4B. Heatmap ramp mapping (teal → brass/accent)</h3>
+<p>Four levels, blended from <span class='mono'>surface</span> to <span class='mono'>brass</span>. Levels 1–2 are low-contrast tints as before (heatmap cells are supplementary: intensity is also carried by the value label and legend, never color alone — same reading contract as the teal ramp). Levels 3–4 meet &gt;=3 vs surface.</p>
+<table>
+<thead><tr><th>Level</th><th>Old (teal)</th><th>Ivory Light (primary)</th><th>Dark (variant)</th></tr></thead>
+<tbody>
+<tr><td>0 · empty</td><td class='mono'>heat_empty #CDC6BB</td><td class='mono'><span class='sw' style='background:#D9CFBA'></span>border #D9CFBA</td><td class='mono'><span class='sw' style='background:#29392F'></span>border #29392F</td></tr>
+<tr><td>1 · low</td><td class='mono'>teal_100 #CDEBE7</td><td class='mono'><span class='sw' style='background:#E4DDCD'></span>#E4DDCD (brass 20% over surface)</td><td class='mono'><span class='sw' style='background:#383D2D'></span>#383D2D (brass 20%)</td></tr>
+<tr><td>2 · medium</td><td class='mono'>teal_300 #7DBFB7</td><td class='mono'><span class='sw' style='background:#C3B599'></span>#C3B599 (brass 45%)</td><td class='mono'><span class='sw' style='background:#655F41'></span>#655F41 (brass 45%)</td></tr>
+<tr><td>3 · high</td><td class='mono'>teal_500 #2F8077</td><td class='mono'><span class='sw' style='background:#A28C64'></span>#A28C64 (brass 70%, 3.19 vs surface PASS)</td><td class='mono'><span class='sw' style='background:#938056'></span>#938056 (brass 70%, 4.28 vs surface PASS)</td></tr>
+<tr><td>4 · max</td><td class='mono'>teal_700 #1E5E5A</td><td class='mono'><span class='sw' style='background:#7A5C25'></span>brass #7A5C25 (6.10 vs surface PASS)</td><td class='mono'><span class='sw' style='background:#C9A96E'></span>brass #C9A96E (7.35 vs surface PASS)</td></tr>
+</tbody>
+</table>
+<p class='cap'>De-teal behavior: Dictionary, Insights, Snippets, Transforms and Scratchpad absorb into the single Palette (bg/surface/border/text/muted/accent/brass). No studio page keeps its own background tokens; page chrome, cards and rows all resolve through Palette. <span class='mono'>HeatColor(level)</span> in Phase 2 maps 0..4 to the table above.</p>
+</section>
+
+<section id='shell'>
+<h2>5. Full shell (Ivory primary) — rail, header, page chrome</h2>
+<p class='cap'>Structure preserved from the current app: Full window with native title bar, 220 px rail, page content column (max 640 px left-aligned), hide-on-close (tray owns Quit), live-apply with <span class='mono'>Saved</span> dwell 1.5 s. Only the palette changes.</p>
+<div class='window'>
+<div class='titlebar'><span class='tb-title'>Local Wisper Flow</span><span class='cap'>native title bar · hide on close · tray owns Quit</span></div>
+<div class='window-body'>
+<div class='rail'>
+<div class='wordmark'>Local Wisper Flow</div>
+<div class='nav-item active'><span class='nav-bar'></span>Home</div>
+<div class='nav-item'>Speech</div>
+<div class='nav-item'>Settings</div>
+<div class='nav-item'>Dictionary</div>
+<div class='nav-item'>Insights</div>
+<div class='nav-item'>Snippets</div>
+<div class='nav-item'>Transforms</div>
+<div class='nav-item'>Scratchpad</div>
+<div style='margin-top:auto;padding:12px 16px'><span class='cap'>Rail 220 px · 8 nav items · Tab order rail → page</span></div>
+</div>
+<div class='content'>
+<div class='page-title'>Home</div>
+<div class='page-sub'>Page chrome: 28 px serif title + 13 px helper, 32 px page padding, 640 px content max.</div>
+<div class='cards'>
+<div class='card'><div class='card-title'>Ready</div><div class='card-body'><span>Word + shape + color: dot (ok) + “Ready” word + ok color. Never color alone.</span><span class='helper'>Row min-height 44 px · control min-height 32 px · radius_card 10</span></div></div>
+</div>
+</div>
+</div>
+</div>
+<table>
+<thead><tr><th>Shell element</th><th>Token</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td>Window bg / card bg</td><td class='mono'>bg / surface</td><td>Ivory #F6F1E4 behind, #FFFDF7 cards. Rail is surface with 1 px border.</td></tr>
+<tr><td>Active nav</td><td class='mono'>accent bar 3 px + accent text + bold</td><td>Word + bar + bold (not color alone).</td></tr>
+<tr><td>Header</td><td class='mono'>page_title 28 serif</td><td>One title per page; native title bar stays OS-drawn.</td></tr>
+<tr><td>Saved dwell</td><td class='mono'>saved_dwell 1.5 s</td><td>Live-apply on change; “Saved” word appears for 1.5 s, then fades (150–240 ms fade).</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id='home'>
+<h2>6. Home (Ivory primary)</h2>
+<div class='window'>
+<div class='titlebar'><span class='tb-title'>Local Wisper Flow</span><span class='cap'>Home</span></div>
+<div class='window-body'>
+<div class='rail'><div class='wordmark'>Local Wisper Flow</div>
+<div class='nav-item active'><span class='nav-bar'></span>Home</div><div class='nav-item'>Speech</div><div class='nav-item'>Settings</div>
+</div>
+<div class='content'>
+<div class='page-title'>Home</div>
+<div class='page-sub'>Press the hotkey to talk. Everything stays on this device unless you opt in to cloud.</div>
+<div class='cards'>
+<div class='card'><div class='card-title'>Status</div><div class='card-body'>
+<div class='row'><span class='label'>● Ready (ok word + dot + color)</span><span class='helper'>Listening pill on Mini; Full shows word.</span></div>
+<div class='row'><span class='label'>Hotkey <span class='btn'>Ctrl+Alt+Space</span></span><span class='helper'>Chip 36 px · radius_control 6</span></div>
+</div></div>
+<div class='card'><div class='card-title'>Recent transcript</div><div class='card-body'><span>Body 14 px on surface. Helper 13 px muted.</span><span class='helper'>Transcripts never logged; window hides to tray, Quit lives in tray only.</span></div></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<section id='speech'>
+<h2>7. Speech / Settings (Ivory primary)</h2>
+<div class='window'>
+<div class='titlebar'><span class='tb-title'>Local Wisper Flow</span><span class='cap'>Settings — Speech</span></div>
+<div class='window-body'>
+<div class='rail'><div class='wordmark'>Local Wisper Flow</div>
+<div class='nav-item'>Home</div><div class='nav-item'>Speech</div><div class='nav-item active'><span class='nav-bar'></span>Settings</div>
+</div>
+<div class='content'>
+<div class='page-title'>Settings</div>
+<div class='page-sub'>Live-apply. Changes save immediately; “Saved” dwells 1.5 s.</div>
+<div class='cards'>
+<div class='card'><div class='card-title'>Speech</div><div class='card-body'>
+<div class='row'><span><span class='label'>Whisper model</span><br><span class='helper'>Path resolved near the exe; “Model missing” if not found.</span></span><span class='input'>ggml-base.en.bin</span></div>
+<div class='row'><span><span class='label'>Cleanup (local LLM)</span><br><span class='helper'>Local only. Cloud stays opt-in behind consent.</span></span><span class='toggle'><span class='toggle-track'><span class='toggle-knob'></span></span> On</span></div>
+<div class='row'><span><span class='label'>Restart note</span><br><span class='helper'>⚠ Applies after restart (warn word + icon + color).</span></span><span class='btn'>Apply</span></div>
+<div class='row'><span class='label'>Saved state</span><span class='saved'>✓ Saved (1.5 s dwell)</span></div>
+</div></div>
+</div>
+</div>
+</div>
+</div>
+<p class='cap'>State pairing on this page: ok/warn/err always show word + shape (dot, ⚠, ✕) + color. Focus ring 2 px accent on every control.</p>
+</section>
+
+<section id='studio'>
+<h2>8. Studio pages — single-Palette absorption (Ivory primary)</h2>
+<p class='cap'>All five pages resolve through the same Palette; only their content differs. No teal backgrounds, no second radius, no second muted.</p>
+<table>
+<thead><tr><th>Page</th><th>Surface use (Palette)</th><th>Accent use (single brass)</th><th>State pairing</th></tr></thead>
+<tbody>
+<tr><td><strong>Dictionary</strong></td><td>bg page, surface cards, border hairlines; body 14, helper 13</td><td>accent only for selection bar + primary Add button</td><td>empty state word + icon + muted; error word + ✕ + err</td></tr>
+<tr><td><strong>Insights</strong></td><td>surface cards for heat + gauge; heat ramp §4B</td><td>brass level 4 + active tab underline</td><td>heat value always numeric label + legend (not color alone)</td></tr>
+<tr><td><strong>Snippets</strong></td><td>surface rows, 52 px row rhythm → 44 px min rows</td><td>accent for primary Insert</td><td>saved word + ✓ + ok; dirty word + dot + warn</td></tr>
+<tr><td><strong>Transforms</strong></td><td>surface cards for rules; input/output 32 px</td><td>accent for Run</td><td>preview word; diff +/- shapes + colors</td></tr>
+<tr><td><strong>Scratchpad</strong></td><td>surface editor on bg; third ImGui context, drag preserved</td><td>accent for primary action only</td><td>attention word + dot fill + err (fill never text)</td></tr>
+</tbody>
+</table>
+<div class='card' style='max-width:640px'><div class='card-title'>Insights heat sample (brass ramp on Ivory)</div>
+<div class='card-body'><span class='heat'><span class='heat-cell' style='background:#D9CFBA'></span><span class='heat-cell' style='background:#E4DDCD'></span><span class='heat-cell' style='background:#C3B599'></span><span class='heat-cell' style='background:#A28C64'></span><span class='heat-cell' style='background:#7A5C25'></span></span>
+<span class='helper'>Levels 0–4 · numeric labels + legend required · levels 3–4 meet &gt;=3 vs surface</span></div></div>
+</section>
+
+<section id='mini'>
+<h2>9. Mini badge — states (Ivory primary, semi-transparent over desktop)</h2>
+<p class='cap'>Mini is a separate window + ImGui context. Dot is 22 px design (44 px mockup stand-in at 2× for legibility), pill 40 px tall. Dots open into pills on demand (hover/drag/busy). Idle alpha 0.55, active 1.0. Surface alpha 0.90 (Ivory) / 0.88 (dark) over desktop.</p>
+<div class='desktop-sim'>
+<div class='mini-cell'><span class='mini-dot'><span class='s-mini'>mic</span></span><span class='pill-label-sm'><strong>Ready</strong> — dot + “Ready” word + ok dot</span><span class='cap'>Idle 0.55 · hover → 1.0</span></div>
+<div class='mini-cell'><span class='mini-dot'><span class='ring'></span><span class='s-mini'>mic</span></span><span class='pill-label-sm'><strong>Listening</strong> — breathing ring + “Listening” + bars</span><span class='cap'>Ring 2.4 s period · reduce-motion freezes</span></div>
+<div class='mini-cell'><span class='mini-dot'><span class='s-mini'>…</span></span><span class='pill-label-sm'><strong>Transcribing</strong> — thinking dots + “Transcribing”</span><span class='cap'>Dots 0.9 s cycle · cancel discards</span></div>
+<div class='mini-cell'><span class='mini-dot'><span class='att-dot'></span></span><span class='pill-label-sm'><strong>Needs attention</strong> — err_fill dot + word + message</span><span class='cap'>Message 250×48 · dwell 6 s · hover opens</span></div>
+</div>
+<table>
+<thead><tr><th>State</th><th>Shape</th><th>Word</th><th>Color</th><th>Motion</th></tr></thead>
+<tbody>
+<tr><td>Ready</td><td>22 px dot, static</td><td>“Ready”</td><td>ok dot on surface</td><td>fade-in 150 ms</td></tr>
+<tr><td>Listening</td><td>ring + level bars</td><td>“Listening”</td><td>accent ring</td><td>ring 2.4 s, bars 1.2 s (functional band 150–240 ms for open/close)</td></tr>
+<tr><td>Transcribing</td><td>thinking dots</td><td>“Transcribing”</td><td>accent dots</td><td>0.9 s cycle, offset 0.3 s</td></tr>
+<tr><td>Needs attention</td><td>err_fill dot + hover message</td><td>“Needs attention” + message</td><td>err_fill (non-text) + err word</td><td>dwell 6 s, done 0.6 s</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id='motion'>
+<h2>10. Motion, state-pairing, accessibility</h2>
+<h3>10A. Motion rules</h3>
+<table>
+<thead><tr><th>Motion</th><th>Duration</th><th>Rule</th></tr></thead>
+<tbody>
+<tr><td>Functional (hover, press, open, knob, Saved fade)</td><td><strong>150–240 ms</strong></td><td>Single band for all feedback; mini fade-in standardized to 150 ms (was 120 ms).</td></tr>
+<tr><td>Saved dwell</td><td>1.5 s</td><td>Word shows, then fades in the functional band.</td></tr>
+<tr><td>Ambient (listening ring 2.4 s, bars 1.2 s, thinking 0.9 s)</td><td>own periods</td><td>Freezes at a static pose when reduce-motion is on; never the only feedback (word + dot remain).</td></tr>
+<tr><td>Done check → Ready</td><td>0.6 s</td><td>Brief check then Ready word.</td></tr>
+<tr><td>Attention auto-clear</td><td>6 s</td><td>Message clears without hiding word history.</td></tr>
+</tbody>
+</table>
+<p class='cap'>Reduce-motion: any <span class='mono'>prefers-reduced-motion</span> path (OS setting or in-app) stops all ambient loops and shortens functional fades to instant. Mockup honors it via CSS media query.</p>
+<h3>10B. State-pairing (never color alone)</h3>
+<ul>
+<li><strong>Word + shape + color</strong> for every status: Ready (✓/dot + word + ok), Listening (ring/bars + word + accent), Transcribing (dots + word + accent), Needs attention (err_fill dot + word + message + err).</li>
+<li>Toggles show <strong>On/Off words</strong>; active nav shows <strong>bar + bold + accent</strong>; heat shows <strong>numeric label + legend + ramp</strong>.</li>
+<li>One accent per view (brass). Status colors (ok/warn/err) are not accents; they never replace the accent for primary actions.</li>
+</ul>
+<h3>10C. Keyboard, DPI, window sizes</h3>
+<ul>
+<li><strong>Keyboard:</strong> Tab order rail → page chrome → cards → controls; Enter/Space activate; Esc closes Mini message; invisible buttons (rail items, icon buttons) pass EnableNav; focus ring 2 px accent visible on all stops (overshot 32 px hit boxes).</li>
+<li><strong>DPI:</strong> 100/150/200% verified at 960×640 default and 760×520 minimum. Scale applied once via <span class='mono'>style.FontScaleMain</span>; scoped fonts use PushFont(design px) so DPI multiplies once.</li>
+<li><strong>Sizes:</strong> Full default 960×640, min 760×520 (rail 220 + content min 540 keeps rows unclipped). Mini dot 22 px, message 250×48, margin 16 px.</li>
+<li><strong>Structure preserved:</strong> rail + pages, live-apply + Saved dwell, hide-on-close with tray Quit, Mini dot→pill states (§9). Third context (Scratchpad) keeps its own ImGui context and drag.</li>
+</ul>
+</section>
+
+<section id='contract'>
+<h2>11. Phase 2 contract (what to implement)</h2>
+<ul>
+<li>Single <span class='mono'>Palette</span> per theme with the exact §1 hex (0xRRGGBB). Keep field names; change only <span class='mono'>kLightPalette::accent/focus</span> to brass #7A5C25. Dark values unchanged as the named variant.</li>
+<li>Delete <span class='mono'>StudioPalette</span>; pages/widgets resolve through <span class='mono'>Palette</span>. <span class='mono'>HeatColor(level)</span> maps to §4B.</li>
+<li>Set <span class='mono'>metrics::rail_width = 220</span> (retire 208), <span class='mono'>radius_card = 10</span> single value, <span class='mono'>font_body_px = 14</span>, <span class='mono'>fade_in = 0.15</span>.</li>
+<li>Tests keep the ≥4.5 / ≥3.0 / hairline-exempt policy; update pins to §1/§2 values. Keep EK: every text pair incl. accent/ok/warn/err/brass/muted/on_accent ≥4.5; only border/bg + border/surface asserted &lt;3.0.</li>
+<li>Fonts: keep scaled default font; EB Garamond/Inter stay proposal pending bundling (no new files).</li>
+</ul>
+<p class='cap'>D0 checkpoint note: this Phase 1 reference is the approval artifact. Phase 2 must not invent hex; any change here needs a contrast recompute in §2 first.</p>
+</section>
+
 <footer>
-<p class='cap'>D0 checkpoint: this reference and the palette need approval before any ImGui code is written. The fonts named above are a proposal only; no font files are added to the repository without approval.</p>
+<p class='cap'>Phase 1 (Full Unify + Ivory Light primary) — mockup regen only. No src/ui or tests touched. Dark variant retained with identical struct fields.</p>
 </footer>
 </main>
 </body>
