@@ -8,6 +8,9 @@ evidence gathered so far.
    `src/ui/*.cpp` or the `_WIN32` branch of `main.cpp` records G3 as pending.
    Options: install zig here, or run `zig c++ -fsyntax-only -target
    x86_64-windows-gnu -Isrc <file>` on a machine that has it.
+   Redesign note (2026-11-08, `ops/ui-full-redesign` Ph2-ShimDel + Ph7 docs):
+   G3 remains pending here — no zig on the dev box; Ph7 changes are docs
+   only (no build needed).
 
 2. D8 model hashes: model URLs and SHA-256 values in `models.json` must be copied
    from the real model pages, never invented. Unverified entries ship with

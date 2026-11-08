@@ -349,3 +349,13 @@ Landed in the R1 change (see docs/PROGRESS.md):
 - GLFW 3.4 / ImGui v1.92.9b stay pinned; no new dependencies. Fonts and theme
   data are assets, not dependencies.
 - No multi-viewport; two contexts, two windows.
+
+## 7. Dual-palette retired — single Palette (Ph2-ShimDel, 2026-11-08)
+
+The redesigned branch `ops/ui-full-redesign` retires the dual-palette split
+(Hunter/Brass dark `kDarkPalette` + teal `kStudioPalette`): Ivory is the one
+primary identity via the single `Palette` in `src/ui/theme/ThemePalette.h`,
+with `studio_metrics` and `HeatColor` (brass ramp) moved verbatim into the
+same header (`lwf::ui` namespace, ImGui-free). The deprecated `StudioPalette`
+shim was deleted in `1e5651a`. Redesign guardrails R5-R9 are unchanged by
+this retirement.
