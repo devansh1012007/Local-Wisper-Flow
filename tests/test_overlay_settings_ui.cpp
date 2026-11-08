@@ -1016,7 +1016,7 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
                                          std::istreambuf_iterator<char>());
     CHECK(transforms_content.find("kCardRadius") == std::string::npos);
     CHECK(transforms_content.find("studio_metrics::radius_card * scale") != std::string::npos);
-    CHECK(transforms_content.find("hovered ? kStudioPalette.ink : kStudioPalette.teal_700") !=
+    CHECK(transforms_content.find("hovered ? kLightPalette.text : kLightPalette.accent") !=
           std::string::npos);
     CHECK(transforms_content.find("ImGui::IsItemFocused()") != std::string::npos);
     std::ifstream palette_h("src/ui/theme/StudioPalette.h");
@@ -1036,6 +1036,32 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
                                        std::istreambuf_iterator<char>());
     CHECK(insights_content.find("HeatPack") == std::string::npos);
     CHECK(insights_content.find("HeatColor(level)") != std::string::npos);
+}
+
+TEST_CASE("Phase 5 pages carry cursor Dummy compensation") {
+    // DECISION: each migrated page restores the cursor with
+    // "- ImGui::GetStyle().ItemSpacing.y" and then issues an empty
+    // Dummy(0,0) so the following row advance stays exact (see
+    // docs/PROGRESS.md IMG-001). Pin the pair so a later palette or
+    // cursor edit cannot silently drop the compensation.
+    const std::vector<std::string> page_sources = {
+        "src/ui/pages/DictionaryPage.cpp",
+        "src/ui/pages/SnippetsPage.cpp",
+        "src/ui/pages/InsightsPage.cpp",
+        "src/ui/pages/TransformsPage.cpp",
+        "src/ui/pages/ScratchpadPage.cpp",
+    };
+    for (const std::string& path : page_sources) {
+        std::ifstream file(path);
+        REQUIRE(static_cast<bool>(file));
+        INFO(path);
+        const std::string content((std::istreambuf_iterator<char>(file)),
+                                  std::istreambuf_iterator<char>());
+        const std::size_t spacing = content.find("- ImGui::GetStyle().ItemSpacing.y");
+        REQUIRE(spacing != std::string::npos);
+        const std::size_t dummy = content.find("Dummy(ImVec2(0.0f, 0.0f))", spacing);
+        CHECK(dummy != std::string::npos);
+    }
 }
 
 TEST_CASE("Phase 3 widgets use single Palette with Ivory default") {
