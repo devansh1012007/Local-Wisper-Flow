@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <future>
 #include <memory>
 #include <utility>
@@ -545,6 +546,26 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
     }
     if (full.size() < static_cast<std::size_t>(settings.min_tap_samples)) {
         sink_.OnStatus("tap ignored: recording too short");
+        FailToIdle(fsm_);
+        return;
+    }
+
+    // Silent-mic gate: distinguish "mic recorded nothing" from "mic heard
+    // sound but Whisper returned a blank filtered transcript" (both used to
+    // land as "nothing to inject"). Gate on raw PCM peak before any boost
+    // or transcription, logging only the level, never transcript text.
+    float pcm_peak = 0.0f;
+    for (float sample : full) {
+        pcm_peak = std::max(pcm_peak, std::fabs(sample));
+    }
+    if (pcm_peak < 0.005f) {
+        char peak_buf[64];
+        std::snprintf(peak_buf, sizeof(peak_buf), "%.5f", static_cast<double>(pcm_peak));
+        // INVARIANT: log the level only; raw/final transcript text must never
+        // enter the log ring (privacy gate).
+        lwf::Log::Info(std::string("audio: peak level ") + peak_buf +
+                       " < 0.005 — no sound recorded");
+        sink_.OnStatus("no sound recorded — check microphone");
         FailToIdle(fsm_);
         return;
     }

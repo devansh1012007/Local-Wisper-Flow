@@ -1092,6 +1092,31 @@ void MainWindow::DrawSpeechPage(float scale) {
     }
     EndCard(scale);
 
+    BeginCard("##card_mic_level", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Microphone level");
+        ImGui::PopFont();
+        ImGui::TextDisabled("Speak while holding the hotkey. The bar moves only while recording.");
+        const float level = audio_.AudioLevel();
+        const float clamped = level < 0.0f ? 0.0f : (level > 1.0f ? 1.0f : level);
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        const float meter_w = ImGui::GetContentRegionAvail().x;
+        const float meter_h = metrics::control_min_height * scale;
+        ImDrawList& draw = *ImGui::GetWindowDrawList();
+        draw.AddRectFilled(origin, ImVec2(origin.x + meter_w, origin.y + meter_h),
+                           Pack(kLightPalette.surface), metrics::radius_control * scale);
+        if (clamped > 0.0f) {
+            draw.AddRectFilled(origin,
+                               ImVec2(origin.x + meter_w * clamped, origin.y + meter_h),
+                               Pack(kLightPalette.text), metrics::radius_control * scale);
+        }
+        draw.AddRect(origin, ImVec2(origin.x + meter_w, origin.y + meter_h),
+                     Pack(kLightPalette.border), metrics::radius_control * scale);
+        ImGui::Dummy(ImVec2(meter_w, meter_h));
+    }
+    EndCard(scale);
+
     BeginCard("##card_lang", width, scale);
     {
         ImGui::PushFont(nullptr, metrics::font_card_title_px);

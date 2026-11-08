@@ -886,3 +886,42 @@ TEST_CASE("speech with trailing blank audio marker injects cleaned text") {
     CHECK(engine->LastText() == "hello");
     CHECK(h.fsm.GetCurrentState() == State::IDLE);
 }
+
+TEST_CASE("silent pcm yields no sound recorded instead of nothing to inject") {
+    Harness h;
+    h.vad.SetSpeech(true);
+    h.stt.transcript = "hello world";
+    auto engine = MakeEngine(h);
+
+    engine->PostEvent(EngineEventType::PttPress);
+    engine->ProcessOne(0);
+    const std::vector<float> silent(kChunkSamples, 0.0f);
+    for (int i = 0; i < 4; ++i) {
+        h.clock.Advance(30);
+        h.capture.FeedSamples(silent);
+    }
+    engine->PostEvent(EngineEventType::PttRelease);
+    engine->ProcessOne(0);
+
+    CHECK(HasStatus(h.sink.statuses, "no sound recorded"));
+    CHECK(HasStatus(h.sink.statuses, "check microphone"));
+    CHECK_FALSE(HasStatus(h.sink.statuses, "nothing to inject"));
+    CHECK(h.injector.InjectionCount() == 0);
+    CHECK(engine->LastText().empty());
+    CHECK(h.fsm.GetCurrentState() == State::IDLE);
+    CHECK(h.stt.TranscribeCount() == 0);
+}
+
+TEST_CASE("loud blank transcript yields nothing to inject without silent gate") {
+    Harness h;
+    h.stt.transcript = "[BLANK_AUDIO]";
+    auto engine = MakeEngine(h);
+    PressAndSpeak(h, *engine);
+
+    CHECK_FALSE(HasStatus(h.sink.statuses, "no sound recorded"));
+    CHECK(HasStatus(h.sink.statuses, "nothing to inject"));
+    CHECK(h.injector.InjectionCount() == 0);
+    CHECK(engine->LastText().empty());
+    CHECK(h.fsm.GetCurrentState() == State::IDLE);
+    CHECK(h.stt.TranscribeCount() == 1);
+}
