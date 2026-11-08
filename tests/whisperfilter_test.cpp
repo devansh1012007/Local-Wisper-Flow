@@ -24,10 +24,38 @@ TEST_CASE("real speech survives the hallucination filter") {
           "the song had (music) in the title");
 }
 
+TEST_CASE("token aware hallucination filter removes markers anywhere") {
+    CHECK(WhisperText::FilterHallucinations("[BLANK_AUDIO] [BLANK_AUDIO]") == "");
+    CHECK(WhisperText::FilterHallucinations("hello [BLANK_AUDIO]") == "hello");
+    CHECK(WhisperText::FilterHallucinations("[BLANK_AUDIO] hello") == "hello");
+    CHECK(WhisperText::FilterHallucinations("hello[BLANK_AUDIO]") == "hello");
+    CHECK(WhisperText::FilterHallucinations("(no speech) (no speech)") == "");
+    CHECK(WhisperText::FilterHallucinations("(music) hello world") == "hello world");
+    CHECK(WhisperText::IsOnlyHallucination("[BLANK_AUDIO] [BLANK_AUDIO]"));
+    CHECK_FALSE(WhisperText::IsOnlyHallucination("hello [BLANK_AUDIO]"));
+}
+
 TEST_CASE("hallucination detection is case insensitive and bracket tolerant") {
     CHECK(WhisperText::IsOnlyHallucination("[blank_audio]"));
     CHECK(WhisperText::IsOnlyHallucination("[Blank_Audio]"));
     CHECK_FALSE(WhisperText::IsOnlyHallucination("music"));
     CHECK_FALSE(WhisperText::IsOnlyHallucination("music was playing"));
     CHECK(WhisperText::IsOnlyHallucination("[Music]"));
+}
+
+TEST_CASE("multiline hallucination filter preserves newlines") {
+    CHECK(WhisperText::FilterHallucinations("hello\nworld") == "hello\nworld");
+    CHECK(WhisperText::FilterHallucinations("hello\n[BLANK_AUDIO]\nworld") == "hello\nworld");
+    CHECK(WhisperText::FilterHallucinations("line one\n\nline two") == "line one\n\nline two");
+    CHECK(WhisperText::FilterHallucinations("hello\r\nworld") == "hello\nworld");
+}
+
+TEST_CASE("soft markers tolerate trailing punctuation") {
+    CHECK(WhisperText::FilterHallucinations("(no speech).") == "");
+    CHECK(WhisperText::FilterHallucinations("hello (music),") == "hello");
+    CHECK(WhisperText::FilterHallucinations("(music), hello") == "hello");
+    CHECK(WhisperText::FilterHallucinations("the song had (music), in the title") ==
+          "the song had (music), in the title");
+    CHECK(WhisperText::FilterHallucinations("...,") == "");
+    CHECK(WhisperText::FilterHallucinations("hello ...,") == "hello");
 }
