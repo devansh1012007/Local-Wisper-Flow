@@ -82,6 +82,7 @@ set(LWF_CORE_SOURCES
     src/stt/cloud/MuseResponse.cpp
     src/stt/cloud/MuseProvider.cpp
     src/llm/OpenRouterProvider.cpp
+    src/llm/OpenRouterModels.cpp
     src/core/DictationCleanup.cpp
     src/core/DictationEngine.cpp
     src/core/CrashReporter.cpp
