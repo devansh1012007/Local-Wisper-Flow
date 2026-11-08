@@ -31,7 +31,7 @@ lwf::TransformDiff EngineDiffSource::TransformDiffSnapshot() const {
 namespace {
 
 using lwf::ui::Color;
-using lwf::ui::kStudioPalette;
+using lwf::ui::kLightPalette;
 using lwf::ui::Pack;
 
 constexpr float kCardPadding = 20.0f;
@@ -122,17 +122,17 @@ bool TextLink(const char* id, const char* label, float scale) {
     const bool focused = ImGui::IsItemFocused();
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-    draw.AddText(pos, Pack(hovered ? kStudioPalette.ink : kStudioPalette.teal_700), label);
+    draw.AddText(pos, Pack(hovered ? kLightPalette.text : kLightPalette.accent), label);
     ImGui::PopFont();
     if (focused) {
         draw.AddRect(ImVec2(pos.x - 2.0f * scale, pos.y - 2.0f * scale),
                      ImVec2(pos.x + text_size.x + 2.0f * scale, pos.y + text_size.y + 2.0f * scale),
-                     Pack(kStudioPalette.teal_700), 2.0f * scale, 0, 2.0f * scale);
+                     Pack(kLightPalette.accent), 2.0f * scale, 0, 2.0f * scale);
     }
     if (hovered) {
         const float y = pos.y + text_size.y + kLinkUnderlineGap * scale;
         draw.AddLine(ImVec2(pos.x, y), ImVec2(pos.x + text_size.x, y),
-                     Pack(kStudioPalette.teal_500), 1.0f * scale);
+                     Pack(kLightPalette.accent), 1.0f * scale);
     }
     return pressed;
 }
@@ -140,10 +140,10 @@ bool TextLink(const char* id, const char* label, float scale) {
 void DrawBannerBox(const ImVec2& pos, float width, float height, float scale) {
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     const ImVec2 bottom(pos.x + width, pos.y + height);
-    draw.AddRectFilledMultiColor(pos, bottom, Pack(kStudioPalette.banner_cream),
-                                 Pack(kStudioPalette.teal_100), Pack(kStudioPalette.teal_100),
-                                 Pack(kStudioPalette.banner_cream));
-    draw.AddRect(pos, bottom, Pack(kStudioPalette.border), studio_metrics::radius_banner * scale,
+    draw.AddRectFilledMultiColor(pos, bottom, Pack(kLightPalette.surface),
+                                 Pack(kLightPalette.border), Pack(kLightPalette.border),
+                                 Pack(kLightPalette.surface));
+    draw.AddRect(pos, bottom, Pack(kLightPalette.border), studio_metrics::radius_banner * scale,
                  0, 1.0f * scale);
 }
 
@@ -227,7 +227,7 @@ void TransformsPage::DrawBanner(float scale) {
         DrawBannerBox(pos, avail, h, scale);
         ImGui::SetCursorScreenPos(ImVec2(pos.x + pad, pos.y + (h - 18.0f * scale) * 0.5f));
         ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-        ImGui::TextColored(Color(kStudioPalette.muted), "%s", transforms::kOptInOffBanner);
+        ImGui::TextColored(Color(kLightPalette.muted), "%s", transforms::kOptInOffBanner);
         ImGui::PopFont();
         ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + h + 16.0f * scale));
         return;
@@ -349,7 +349,7 @@ void TransformsPage::DrawGrid(float scale) {
     if (rows < 1) {
         rows = 1;
     }
-    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + rows * (h + gap)));
+    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + rows * (h + gap) - ImGui::GetStyle().ItemSpacing.y));
     ImGui::Dummy(ImVec2(0.0f, 0.0f));
 }
 
@@ -357,7 +357,7 @@ void TransformsPage::DrawCard(const TransformStore::Entry& entry, float width, f
                               float scale) {
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const std::string child_id = "transforms_card_" + std::to_string(entry.slot);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kStudioPalette.card_bg_white));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kLightPalette.surface));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, studio_metrics::radius_card * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
                         ImVec2(kCardPadding * scale, kCardPadding * scale));
@@ -370,7 +370,7 @@ void TransformsPage::DrawCard(const TransformStore::Entry& entry, float width, f
     const std::string subtitle = transforms::CardDescription(entry);
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - kCardPadding * scale);
-    ImGui::TextColored(Color(kStudioPalette.muted), "%s", subtitle.c_str());
+    ImGui::TextColored(Color(kLightPalette.muted), "%s", subtitle.c_str());
     ImGui::PopTextWrapPos();
     ImGui::PopFont();
     ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
@@ -379,7 +379,7 @@ void TransformsPage::DrawCard(const TransformStore::Entry& entry, float width, f
     if (store_.Conflicted(entry.slot)) {
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
         ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-        ImGui::TextColored(Color(kStudioPalette.muted), "%s", "Shortcut conflict");
+        ImGui::TextColored(Color(kLightPalette.muted), "%s", "Shortcut conflict");
         ImGui::PopFont();
     }
     ImGui::EndChild();
@@ -393,13 +393,13 @@ void TransformsPage::DrawCard(const TransformStore::Entry& entry, float width, f
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         draw.AddRect(ImVec2(pos.x - 2.0f * scale, pos.y - 2.0f * scale),
                      ImVec2(pos.x + width + 2.0f * scale, pos.y + height + 2.0f * scale),
-                     Pack(kStudioPalette.teal_700), studio_metrics::radius_card * scale, 0, 2.0f * scale);
+                     Pack(kLightPalette.accent), studio_metrics::radius_card * scale, 0, 2.0f * scale);
     }
 }
 
 void TransformsPage::DrawCreateCard(float width, float height, float scale) {
     const ImVec2 pos = ImGui::GetCursorScreenPos();
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kStudioPalette.card_bg_white));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kLightPalette.surface));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, studio_metrics::radius_card * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
                         ImVec2(kCardPadding * scale, kCardPadding * scale));
@@ -413,7 +413,7 @@ void TransformsPage::DrawCreateCard(float width, float height, float scale) {
     ImGui::TextUnformatted("Create your own");
     ImGui::PopFont();
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-    ImGui::TextColored(Color(kStudioPalette.muted), "%s", "Upload your own prompt");
+    ImGui::TextColored(Color(kLightPalette.muted), "%s", "Upload your own prompt");
     ImGui::PopFont();
     ImGui::EndChild();
     ImGui::SetCursorScreenPos(pos);
@@ -484,7 +484,7 @@ void TransformsPage::DrawEditor(float scale) {
         const std::string counter =
             std::to_string(transforms::CountCodePoints(edit_prompt_)) + " / " +
             std::to_string(TransformStore::kMaxPromptChars);
-        ImGui::TextColored(Color(kStudioPalette.muted), "%s", counter.c_str());
+        ImGui::TextColored(Color(kLightPalette.muted), "%s", counter.c_str());
         ImGui::PopFont();
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
         ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
@@ -514,11 +514,12 @@ void TransformsPage::DrawEditor(float scale) {
         if (recording_) {
             ImGui::BeginDisabled();
         }
+        // FLAG: edit_error renders muted (not err); err token is a follow-up, out of scope here.
         if (!edit_error_.empty()) {
             ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
             ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
             ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 24.0f * scale);
-            ImGui::TextColored(Color(kStudioPalette.muted), "%s", edit_error_.c_str());
+            ImGui::TextColored(Color(kLightPalette.muted), "%s", edit_error_.c_str());
             ImGui::PopTextWrapPos();
             ImGui::PopFont();
         }
@@ -597,7 +598,7 @@ void TransformsPage::DrawDiff(float scale) {
         ImGui::TextUnformatted("Transform result");
         ImGui::PopFont();
         ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-        ImGui::TextColored(Color(kStudioPalette.muted), "%s",
+        ImGui::TextColored(Color(kLightPalette.muted), "%s",
                            CurrentChangeLabel().c_str());
         ImGui::PopFont();
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
@@ -631,19 +632,19 @@ void TransformsPage::DrawDiff(float scale) {
                     draw.AddRectFilled(
                         ImVec2(cursor_x, cursor_y),
                         ImVec2(cursor_x + token_size.x, cursor_y + token_size.y),
-                        Pack(kStudioPalette.teal_100), 4.0f * scale);
+                        Pack(kLightPalette.border), 4.0f * scale);
                 }
                 const std::uint32_t text_color =
-                    token.op == lwf::DiffOp::Insert ? kStudioPalette.teal_700
-                    : (token.op == lwf::DiffOp::Delete ? kStudioPalette.muted
-                                                       : kStudioPalette.ink);
+                    token.op == lwf::DiffOp::Insert ? kLightPalette.accent
+                    : (token.op == lwf::DiffOp::Delete ? kLightPalette.muted
+                                                       : kLightPalette.text);
                 draw.AddText(ImVec2(cursor_x, cursor_y), Pack(text_color),
                              token.text.c_str());
                 if (token.op == lwf::DiffOp::Delete) {
                     const float mid = cursor_y + token_size.y * 0.5f;
                     draw.AddLine(ImVec2(cursor_x, mid),
                                  ImVec2(cursor_x + token_size.x, mid),
-                                 Pack(kStudioPalette.muted), 1.0f * scale);
+                                 Pack(kLightPalette.muted), 1.0f * scale);
                 }
                 cursor_x += token_size.x;
                 line_fresh = false;
