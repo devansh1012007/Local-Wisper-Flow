@@ -1272,6 +1272,44 @@ void MainWindow::DrawSpeechPage(float scale) {
     }
     EndCard(scale);
 
+    BeginCard("##card_mic_device", width, scale);
+    {
+        ImGui::PushFont(nullptr, metrics::font_card_title_px);
+        ImGui::TextUnformatted("Microphone");
+        ImGui::PopFont();
+        if (!mic_devices_loaded_) {
+            // DECISION: enumeration inits a ma_context, so it runs once per
+            // app run on this first pass and is cached; never per frame.
+            mic_devices_ = MiniaudioCapture::ListCaptureDevices();
+            mic_devices_loaded_ = true;
+        }
+        // Entry 0 is always "System default" (stored value ""), the cached
+        // device names follow in enumeration order.
+        const int selected_index =
+            SettingsUiModel::MatchMicDeviceIndex(mic_devices_, settings_.GetString("mic_device"));
+        const char* preview = selected_index == 0 ? "System default"
+                                                  : mic_devices_[selected_index - 1].c_str();
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::BeginCombo("##mic_pick", preview)) {
+            if (ImGui::Selectable("System default", selected_index == 0)) {
+                settings_.SetString("mic_device", "");
+                restart_needed_ = true;
+                ApplyAndSave();
+            }
+            for (std::size_t i = 0; i < mic_devices_.size(); ++i) {
+                if (ImGui::Selectable(mic_devices_[i].c_str(),
+                                      selected_index == static_cast<int>(i) + 1)) {
+                    settings_.SetString("mic_device", mic_devices_[i]);
+                    restart_needed_ = true;
+                    ApplyAndSave();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::TextDisabled("Changes take effect after you restart the app.");
+    }
+    EndCard(scale);
+
     BeginCard("##card_mic_level", width, scale);
     {
         ImGui::PushFont(nullptr, metrics::font_card_title_px);
@@ -1729,9 +1767,6 @@ void MainWindow::DrawGeneralPage(float scale) {
             ApplyAndSave();
         }
         DoubleRow("sound_volume", "##sound_volume", 0.0f, 1.0f, "volume %.2f");
-        ImGui::TextUnformatted("Microphone");
-        StringFieldRow("mic_device", mic_device_field_, "##mic_device", true);
-        ImGui::TextDisabled("Empty means the system default device. Applies after restart.");
     }
     EndCard(scale);
 

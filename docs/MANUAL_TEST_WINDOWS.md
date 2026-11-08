@@ -25,6 +25,7 @@ until a PASS box is filled. Add one section per task id with exact steps.
 | E | E3 crash handling | crash file, one-time notice, About version |
 | F | F4 installer | per-user install, tasks, uninstall data choice |
 | S | S4-S8 cloud STT | consent UI, gating, fallback, secrets, cancellation, three providers |
+| MIC | MIC-003 microphone picker | Settings > Speech device list, restart banner, level meter per device |
 
 Portable logic (FSM tables, tracker, pipeline, stores, streaming fallback,
 resilience/chaos, privacy) is unit-tested on Linux and covered by ctest; the
@@ -381,3 +382,30 @@ Do them on a Windows machine at 100%, 125% and 150% DPI.
 ### R2-d: DPI scaling
 1. Repeat R and R2 at 100%, 125%, 150% DPI. No double-scaled text, no
    layout drift after moving the window between monitors with different DPI.
+
+## MIC-003: microphone picker (Settings > Speech)
+Device selection UI (branch `ops/ui-full-redesign`, Task B). Not claimed as
+verified until a PASS box is filled.
+
+1. Tray > Settings... > Speech: a `Microphone` card sits between `Model` and
+   `Microphone level`. Its combo lists `System default` first, then every
+   capture device the machine has (a machine with no capture devices must show
+   only `System default` - no crash, no empty popup).
+2. Pick a named device: the `Saved` label flashes and the restart banner
+   appears (this setting is not hot-applied).
+3. Quit from the tray and relaunch. Hold the hotkey and speak: the level meter
+   moves, the log line reads `MiniaudioCapture: active capture device: <name>`,
+   and the transcript lands where the cursor is.
+4. Repeat steps 2-3 for each listed device in turn: the log names each chosen
+   device after its restart, and the level meter responds while speaking into
+   it.
+5. Pick `System default`, restart: the log reports the system default capture
+   device and the meter responds on the OS default input.
+6. Stale-name resilience: put a name that no longer exists in
+   `%APPDATA%\LocalWisperFlow\config.json` -> `mic_device`, restart: the app
+   still starts, the combo previews `System default`, and the log says the name
+   was not found and the system default is used.
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```

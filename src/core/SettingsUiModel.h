@@ -20,6 +20,18 @@ std::string ValidateInt(const std::string& key, int value, int min_value, int ma
 std::string ValidateModelPath(const std::string& path);
 std::string ValidateLanguage(const std::string& code);
 
+// Microphone picker index contract (Settings > Speech). The combo entry list
+// is built as entry 0 = "System default" (stored value "") followed by the
+// capture-device display names in enumeration order, so this returns the
+// 0-based index into THAT combined list:
+//   selected == ""            -> 0 (System default)
+//   selected == names[i]      -> i + 1
+//   unknown / stale name      -> 0 (falls back to System default)
+//   empty list + empty select -> 0
+// The caller derives the label from the index: index 0 renders the fixed
+// "System default" string, otherwise names[index - 1].
+int MatchMicDeviceIndex(const std::vector<std::string>& names, const std::string& selected);
+
 // API key entry helpers (Settings UI). Pure logic only: trim, source
 // derivation from live store/env state, and user-facing status labels.
 // Key material never crosses these functions; callers keep the secret in

@@ -1571,3 +1571,52 @@ TEST_CASE("api key rows use masked input and named removal") {
     }
     CHECK_FALSE(schema_has_api_key);
 }
+
+TEST_CASE("microphone picker index maps stored value to the combo entry") {
+    // Pure index contract for the Speech-page mic picker: entry 0 is always
+    // "System default" (stored value ""), the enumerated device names are
+    // offset by one, and a stale/unknown stored name falls back to entry 0.
+    const std::vector<std::string> none;
+    CHECK(SettingsUiModel::MatchMicDeviceIndex(none, "") == 0);
+    CHECK(SettingsUiModel::MatchMicDeviceIndex(none, "Old mic") == 0);
+    const std::vector<std::string> names = {"Mic A", "Mic B", "Mic C"};
+    CHECK(SettingsUiModel::MatchMicDeviceIndex(names, "") == 0);
+    CHECK(SettingsUiModel::MatchMicDeviceIndex(names, "Mic A") == 1);
+    CHECK(SettingsUiModel::MatchMicDeviceIndex(names, "Mic B") == 2);
+    CHECK(SettingsUiModel::MatchMicDeviceIndex(names, "Mic C") == 3);
+    CHECK(SettingsUiModel::MatchMicDeviceIndex(names, "Removed mic") == 0);
+    CHECK(SettingsUiModel::MatchMicDeviceIndex(names, "mic a") == 0);
+}
+
+TEST_CASE("speech page microphone picker replaces the dead free-text row") {
+    // lwf_tests does not link ImGui, so the picker wiring is guarded
+    // lexically: the card sits between the model and level cards on the
+    // Speech page, selection persists through mic_device with the restart
+    // banner (schema hot_apply=false), the device list is enumerated once
+    // per run, and the removed General free-text row stays gone.
+    const std::string content = ReadSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(content.empty());
+    CHECK(content.find("##card_mic_device") != std::string::npos);
+    CHECK(content.find("##mic_pick") != std::string::npos);
+    CHECK(content.find("ListCaptureDevices()") != std::string::npos);
+    CHECK(content.find("MatchMicDeviceIndex") != std::string::npos);
+    CHECK(content.find("mic_devices_loaded_ = true") != std::string::npos);
+    const std::size_t model_card = content.find("BeginCard(\"##card_model\"");
+    REQUIRE(model_card != std::string::npos);
+    const std::size_t mic_card = content.find("##card_mic_device", model_card);
+    REQUIRE(mic_card != std::string::npos);
+    const std::size_t level_card = content.find("##card_mic_level", mic_card);
+    REQUIRE(level_card != std::string::npos);
+    CHECK(mic_card < level_card);
+    // Persist + restart banner ordering, mirroring the ##llm_provider pin.
+    const std::size_t mic_set = content.find("SetString(\"mic_device\"");
+    REQUIRE(mic_set != std::string::npos);
+    const std::size_t mic_apply = content.find("ApplyAndSave()", mic_set);
+    REQUIRE(mic_apply != std::string::npos);
+    CHECK(content.find("restart_needed_ = true", mic_set) < mic_apply);
+    // Dead plumbing removed: no free-text row and no buffer member.
+    CHECK(content.find("StringFieldRow(\"mic_device\"") == std::string::npos);
+    const std::string header = ReadSource("src/ui/MainWindow.h");
+    REQUIRE_FALSE(header.empty());
+    CHECK(header.find("mic_device_field_") == std::string::npos);
+}

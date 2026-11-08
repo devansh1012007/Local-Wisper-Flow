@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <vector>
 
 struct GLFWwindow;
 struct ImGuiContext;
@@ -263,5 +264,10 @@ private:
     TextField remote_endpoint_field_;
     TextField stt_language_field_;
     TextField cleanup_language_policy_field_;
-    TextField mic_device_field_;
+    // Microphone picker (Settings > Speech): capture-device display names
+    // enumerated ONCE per app run on the first DrawSpeechPage pass.
+    // INVARIANT: ListCaptureDevices() inits a ma_context, so it must never be
+    // called per frame; mic_devices_loaded_ latches the one enumeration.
+    std::vector<std::string> mic_devices_;
+    bool mic_devices_loaded_ = false;
 };

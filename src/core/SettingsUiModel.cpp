@@ -63,6 +63,21 @@ std::string ValidateLanguage(const std::string& code) {
     return {};
 }
 
+int MatchMicDeviceIndex(const std::vector<std::string>& names, const std::string& selected) {
+    // INVARIANT: entry 0 of the picker is always "System default" (stored
+    // value ""), so a stored value that is empty or no longer in the list
+    // resolves to 0 and the caller shows the default entry.
+    if (selected.empty()) {
+        return 0;
+    }
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        if (names[i] == selected) {
+            return static_cast<int>(i + 1);
+        }
+    }
+    return 0;
+}
+
 ApiKeySource ApiKeySourceFor(bool has_saved, bool has_env) {
     if (has_saved) {
         return ApiKeySource::Saved;
