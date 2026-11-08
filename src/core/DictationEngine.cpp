@@ -12,6 +12,7 @@
 #include "core/StreamingDictation.h"
 #include "core/TextPipeline.h"
 #include "core/TransformStore.h"
+#include "core/WhisperText.h"
 
 #include <algorithm>
 #include <chrono>
@@ -589,9 +590,16 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
         fsm_.TriggerEvent(Trigger::SST_COMPLETE);
     }
 
+    raw = WhisperText::FilterHallucinations(raw);
+
     if (in_command_mode_.load()) {
         in_command_mode_.store(false);
         if (command_ == nullptr) {
+            FailToIdle(fsm_);
+            return;
+        }
+        if (raw.empty()) {
+            sink_.OnStatus("nothing to inject");
             FailToIdle(fsm_);
             return;
         }
@@ -611,7 +619,7 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
     }
 
     const ProcessResult result = pipeline_.ProcessWithStats(raw);
-    const std::string final_text = result.text;
+    const std::string final_text = WhisperText::FilterHallucinations(result.text);
 
     if (cancel_requested_.load()) {
         sink_.OnStatus("cancelled during cleanup, result discarded");
@@ -691,6 +699,7 @@ void DictationEngine::HandlePasteLast() {
         std::lock_guard<std::mutex> lock(text_mutex_);
         text = last_text_;
     }
+    text = WhisperText::FilterHallucinations(text);
     if (text.empty()) {
         sink_.OnStatus("nothing to paste");
         return;

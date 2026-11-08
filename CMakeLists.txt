@@ -116,6 +116,7 @@ set(LWF_CORE_SOURCES
     src/core/TransformManager.cpp
     src/core/TransformStore.cpp
     src/core/UiBus.cpp
+    src/core/WhisperText.cpp
     src/audio/TonePlayer.cpp
 )
 
@@ -192,6 +193,7 @@ add_executable(lwf_tests
     tests/test_uibus.cpp
     tests/test_apikeystore.cpp
     tests/test_scratchpad_target.cpp
+    tests/whisperfilter_test.cpp
 )
 target_include_directories(lwf_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(lwf_tests PRIVATE LWF_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
