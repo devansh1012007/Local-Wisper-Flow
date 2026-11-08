@@ -87,8 +87,9 @@ values the re-landing originally shipped: request path `/v1/asr/recognize` →
 `/stt/v3`, multipart field `language` → `language_code` (required,
 `indic-auto` valid for v3.0), multipart field `audio` → `audio_file`
 (`audio.wav`, wav ext ok). The rest matches the docs: host `api.vachana.ai`,
-header `X-API-Key-ID` (required), `model` `prisma-v3.0`, `keyterms` string
-(JSON-array or comma-separated, v3.0 only). Success 200 is
+header `X-API-Key-ID` (required), `model` `prisma-v3.0`, `keyterms` sent as
+a single JSON-array string field matching the docs-example form
+(`["खाता","HDFC Bank"]`, checked 2026-11-08, v3.0 only). Success 200 is
 `{"success": true, "request_id": ..., "transcript": "...", "model":
 "prisma-v3.0", "detected_language_code": "hi-IN", "processing_time": ...}`;
 audio < 0.1 s returns success with an empty transcript. Errors come in three

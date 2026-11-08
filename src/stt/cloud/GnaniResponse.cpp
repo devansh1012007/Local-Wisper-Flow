@@ -71,8 +71,14 @@ std::string ExtractErrorDetail(const nlohmann::json& json) {
                 if (!message.empty()) {
                     return message;
                 }
-                return type;
+                if (!type.empty()) {
+                    return type;
+                }
             }
+            // DECISION: bounded fallback so a validation array without a
+            // parseable msg/type still yields a non-empty detail (never dump
+            // the raw array).
+            return "validation error (422)";
         }
     }
     for (const char* key : {"message", "detail"}) {

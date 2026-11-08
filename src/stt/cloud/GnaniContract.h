@@ -5,6 +5,7 @@
 namespace GnaniContract {
 
 // Docs checked 2026-11-08 against https://docs.gnani.ai/api/STT/speech-to-text.md (verified from docs, NOT yet against live API)
+// keyterms is sent as a single JSON-array string field matching the docs-example form (checked 2026-11-08).
 constexpr const char* kHost = "api.vachana.ai";
 constexpr const char* kPath = "/stt/v3";
 constexpr const char* kApiKeyHeader = "X-API-Key-ID";

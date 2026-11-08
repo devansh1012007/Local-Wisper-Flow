@@ -15,10 +15,16 @@ namespace {
 constexpr std::size_t kMaxDetailLogChars = 200;
 
 std::string TruncateDetail(const std::string& detail) {
-    if (detail.size() > kMaxDetailLogChars) {
-        return detail.substr(0, kMaxDetailLogChars);
+    // INVARIANT: byte limit is 200 but never split a multi-byte UTF-8
+    // sequence; stored attempt stats stay untruncated, this is display copy.
+    if (detail.size() <= kMaxDetailLogChars) {
+        return detail;
     }
-    return detail;
+    std::size_t cut = kMaxDetailLogChars;
+    while (cut > 0 && (static_cast<unsigned char>(detail[cut]) & 0xC0) == 0x80) {
+        --cut;
+    }
+    return detail.substr(0, cut);
 }
 
 void AppendText(std::string& target, const std::string& addition) {

@@ -3,6 +3,8 @@
 #include "stt/cloud/GnaniProvider.h"
 #include "stt/cloud/GnaniContract.h"
 
+#include <nlohmann/json.hpp>
+
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -62,6 +64,30 @@ GnaniProviderSettings Settings() {
 
 std::vector<float> ConstantAudio(std::size_t samples) {
     return std::vector<float>(samples, 0.3f);
+}
+
+std::size_t CountOccurrences(const std::string& haystack, const std::string& needle) {
+    std::size_t count = 0;
+    std::size_t pos = 0;
+    while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+        ++count;
+        pos += needle.size();
+    }
+    return count;
+}
+
+std::string ExtractMultipartField(const std::string& body, const std::string& name) {
+    const std::string header = "name=\"" + name + "\"\r\n\r\n";
+    const std::size_t at = body.find(header);
+    if (at == std::string::npos) {
+        return {};
+    }
+    const std::size_t value_start = at + header.size();
+    const std::size_t value_end = body.find("\r\n", value_start);
+    if (value_end == std::string::npos) {
+        return {};
+    }
+    return body.substr(value_start, value_end - value_start);
 }
 
 }  // namespace
@@ -269,4 +295,37 @@ TEST_CASE("provider surfaces new error envelope type and message") {
     REQUIRE(result.attempts.size() == 1);
     CHECK(result.attempts[0].detail.find("INVALID_MODEL") != std::string::npos);
     CHECK(result.attempts[0].detail.find("Invalid model") != std::string::npos);
+}
+
+TEST_CASE("provider sends keyterms as single JSON array field") {
+    FakeTransport transport({ScriptedResponse()});
+    GnaniProviderSettings settings = Settings();
+    settings.keyterms = {"खाता", "HDFC Bank"};
+    GnaniProvider provider(transport, settings);
+    provider.Transcribe(ConstantAudio(1600), {});
+    REQUIRE(transport.Requests().size() == 1);
+    const std::string body(transport.Requests()[0].body.begin(),
+                           transport.Requests()[0].body.end());
+    CHECK(CountOccurrences(body, "name=\"keyterms\"") == 1);
+    const std::string value = ExtractMultipartField(body, "keyterms");
+    REQUIRE(!value.empty());
+    const nlohmann::json parsed = nlohmann::json::parse(value, nullptr, false);
+    REQUIRE(!parsed.is_discarded());
+    REQUIRE(parsed.is_array());
+    REQUIRE(parsed.size() == 2);
+    CHECK(parsed.at(0).get<std::string>() == "खाता");
+    CHECK(parsed.at(1).get<std::string>() == "HDFC Bank");
+}
+
+TEST_CASE("provider surfaces validation array without msg or type") {
+    FakeTransport transport({ScriptedResponse{422,
+        R"({"detail":[{"loc":["body","language_code"],"input":null}]})",
+        "r422-empty"}});
+    GnaniProvider provider(transport, Settings());
+    const SttTranscription result = provider.Transcribe(ConstantAudio(16000), {});
+    CHECK(!result.success);
+    CHECK(result.error == SttErrorCategory::InvalidRequest);
+    REQUIRE(result.attempts.size() == 1);
+    CHECK(!result.attempts[0].detail.empty());
+    CHECK(result.attempts[0].detail.find("validation error") != std::string::npos);
 }
