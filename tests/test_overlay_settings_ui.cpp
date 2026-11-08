@@ -1614,6 +1614,70 @@ TEST_CASE("speech page microphone picker replaces the dead free-text row") {
     const std::size_t mic_apply = content.find("ApplyAndSave()", mic_set);
     REQUIRE(mic_apply != std::string::npos);
     CHECK(content.find("restart_needed_ = true", mic_set) < mic_apply);
+    // Strengthened: EVERY select path of the ##mic_pick combo ("System
+    // default" with value "" plus the named-device loop) must set, flag the
+    // restart, then save. A mutation dropping `restart_needed_ = true` from
+    // one path must go red, so iterate all occurrences and pin the
+    // set -> restart -> apply order per path, close enough that the flag and
+    // the save cannot be picked up from a later, unrelated settings card.
+    const auto count_occurrences = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    const std::string mic_set_needle = "SetString(\"mic_device\"";
+    const std::size_t mic_paths = count_occurrences(content, mic_set_needle);
+    REQUIRE(mic_paths >= 2);  // System default + named device.
+    std::size_t path_set = content.find(mic_set_needle);
+    for (std::size_t path = 0; path < mic_paths; ++path) {
+        REQUIRE(path_set != std::string::npos);
+        const std::size_t path_restart = content.find("restart_needed_ = true", path_set);
+        REQUIRE(path_restart != std::string::npos);
+        REQUIRE(path_restart - path_set < 200);  // Same select branch.
+        const std::size_t path_apply = content.find("ApplyAndSave()", path_restart);
+        REQUIRE(path_apply != std::string::npos);
+        REQUIRE(path_apply - path_restart < 200);  // Same select branch.
+        path_set = content.find(mic_set_needle, path_set + mic_set_needle.size());
+    }
+    // Lazy-latch pin: the literal `mic_devices_loaded_ = true` alone is not
+    // enough — a mutation enumerating every frame could keep it. Enumeration
+    // must sit directly inside the `if (!mic_devices_loaded_)` guard (only
+    // the DECISION comment between guard and call), before the latch is set,
+    // with exactly one call site in the translation unit.
+    CHECK(count_occurrences(content, "ListCaptureDevices()") == 1);
+    const std::size_t latch_guard = content.find("if (!mic_devices_loaded_)");
+    REQUIRE(latch_guard != std::string::npos);
+    const std::size_t list_call = content.find("ListCaptureDevices()", latch_guard);
+    REQUIRE(list_call != std::string::npos);
+    const std::size_t prev_newline = content.rfind('\n', list_call);
+    REQUIRE(prev_newline != std::string::npos);
+    const std::size_t call_line_start = prev_newline + 1;
+    const std::size_t guard_line_end = content.find('\n', latch_guard);
+    REQUIRE(guard_line_end != std::string::npos);
+    REQUIRE(guard_line_end < call_line_start);
+    // Everything between the guard line and the call line must be comments:
+    // closing the latch first and enumerating after it breaks the pin.
+    bool comments_only_between = true;
+    for (std::size_t scan = guard_line_end + 1; scan < call_line_start;) {
+        const std::size_t eol = content.find('\n', scan);
+        const std::size_t line_end =
+            (eol == std::string::npos || eol > call_line_start) ? call_line_start : eol;
+        const std::string line = content.substr(scan, line_end - scan);
+        const std::size_t first = line.find_first_not_of(" \t\r");
+        if (first != std::string::npos && line.compare(first, 2, "//") != 0) {
+            comments_only_between = false;
+            break;
+        }
+        scan = line_end + 1;
+    }
+    CHECK(comments_only_between);
+    const std::size_t latch_set = content.find("mic_devices_loaded_ = true", list_call);
+    REQUIRE(latch_set != std::string::npos);
+    CHECK(latch_set - list_call < 300);
     // Dead plumbing removed: no free-text row and no buffer member.
     CHECK(content.find("StringFieldRow(\"mic_device\"") == std::string::npos);
     const std::string header = ReadSource("src/ui/MainWindow.h");
