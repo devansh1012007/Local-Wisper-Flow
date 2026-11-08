@@ -372,7 +372,6 @@ if(LWF_BUILD_FULL)
             src/ui/pages/TransformsPage.cpp
             src/ui/pages/SnippetsPage.cpp
             src/ui/theme/ThemePalette.cpp
-            src/ui/theme/StudioPalette.cpp
             src/ui/widgets/Buttons.cpp
             src/ui/widgets/Display.cpp
             src/ui/widgets/Overlays.cpp

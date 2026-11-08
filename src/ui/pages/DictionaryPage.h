@@ -2,7 +2,7 @@
 
 #include "core/DictionaryStore.h"
 #include "core/PersonalDictionary.h"
-#include "ui/theme/StudioPalette.h"
+#include "ui/theme/ThemePalette.h"
 #include "ui/widgets/Overlays.h"
 
 #include <algorithm>

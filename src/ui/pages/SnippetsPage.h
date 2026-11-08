@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/SnippetStore.h"
-#include "ui/theme/StudioPalette.h"
+#include "ui/theme/ThemePalette.h"
 #include "ui/widgets/Overlays.h"
 
 #include <algorithm>

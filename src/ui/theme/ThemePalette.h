@@ -31,6 +31,7 @@
 
 #include <cstdint>
 #include <cmath>
+#include <string>
 
 namespace lwf::ui {
 
@@ -171,6 +172,122 @@ inline double ContrastRatio(std::uint32_t a, std::uint32_t b) {
     const double hi = la > lb ? la : lb;
     const double lo = la > lb ? lb : la;
     return (hi + 0.05) / (lo + 0.05);
+}
+
+// Studio rhythm/typography tokens, migrated verbatim from the deleted
+// shim header (single-palette unify; names kept so call sites and the
+// `studio_metrics::` source pins stay valid — header stays ImGui-free).
+namespace studio_metrics {
+
+inline constexpr float radius_banner = 16.0f;
+// radius_card is ONE value: 10 (metrics::radius_card). The old studio 12
+// (screenshot-derived) is collapsed — the mockup has no 12 card radius and
+// a shadow value next to the canonical 10 only drifted call sites.
+inline constexpr float radius_card = 10.0f;
+inline constexpr float radius_row = 10.0f;
+inline constexpr float radius_input = 10.0f;
+inline constexpr float radius_button = 8.0f;
+inline constexpr float radius_chip = 6.0f;
+inline constexpr float radius_pill = 999.0f;
+
+inline constexpr float page_padding = 32.0f;
+inline constexpr float gap = 24.0f;
+inline constexpr float row_height = 52.0f;
+inline constexpr float hit_size = 32.0f;
+
+// Wave 2 T-003 additions: screenshot-derived studio rhythm (NOT mockup
+// tokens; do not treat as D0 content in a future mockup regen). Gaps are
+// spelled by role, not scale letters, so a wrong-namespace swap stays
+// visible. gap_inline (8) equals metrics::space_s and gap_block (16)
+// equals metrics::space_m by grid coincidence; the studio names mark the
+// studio role. No studio twin exists for the 4px hairline gap, so the one
+// metrics::space_xs site on a studio page intentionally keeps borrowing
+// that grid value; do not edit either side expecting the other not to move.
+inline constexpr float gap_micro = 6.0f;    // legend cells, innermost spacing
+inline constexpr float gap_inline = 8.0f;   // control-to-control inline gap
+inline constexpr float gap_compact = 10.0f; // header-cluster glue, mini rows
+inline constexpr float gap_section = 12.0f; // section cadence after headers/tabs
+inline constexpr float gap_block = 16.0f;   // block-to-block gap (tabs to cards)
+
+inline constexpr float font_banner_px = 40.0f;
+inline constexpr float font_caps_px = 12.0f;
+inline constexpr float font_page_title_px = 28.0f;
+// font_helper_px stays 13: helper-text semantic, deliberately NOT the
+// bumped metrics::font_body_px=14.
+inline constexpr float font_helper_px = 13.0f;
+// Wave 2 T-003 additions (same note as the gaps above: screenshot-derived,
+// not mockup). font_card_title_px (15) is the studio twin of
+// metrics::font_card_title_px: same value by screenshot coincidence, not by
+// mockup derivation. font_heading_px (24) also serves the IconButton glyph
+// at the same optical size (32px hit box); split it into a separate glyph
+// token only if glyph sizing ever diverges from headings.
+inline constexpr float font_card_title_px = 15.0f;
+inline constexpr float font_heading_px = 24.0f;
+inline constexpr float font_subheading_px = 17.0f;
+inline constexpr float font_glyph_px = 10.0f;
+
+inline constexpr int toast_dwell_ms = 5000;
+inline constexpr float toast_dwell_s = toast_dwell_ms / 1000.0f;
+
+inline constexpr float activity_cell = 14.0f;
+inline constexpr float activity_gap = 4.0f;
+inline constexpr float activity_corner = 3.0f;
+inline constexpr float gauge_stroke = 14.0f;
+inline constexpr float progress_height = 28.0f;
+
+}  // namespace studio_metrics
+
+inline float Clamp01(float value) {
+    return value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
+}
+
+inline int HeatLevel(int value, int month_max) {
+    if (value <= 0 || month_max <= 0) {
+        return 0;
+    }
+    if (value >= month_max) {
+        return 4;
+    }
+    const std::int64_t quarter = static_cast<std::int64_t>(value) * 4 / month_max;
+    return static_cast<int>(quarter > 0 ? quarter : 1);
+}
+
+// Brass heat ramp over the Ivory surface (mockup §4B).
+// HeatLevel math is UNCHANGED; only the color stops changed (teal ramp
+// retired). State is never color-alone: every cell also carries its
+// numeric count and the legend strip, so levels 0-1 which sit near the
+// surface luminance are still readable as numbers/legend entries.
+//   L0 0xD9CFBA (empty)  L1 0xE4DDCD  L2 0xC3B599  L3 0xA28C64  L4 0x7A5C25
+// NOTE: HeatColor owns these literals so a future palette edit cannot
+// silently shift the heat stops.
+inline std::uint32_t HeatColor(int level) {
+    switch (level) {
+        case 4:
+            return 0x7A5C25u;
+        case 3:
+            return 0xA28C64u;
+        case 2:
+            return 0xC3B599u;
+        case 1:
+            return 0xE4DDCDu;
+        default:
+            return 0xD9CFBAu;
+    }
+}
+
+inline std::string UpperSpaced(const std::string& text) {
+    std::string out;
+    out.reserve(text.size() + text.size());
+    bool first = true;
+    for (const char c : text) {
+        const char upper = (c >= 'a' && c <= 'z') ? static_cast<char>(c - 'a' + 'A') : c;
+        if (!first) {
+            out.push_back(' ');
+        }
+        out.push_back(upper);
+        first = false;
+    }
+    return out;
 }
 
 // Applies the palette and the window DPI scale to the current ImGui context's

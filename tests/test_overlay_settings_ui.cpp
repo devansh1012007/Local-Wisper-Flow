@@ -4,7 +4,6 @@
 #include "core/SettingsStore.h"
 #include "core/SettingsUiModel.h"
 #include "ui/MainWindow.h"
-#include "ui/theme/StudioPalette.h"
 #include "ui/theme/ThemePalette.h"
 
 #include <algorithm>
@@ -281,8 +280,6 @@ TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete s
         "src/ui/theme/ThemePalette.h",
         "src/ui/theme/ThemePalette.cpp",
         "src/ui/theme/ThemeStyle.h",
-        "src/ui/theme/StudioPalette.h",
-        "src/ui/theme/StudioPalette.cpp",
         "src/ui/widgets/Widgets.h",
         "src/ui/widgets/Buttons.cpp",
         "src/ui/widgets/Display.cpp",
@@ -714,29 +711,25 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(main_content.find("case UiCommandType::OpenScratchpad") != std::string::npos);
 }
 
-TEST_CASE("studio palette keeps the provisional estimate token values") {
-    // Phase 2 de-teal shim: every field now equals the Ivory-primary
-    // kLightPalette value (mockup Phase 1). Names are historical; values
-    // are the deprecated-shim mapping, NOT teal. See StudioPalette.h header.
-    using lwf::ui::kStudioPalette;
-    CHECK(kStudioPalette.page_bg == 0xF6F1E4u);
-    CHECK(kStudioPalette.rail_bg == 0xFFFDF7u);
-    CHECK(kStudioPalette.card_bg == 0xFFFDF7u);
-    CHECK(kStudioPalette.card_bg_white == 0xFFFDF7u);
-    CHECK(kStudioPalette.border == 0xD9CFBAu);
-    CHECK(kStudioPalette.ink == 0x1C2B26u);
-    CHECK(kStudioPalette.muted == 0x5B665Fu);
-    CHECK(kStudioPalette.teal_700 == 0x7A5C25u);
-    CHECK(kStudioPalette.teal_500 == 0x7A5C25u);
-    CHECK(kStudioPalette.teal_300 == 0xA28C64u);
-    CHECK(kStudioPalette.teal_100 == 0xD9CFBAu);
-    CHECK(kStudioPalette.heat_empty == 0xD9CFBAu);
-    CHECK(kStudioPalette.banner_cream == 0xFFFDF7u);
-    // Single-accent invariant carries through the shim.
-    CHECK(kStudioPalette.teal_700 == kStudioPalette.teal_500);
+TEST_CASE("ivory palette keeps the primary token values") {
+    // Single-palette unify: the deprecated shim struct is deleted; pin the
+    // Ivory-primary kLightPalette values directly (mockup Phase 1). The
+    // HeatColor ramp stops are pinned via HeatColor (see helpers test).
+    using lwf::ui::kLightPalette;
+    CHECK(kLightPalette.bg == 0xF6F1E4u);
+    CHECK(kLightPalette.surface == 0xFFFDF7u);
+    CHECK(kLightPalette.border == 0xD9CFBAu);
+    CHECK(kLightPalette.text == 0x1C2B26u);
+    CHECK(kLightPalette.muted == 0x5B665Fu);
+    CHECK(kLightPalette.accent == 0x7A5C25u);
+    CHECK(kLightPalette.brass == 0x7A5C25u);
+    CHECK(kLightPalette.focus == 0x7A5C25u);
+    // Single-accent invariant: accent == brass == focus.
+    CHECK(kLightPalette.accent == kLightPalette.brass);
+    CHECK(kLightPalette.accent == kLightPalette.focus);
 }
 
-TEST_CASE("studio palette layout tokens follow the shape scale") {
+TEST_CASE("studio metrics layout tokens follow the shape scale") {
     namespace metrics = lwf::ui::studio_metrics;
     CHECK(metrics::radius_banner == 16.0f);
     CHECK(metrics::radius_card == 10.0f);
@@ -772,52 +765,57 @@ TEST_CASE("studio palette layout tokens follow the shape scale") {
     CHECK(metrics::gap_block == 16.0f);
 }
 
-TEST_CASE("studio palette contrast passes on ink and teal pairs and muted on card fills") {
-    // Phase 2 de-teal shim: teal_* now resolve to the Ivory brass ramp.
-    // Thresholds are otherwise unchanged (4.5 text / 3.0 meaningful /
-    // hairline <3.0). Two honest adjustments, each commented:
-    //  - teal_700 vs teal_100 is now accent(0x7A5C25) vs border(0xD9CFBA)
+TEST_CASE("ivory palette contrast passes on text and accent pairs and muted on card fills") {
+    // Single-palette unify: the shim fields now resolve to the Ivory
+    // kLightPalette fields (and HeatColor for the ramp stage). Thresholds
+    // are otherwise unchanged (4.5 text / 3.0 meaningful / hairline <3.0).
+    // Two honest adjustments, each commented:
+    //  - accent vs border is now accent(0x7A5C25) vs border(0xD9CFBA)
     //    = 4.01 — moved to the non-text >=3.0 bucket (mockup §4B: light
-    //    ramp steps are decorative, never text; ink text on teal_100 stays
-    //    at >=4.5 below).
+    //    ramp steps are decorative, never text; ink text on the light ramp
+    //    stays at >=4.5 below).
     //  - ink vs muted (13.09/5.88 text values on each other) is 2.47 and
     //    is REMOVED as a pair: muted is never rendered on ink in any view
     //    (mockup §4B heat note: state never color-alone). Every real
     //    adjacency (muted on page/rail/card/banner, ink on ramp tints)
     //    is asserted below at its true threshold.
     using lwf::ui::ContrastRatio;
-    using lwf::ui::kStudioPalette;
-    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.page_bg) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.rail_bg) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.card_bg) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.card_bg_white) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.banner_cream) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.teal_100) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.ink, kStudioPalette.teal_300) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.card_bg_white, kStudioPalette.teal_700) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.card_bg_white, kStudioPalette.teal_500) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.page_bg) >= 3.0);
-    CHECK(ContrastRatio(kStudioPalette.teal_500, kStudioPalette.card_bg_white) >= 3.0);
-    CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.teal_100) >= 3.0);
-    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.page_bg) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.rail_bg) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.card_bg) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.card_bg_white) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.banner_cream) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.border, kStudioPalette.page_bg) < 3.0);
-    CHECK(ContrastRatio(kStudioPalette.border, kStudioPalette.card_bg_white) < 3.0);
-    CHECK(ContrastRatio(kStudioPalette.teal_300, kStudioPalette.ink) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.card_bg_white, kStudioPalette.ink) >= 4.5);
-    CHECK(ContrastRatio(kStudioPalette.teal_700, kStudioPalette.card_bg_white) >= 3.0);
-    CHECK(ContrastRatio(kStudioPalette.teal_500, kStudioPalette.page_bg) >= 3.0);
-    CHECK(ContrastRatio(kStudioPalette.muted, kStudioPalette.page_bg) >= 3.0);
+    using lwf::ui::HeatColor;
+    using lwf::ui::kLightPalette;
+    // 1:1 retarget of the shim fields: page_bg->bg, rail_bg/card_bg/
+    // card_bg_white/banner_cream->surface, teal_700/teal_500->accent,
+    // teal_100->border, teal_300->HeatColor(3), ink->text, muted->muted.
+    CHECK(ContrastRatio(kLightPalette.text, kLightPalette.bg) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.text, kLightPalette.surface) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.text, kLightPalette.surface) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.text, kLightPalette.surface) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.text, kLightPalette.surface) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.text, kLightPalette.border) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.text, HeatColor(3)) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.surface, kLightPalette.accent) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.surface, kLightPalette.accent) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.accent, kLightPalette.bg) >= 3.0);
+    CHECK(ContrastRatio(kLightPalette.accent, kLightPalette.surface) >= 3.0);
+    CHECK(ContrastRatio(kLightPalette.accent, kLightPalette.border) >= 3.0);
+    CHECK(ContrastRatio(kLightPalette.muted, kLightPalette.bg) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.muted, kLightPalette.surface) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.muted, kLightPalette.surface) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.muted, kLightPalette.surface) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.muted, kLightPalette.surface) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.border, kLightPalette.bg) < 3.0);
+    CHECK(ContrastRatio(kLightPalette.border, kLightPalette.surface) < 3.0);
+    CHECK(ContrastRatio(HeatColor(3), kLightPalette.text) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.surface, kLightPalette.text) >= 4.5);
+    CHECK(ContrastRatio(kLightPalette.accent, kLightPalette.surface) >= 3.0);
+    CHECK(ContrastRatio(kLightPalette.accent, kLightPalette.bg) >= 3.0);
+    CHECK(ContrastRatio(kLightPalette.muted, kLightPalette.bg) >= 3.0);
 }
 
 TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
     using lwf::ui::Clamp01;
     using lwf::ui::HeatColor;
     using lwf::ui::HeatLevel;
-    using lwf::ui::kStudioPalette;
+    using lwf::ui::kLightPalette;
     using lwf::ui::UpperSpaced;
     CHECK(HeatLevel(0, 10) == 0);
     CHECK(HeatLevel(5, 0) == 0);
@@ -842,11 +840,11 @@ TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
                   lwf::CalendarLevel(value, month_max));
         }
     }
-    // Phase 2: brass ramp over surface (mockup §4B) — HeatLevel math is
+    // Brass ramp over surface (mockup §4B) — HeatLevel math is
     // unchanged, only the color stops moved from teal to brass. L3 equals
-    // teal_300's value by ramp coincidence, L4/L0 equal teal_700/heat_empty
-    // by shim mapping; L1/L2 are ramp-only stops (0xE4DDCD/0xC3B599) with
-    // no teal-field twin. Numeric count + legend always accompany cells
+    // the deleted shim's teal_300 value by ramp coincidence, L4/L0 equal
+    // accent/border by the unify mapping; L1/L2 are ramp-only stops
+    // (0xE4DDCD/0xC3B599). Numeric count + legend always accompany cells
     // (state never color-alone).
     CHECK(HeatColor(0) == 0xD9CFBAu);
     CHECK(HeatColor(1) == 0xE4DDCDu);
@@ -854,13 +852,13 @@ TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
     CHECK(HeatColor(3) == 0xA28C64u);
     CHECK(HeatColor(4) == 0x7A5C25u);
     CHECK(HeatColor(9) == 0xD9CFBAu);
-    CHECK(HeatColor(0) == kStudioPalette.heat_empty);
-    CHECK(HeatColor(3) == kStudioPalette.teal_300);
-    CHECK(HeatColor(4) == kStudioPalette.teal_700);
+    CHECK(HeatColor(0) == kLightPalette.border);
+    CHECK(HeatColor(3) == 0xA28C64u);
+    CHECK(HeatColor(4) == kLightPalette.accent);
     // Mockup §4B: ramp stages 3-4 meet >=3.0 against the surface; stages
     // 0-2 are sub-3 surfaces whose state is carried by the numeric label.
-    CHECK(lwf::ui::ContrastRatio(HeatColor(3), kStudioPalette.card_bg) >= 3.0);
-    CHECK(lwf::ui::ContrastRatio(HeatColor(4), kStudioPalette.card_bg) >= 3.0);
+    CHECK(lwf::ui::ContrastRatio(HeatColor(3), kLightPalette.surface) >= 3.0);
+    CHECK(lwf::ui::ContrastRatio(HeatColor(4), kLightPalette.surface) >= 3.0);
     CHECK(Clamp01(2.0f) == 1.0f);
     CHECK(Clamp01(-0.5f) == 0.0f);
     CHECK(Clamp01(0.5f) == 0.5f);
@@ -870,8 +868,8 @@ TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
 
 TEST_CASE("studio widgets respect the font mechanism and stay opt in") {
     const std::vector<std::string> studio_sources = {
-        "src/ui/theme/StudioPalette.h",
-        "src/ui/theme/StudioPalette.cpp",
+        "src/ui/theme/ThemePalette.h",
+        "src/ui/theme/ThemePalette.cpp",
         "src/ui/widgets/Widgets.h",
         "src/ui/widgets/Buttons.cpp",
         "src/ui/widgets/Display.cpp",
@@ -904,12 +902,18 @@ TEST_CASE("studio widgets respect the font mechanism and stay opt in") {
     CHECK(display_content.find("w * clamped") != std::string::npos);
     CHECK(display_content.find("PushClipRect") != std::string::npos);
     CHECK(display_content.find("std::string(safe_id)") != std::string::npos);
-    std::ifstream studio_cpp("src/ui/theme/StudioPalette.cpp");
-    REQUIRE(static_cast<bool>(studio_cpp));
-    const std::string studio_content((std::istreambuf_iterator<char>(studio_cpp)),
-                                     std::istreambuf_iterator<char>());
-    CHECK(studio_content.find("style = ImGuiStyle()") != std::string::npos);
-    CHECK(studio_content.find("preserved_font_scale_dpi") != std::string::npos);
+    // Font mechanism lives in ApplyImGuiStyle (ThemePalette.cpp SSOT):
+    // DPI factor applied once via FontScaleMain + ScaleAllSizes, so a
+    // re-apply cannot drift; no fresh-style reset exists in the single
+    // palette (geometry is assigned in place).
+    std::ifstream theme_cpp("src/ui/theme/ThemePalette.cpp");
+    REQUIRE(static_cast<bool>(theme_cpp));
+    const std::string theme_content((std::istreambuf_iterator<char>(theme_cpp)),
+                                    std::istreambuf_iterator<char>());
+    CHECK(theme_content.find("void ApplyImGuiStyle") != std::string::npos);
+    CHECK(theme_content.find("style.FontScaleMain = scale;") != std::string::npos);
+    CHECK(theme_content.find("style.ScaleAllSizes(scale);") != std::string::npos);
+    CHECK(theme_content.find("SetWindowFontScale") == std::string::npos);
     std::ifstream overlays_h("src/ui/widgets/Overlays.h");
     REQUIRE(static_cast<bool>(overlays_h));
     const std::string overlays_h_content((std::istreambuf_iterator<char>(overlays_h)),
@@ -931,12 +935,12 @@ TEST_CASE("studio widgets respect the font mechanism and stay opt in") {
     REQUIRE(static_cast<bool>(main_window));
     const std::string main_content((std::istreambuf_iterator<char>(main_window)),
                                    std::istreambuf_iterator<char>());
-    CHECK(main_content.find("ApplyStudioStyle") == std::string::npos);
+    CHECK(main_content.find("ApplyImGuiStyle(kLightPalette") != std::string::npos);
     std::ifstream overlay("src/ui/Overlay.cpp");
     REQUIRE(static_cast<bool>(overlay));
     const std::string overlay_content((std::istreambuf_iterator<char>(overlay)),
                                       std::istreambuf_iterator<char>());
-    CHECK(overlay_content.find("ApplyStudioStyle") == std::string::npos);
+    CHECK(overlay_content.find("ApplyImGuiStyle(kLightPalette") != std::string::npos);
 }
 
 TEST_CASE("every schema key has a control or a documented carve-out") {
@@ -1019,7 +1023,7 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
     CHECK(transforms_content.find("hovered ? kLightPalette.text : kLightPalette.accent") !=
           std::string::npos);
     CHECK(transforms_content.find("ImGui::IsItemFocused()") != std::string::npos);
-    std::ifstream palette_h("src/ui/theme/StudioPalette.h");
+    std::ifstream palette_h("src/ui/theme/ThemePalette.h");
     REQUIRE(static_cast<bool>(palette_h));
     const std::string palette_content((std::istreambuf_iterator<char>(palette_h)),
                                       std::istreambuf_iterator<char>());
@@ -1078,7 +1082,7 @@ TEST_CASE("Phase 3 widgets use single Palette with Ivory default") {
         INFO(path);
         const std::string content((std::istreambuf_iterator<char>(file)),
                                   std::istreambuf_iterator<char>());
-        CHECK(content.find("kStudioPalette") == std::string::npos);
+        CHECK(content.find("StudioPalette") == std::string::npos);
         CHECK(content.find("Pack(kDarkPalette") == std::string::npos);
     }
     std::ifstream widgets_h("src/ui/widgets/Widgets.h");
@@ -1271,7 +1275,7 @@ const BanAllowance kBanAllowances[] = {};
 // identifier / named-constant arguments (e.g. button_gap, kRowButtonGap):
 // the lexical shape deliberately leaves named-constant hoisting as the
 // spelling-only escape for gap values with no token in this wave. Excluded
-// from scope: ThemePalette.cpp / StudioPalette.cpp (frozen token internals),
+// from scope: ThemePalette.cpp (frozen token internals),
 // Overlay.cpp (Mini window), ScratchpadWindow.cpp (second OS window).
 // Generic ImVec2 geometry outside Dummy (PushStyleVar padding, Button
 // extents) is not one of the P-005 APIs and is deliberately not scanned.

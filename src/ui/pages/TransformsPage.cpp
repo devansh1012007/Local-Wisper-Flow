@@ -1,7 +1,6 @@
 #include "ui/pages/TransformsPage.h"
 
 #include "core/DictationEngine.h"
-#include "ui/theme/StudioPalette.h"
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
 #include "ui/widgets/Widgets.h"

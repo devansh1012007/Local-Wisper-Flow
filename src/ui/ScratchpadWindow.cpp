@@ -1,6 +1,5 @@
 #include "ui/ScratchpadWindow.h"
 
-#include "ui/theme/StudioPalette.h"
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
 #include "ui/widgets/Widgets.h"
@@ -22,7 +21,7 @@ namespace {
 
 using lwf::ui::Color;
 using lwf::ui::Pack;
-// Ivory primary (Ph6): ApplyStudioStyle -> ApplyImGuiStyle mapping; field maps 1:1
+// Ivory primary (Ph6): studio style -> ApplyImGuiStyle mapping; field maps 1:1
 // (card_bg_white/card_bg -> surface, teal_700 -> accent, ink -> text, page_bg -> bg).
 // Padding/rounding/ChildBg drift noted in audit (32 -> 16, 8 -> 6, white -> transparent);
 // studio_metrics fonts/radii kept as-is.

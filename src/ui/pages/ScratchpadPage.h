@@ -3,7 +3,7 @@
 #include "core/NotesStore.h"
 #include "core/SettingsStore.h"
 #include "core/UiBus.h"
-#include "ui/theme/StudioPalette.h"
+#include "ui/theme/ThemePalette.h"
 
 #include <cstddef>
 #include <cstdint>

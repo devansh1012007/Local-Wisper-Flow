@@ -1,6 +1,5 @@
 #include "ui/pages/InsightsPage.h"
 
-#include "ui/theme/StudioPalette.h"
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
 #include "ui/widgets/Widgets.h"
