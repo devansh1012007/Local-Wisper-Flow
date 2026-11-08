@@ -13,21 +13,66 @@ std::string ExtractErrorDetail(const nlohmann::json& json) {
             return error.get<std::string>();
         }
         if (error.is_object()) {
-            std::string status;
-            if (error.contains("status") && error.at("status").is_string()) {
-                status = error.at("status").get<std::string>();
+            std::string code;
+            if (error.contains("type") && error.at("type").is_string()) {
+                code = error.at("type").get<std::string>();
+            } else if (error.contains("status") && error.at("status").is_string()) {
+                code = error.at("status").get<std::string>();
             }
             std::string message;
             if (error.contains("message") && error.at("message").is_string()) {
                 message = error.at("message").get<std::string>();
             }
-            if (!status.empty() && !message.empty()) {
-                return status + ": " + message;
+            if (!code.empty() && !message.empty()) {
+                return code + ": " + message;
             }
             if (!message.empty()) {
                 return message;
             }
-            return status;
+            return code;
+        }
+    }
+    if (json.contains("detail")) {
+        const nlohmann::json& detail = json.at("detail");
+        if (detail.is_string()) {
+            return detail.get<std::string>();
+        }
+        if (detail.is_object()) {
+            std::string code;
+            if (detail.contains("error_code") && detail.at("error_code").is_string()) {
+                code = detail.at("error_code").get<std::string>();
+            }
+            std::string message;
+            if (detail.contains("message") && detail.at("message").is_string()) {
+                message = detail.at("message").get<std::string>();
+            }
+            if (!code.empty() && !message.empty()) {
+                return code + ": " + message;
+            }
+            if (!message.empty()) {
+                return message;
+            }
+            return code;
+        }
+        if (detail.is_array() && !detail.empty()) {
+            const nlohmann::json& first = detail.at(0);
+            if (first.is_object()) {
+                std::string type;
+                if (first.contains("type") && first.at("type").is_string()) {
+                    type = first.at("type").get<std::string>();
+                }
+                std::string message;
+                if (first.contains("msg") && first.at("msg").is_string()) {
+                    message = first.at("msg").get<std::string>();
+                }
+                if (!type.empty() && !message.empty()) {
+                    return type + ": " + message;
+                }
+                if (!message.empty()) {
+                    return message;
+                }
+                return type;
+            }
         }
     }
     for (const char* key : {"message", "detail"}) {

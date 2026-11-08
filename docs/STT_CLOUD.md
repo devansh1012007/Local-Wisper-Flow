@@ -70,16 +70,33 @@ commas/line breaks), mirroring the local initial-prompt hint.
 - **Audio never touches disk.** WAV bytes are built in memory per request and
   freed with the request.
 - **Logs carry only**: provider name, request id, HTTP status, error category,
-  byte counts, latency in ms. Never the API key, the audio, or the transcript.
+  byte counts, latency in ms. Gnani attempts additionally write one file-log
+  line each carrying the attempt's redacted error `detail` (API key masked,
+  truncated to 200 chars on display). Never the API key, the audio, or the
+  transcript.
 - **Network allowlist** (`scripts/check_hygiene.sh`): WinHTTP usage may only
   live in `src/os/WindowsHttpClient.*`; cloud endpoints may only be named in
   `src/stt/cloud/*` and in `scripts/gnani_smoke.py` (the offline contract tool).
 
 ## Verify the contract before trusting the cloud path
 
-The sandbox that produced this code cannot reach `api.vachana.ai`, so the
-request/response shapes above follow the written contract plus defensive
-parsing; **nothing here has been integration-tested against the live API.**
+The Gnani contract below was checked against the live vendor docs on
+2026-11-08 (`https://docs.gnani.ai/api/STT/speech-to-text.md` + OpenAPI spec);
+**it has NOT yet been verified against the live API.** That changes the stale
+values the re-landing originally shipped: request path `/v1/asr/recognize` →
+`/stt/v3`, multipart field `language` → `language_code` (required,
+`indic-auto` valid for v3.0), multipart field `audio` → `audio_file`
+(`audio.wav`, wav ext ok). The rest matches the docs: host `api.vachana.ai`,
+header `X-API-Key-ID` (required), `model` `prisma-v3.0`, `keyterms` string
+(JSON-array or comma-separated, v3.0 only). Success 200 is
+`{"success": true, "request_id": ..., "transcript": "...", "model":
+"prisma-v3.0", "detected_language_code": "hi-IN", "processing_time": ...}`;
+audio < 0.1 s returns success with an empty transcript. Errors come in three
+envelopes: `{"success": false, "error": {"type": "<TYPE>", "message":
+"..."}}`, auth/rate `{"detail": {"error_code", "message", "status_code"}}`,
+and validation 422 `{"detail": [{type, msg, loc, input}]}`. `GnaniResponse`
+reads all three (error type+message, detail message, first-array msg).
+
 Before relying on cloud mode, run the smoke test with a real key:
 
 ```sh
@@ -120,8 +137,10 @@ deliberate Settings action.
 Failed cloud attempts keep a redacted error `detail` in their attempt stats
 (server text with the API key masked, auth header values masked by
 `lwf::RedactAuthValues` from `src/core/Redact.h`). Detail values are stored
-in memory for the UI and tests; log lines still carry only provider, request
-id, status, category, byte counts, and latency.
+in memory for the UI and tests; Gnani attempts also write one `[stt] ...`
+line per attempt to the file log (`lwf::Log::Warning`) carrying the redacted
+detail truncated to 200 chars, so failures are visible in `lwf.log`.
+Transcripts are never logged.
 
 ## Latency and cost model (S6)
 
