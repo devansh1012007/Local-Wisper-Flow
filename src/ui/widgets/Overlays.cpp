@@ -1,6 +1,7 @@
 #include "ui/widgets/Overlays.h"
 
 #include "ui/theme/StudioPalette.h"
+#include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
 
 #include "imgui.h"
@@ -119,7 +120,7 @@ bool Toast::IsVisible() const {
     return (static_cast<float>(ImGui::GetTime()) - shown_at_) < studio_metrics::toast_dwell_s;
 }
 
-void Toast::Draw(float scale) {
+void Toast::Draw(float scale, const lwf::ui::Palette& palette) {
     if (!IsVisible()) {
         return;
     }
@@ -137,11 +138,11 @@ void Toast::Draw(float scale) {
     const ImVec2 viewport = ImGui::GetIO().DisplaySize;
     const ImVec2 pos(viewport.x * 0.5f - w * 0.5f, viewport.y - h - 24.0f * scale);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
-    draw.AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), Pack(kStudioPalette.ink),
+    draw.AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), Pack(palette.text),
                        studio_metrics::radius_pill * scale);
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     const float text_y = pos.y + (h - text_size.y) * 0.5f;
-    draw.AddText(ImVec2(pos.x + 16.0f * scale, text_y), Pack(kStudioPalette.card_bg_white),
+    draw.AddText(ImVec2(pos.x + 16.0f * scale, text_y), Pack(palette.surface),
                  message_.c_str());
     ImGui::PopFont();
     if (!action_label_.empty()) {
@@ -153,7 +154,14 @@ void Toast::Draw(float scale) {
         const ImVec2 saved_cursor = ImGui::GetCursorScreenPos();
         const std::string button_label = action_label_ + "##toast_action";
         ImGui::SetCursorScreenPos(button_min);
-        ImGui::PushStyleColor(ImGuiCol_Text, Color(kStudioPalette.teal_300));
+        // DECISION: action text uses accent (single accent per view) over the
+        // text-fill toast; see report for the measured tradeoff. Accent on
+        // text measures 2.38 in Ivory and 1.80 in the dark variant, so this
+        // does NOT meet the 4.5 text floor; the 6.10 figure cited during
+        // design is on_accent on accent, not accent on text. The dark
+        // variant stays a runtime choice via the palette param; a mid-brass
+        // toast token is the follow-up that would restore 4.5 on this fill.
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(palette.accent));
         if (ImGui::Button(button_label.c_str(), button_size)) {
             action_pending_ = true;
         }
@@ -163,9 +171,10 @@ void Toast::Draw(float scale) {
             const ImVec2 ring_max = ImGui::GetItemRectMax();
             draw.AddRect(ImVec2(ring_min.x - 2.0f * scale, ring_min.y - 2.0f * scale),
                          ImVec2(ring_max.x + 2.0f * scale, ring_max.y + 2.0f * scale),
-                         Pack(kStudioPalette.teal_300), h * 0.5f, 0, 2.0f * scale);
+                         Pack(palette.focus), h * 0.5f, 0, 2.0f * scale);
         }
-        ImGui::SetCursorScreenPos(saved_cursor);
+        ImGui::SetCursorScreenPos(ImVec2(saved_cursor.x, saved_cursor.y - ImGui::GetStyle().ItemSpacing.y));
+        ImGui::Dummy(ImVec2(0.0f, 0.0f));
     }
 }
 

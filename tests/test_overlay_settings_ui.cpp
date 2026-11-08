@@ -924,7 +924,7 @@ TEST_CASE("studio widgets respect the font mechanism and stay opt in") {
     CHECK(overlays_content.find("##toast_action") != std::string::npos);
     CHECK(overlays_content.find("Button(action_label_") == std::string::npos);
     CHECK(overlays_content.find("GetCursorScreenPos()") != std::string::npos);
-    CHECK(overlays_content.find("SetCursorScreenPos(saved_cursor)") != std::string::npos);
+    CHECK(overlays_content.find("ImGui::SetCursorScreenPos(ImVec2(saved_cursor.x, saved_cursor.y - ImGui::GetStyle().ItemSpacing.y));") != std::string::npos);
     CHECK(overlays_content.find("if (!visible_)") != std::string::npos);
     CHECK(overlays_content.find("title == nullptr") != std::string::npos);
     std::ifstream main_window("src/ui/MainWindow.cpp");
@@ -995,7 +995,7 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
                                       std::istreambuf_iterator<char>());
     CHECK(buttons_content.find("const float h = studio_metrics::hit_size * scale") !=
           std::string::npos);
-    CHECK(buttons_content.find("value ? Pack(kStudioPalette.ink) : Pack(kStudioPalette.muted)") !=
+    CHECK(buttons_content.find("value ? Pack(palette.text) : Pack(palette.muted)") !=
           std::string::npos);
     std::ifstream overlays("src/ui/widgets/Overlays.cpp");
     REQUIRE(static_cast<bool>(overlays));
@@ -1036,6 +1036,47 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
                                        std::istreambuf_iterator<char>());
     CHECK(insights_content.find("HeatPack") == std::string::npos);
     CHECK(insights_content.find("HeatColor(level)") != std::string::npos);
+}
+
+TEST_CASE("Phase 3 widgets use single Palette with Ivory default") {
+    const std::vector<std::string> widget_sources = {
+        "src/ui/widgets/Buttons.cpp",
+        "src/ui/widgets/Display.cpp",
+        "src/ui/widgets/Overlays.cpp",
+        "src/ui/widgets/Widgets.h",
+        "src/ui/widgets/Overlays.h",
+    };
+    for (const std::string& path : widget_sources) {
+        std::ifstream file(path);
+        REQUIRE(static_cast<bool>(file));
+        INFO(path);
+        const std::string content((std::istreambuf_iterator<char>(file)),
+                                  std::istreambuf_iterator<char>());
+        CHECK(content.find("kStudioPalette") == std::string::npos);
+        CHECK(content.find("Pack(kDarkPalette") == std::string::npos);
+    }
+    std::ifstream widgets_h("src/ui/widgets/Widgets.h");
+    REQUIRE(static_cast<bool>(widgets_h));
+    const std::string widgets_h_content((std::istreambuf_iterator<char>(widgets_h)),
+                                        std::istreambuf_iterator<char>());
+    CHECK(widgets_h_content.find("kLightPalette") != std::string::npos);
+    std::ifstream buttons("src/ui/widgets/Buttons.cpp");
+    REQUIRE(static_cast<bool>(buttons));
+    const std::string buttons_content2((std::istreambuf_iterator<char>(buttons)),
+                                       std::istreambuf_iterator<char>());
+    CHECK(buttons_content2.find("kLightPalette") != std::string::npos);
+    std::ifstream display("src/ui/widgets/Display.cpp");
+    REQUIRE(static_cast<bool>(display));
+    const std::string display_content2((std::istreambuf_iterator<char>(display)),
+                                       std::istreambuf_iterator<char>());
+    CHECK(display_content2.find("HeatColor(HeatLevel") != std::string::npos);
+    CHECK(display_content2.find("- ImGui::GetStyle().ItemSpacing.y") != std::string::npos);
+    std::ifstream overlays("src/ui/widgets/Overlays.cpp");
+    REQUIRE(static_cast<bool>(overlays));
+    const std::string overlays_content2((std::istreambuf_iterator<char>(overlays)),
+                                        std::istreambuf_iterator<char>());
+    CHECK(overlays_content2.find("Palette& palette") != std::string::npos);
+    CHECK(overlays_content2.find("- ImGui::GetStyle().ItemSpacing.y") != std::string::npos);
 }
 
 TEST_CASE("F9 copy lint bans internal terms and exclamation in display strings") {
