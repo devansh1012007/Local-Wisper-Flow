@@ -29,6 +29,27 @@ struct ContextGuard {
     }
 };
 
+// Name of the capture device the backend flags as default, for logging the default
+// path (which endpoint is actually feeding the engine). Empty when enumeration
+// fails or no device carries the flag.
+// DECISION: logging only -- selection keeps passing a null device id to
+// ma_device_init, because the isDefault flag and ma_device_init's own default pick
+// are not guaranteed to agree per backend.
+std::string DefaultCaptureName(ma_context* context) {
+    ma_device_info* capture_infos = nullptr;
+    ma_uint32 capture_count = 0;
+    if (ma_context_get_devices(context, nullptr, nullptr, &capture_infos, &capture_count) !=
+        MA_SUCCESS) {
+        return {};
+    }
+    for (ma_uint32 i = 0; i < capture_count; ++i) {
+        if (capture_infos[i].isDefault == MA_TRUE) {
+            return capture_infos[i].name;
+        }
+    }
+    return {};
+}
+
 }
 
 MiniaudioCapture::MiniaudioCapture(std::uint32_t sample_rate, std::uint32_t channels,
@@ -82,6 +103,14 @@ MiniaudioCapture::MiniaudioCapture(std::uint32_t sample_rate, std::uint32_t chan
                                   "' not found; using system default capture device");
             }
         }
+    } else if (device_name.empty() && context_ok_) {
+        // Diagnosability for the default path (the reported silent-mic case): name the
+        // endpoint ma_device_init is about to open. No selection change -- pDeviceID
+        // stays null below, so miniaudio still picks the default itself.
+        const std::string default_name = DefaultCaptureName(&context_);
+        if (!default_name.empty()) {
+            active_name = default_name + " (system default)";
+        }
     } else if (!device_name.empty()) {
         lwf::Log::Warning("MiniaudioCapture: requested capture device '" + device_name +
                           "' unavailable; using system default capture device");
@@ -101,6 +130,14 @@ MiniaudioCapture::MiniaudioCapture(std::uint32_t sample_rate, std::uint32_t chan
         result = ma_device_init(context_ok_ ? &context_ : nullptr, &config, &device_);
     }
     if (result != MA_SUCCESS) {
+        // DECISION: this throw skips ~MiniaudioCapture (a ctor that throws never
+        // destroys its own object), so the owned context has to be released here;
+        // clearing context_ok_ keeps this path mutually exclusive with the dtor's
+        // uninit so neither can double-uninit.
+        if (context_ok_) {
+            ma_context_uninit(&context_);
+            context_ok_ = false;
+        }
         throw std::runtime_error("MiniaudioCapture: device init failed: " + DescribeResult(result));
     }
     device_initialized_ = true;
