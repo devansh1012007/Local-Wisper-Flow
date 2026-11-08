@@ -1675,31 +1675,39 @@ void MainWindow::DrawCleanupPage(float scale) {
             // is non-empty and not in the fetched list) keeps the active
             // model visible before Task A's sorted list.
             const bool synthetic_present = !current_model.empty() && model_match == -1;
-            struct ModelEntry {
-                std::string value;
-                std::string label;
-            };
-            std::vector<ModelEntry> model_entries;
-            if (synthetic_present) {
-                model_entries.push_back({current_model, current_model});
-            } else if (openrouter_models_.empty() && current_model.empty()) {
-                model_entries.push_back({"", "No model set"});
-            }
-            for (const std::string& model_id : openrouter_models_) {
-                model_entries.push_back({model_id, model_id});
-            }
-            int selected_entry = -1;
-            if (synthetic_present) {
-                selected_entry = 0;
-            } else if (model_match >= 0) {
-                selected_entry = model_match;
-            } else if (openrouter_models_.empty()) {
-                selected_entry = 0;
-            }
             const char* model_preview =
                 current_model.empty() ? "No model set" : current_model.c_str();
             ImGui::SetNextItemWidth(-1.0f);
             if (ImGui::BeginCombo("##openrouter_model", model_preview)) {
+                // DECISION: build the entry list lazily, only when the popup
+                // is open, so the closed-combo frame does not copy every
+                // fetched id per frame. INVARIANT: entry set/order and ids
+                // unchanged — synthetic current-value entry first when
+                // present, "No model set" placeholder when no fetched list
+                // and no current value, then every fetched id in order with
+                // per-item "##or_<index>" ids; selection follows the same
+                // synthetic/model_match/empty rules as before.
+                struct ModelEntry {
+                    std::string value;
+                    std::string label;
+                };
+                std::vector<ModelEntry> model_entries;
+                if (synthetic_present) {
+                    model_entries.push_back({current_model, current_model});
+                } else if (openrouter_models_.empty() && current_model.empty()) {
+                    model_entries.push_back({"", "No model set"});
+                }
+                for (const std::string& model_id : openrouter_models_) {
+                    model_entries.push_back({model_id, model_id});
+                }
+                int selected_entry = -1;
+                if (synthetic_present) {
+                    selected_entry = 0;
+                } else if (model_match >= 0) {
+                    selected_entry = model_match;
+                } else if (openrouter_models_.empty()) {
+                    selected_entry = 0;
+                }
                 for (std::size_t entry_index = 0; entry_index < model_entries.size();
                      ++entry_index) {
                     const std::string item =

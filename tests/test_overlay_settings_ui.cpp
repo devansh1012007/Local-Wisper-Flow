@@ -1725,6 +1725,7 @@ TEST_CASE("cleanup card OpenRouter model picker wires refresh and persistence") 
     CHECK(content.find("##or_custom") != std::string::npos);
     CHECK(content.find("##or_") != std::string::npos);
     CHECK(content.find("edit config.json") == std::string::npos);
+    CHECK(content.find("\"not set\"") != std::string::npos);
     const std::size_t backend = content.find("##card_cleanup_backend");
     REQUIRE(backend != std::string::npos);
     CHECK(content.find("##openrouter_model", backend) != std::string::npos);

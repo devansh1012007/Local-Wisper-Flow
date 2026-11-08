@@ -54,30 +54,32 @@ std::string ExtractErrorDetail(const nlohmann::json& json) {
             }
             return code;
         }
-        if (detail.is_array() && !detail.empty()) {
-            const nlohmann::json& first = detail.at(0);
-            if (first.is_object()) {
-                std::string type;
-                if (first.contains("type") && first.at("type").is_string()) {
-                    type = first.at("type").get<std::string>();
-                }
-                std::string message;
-                if (first.contains("msg") && first.at("msg").is_string()) {
-                    message = first.at("msg").get<std::string>();
-                }
-                if (!type.empty() && !message.empty()) {
-                    return type + ": " + message;
-                }
-                if (!message.empty()) {
-                    return message;
-                }
-                if (!type.empty()) {
-                    return type;
+        if (detail.is_array()) {
+            if (!detail.empty()) {
+                const nlohmann::json& first = detail.at(0);
+                if (first.is_object()) {
+                    std::string type;
+                    if (first.contains("type") && first.at("type").is_string()) {
+                        type = first.at("type").get<std::string>();
+                    }
+                    std::string message;
+                    if (first.contains("msg") && first.at("msg").is_string()) {
+                        message = first.at("msg").get<std::string>();
+                    }
+                    if (!type.empty() && !message.empty()) {
+                        return type + ": " + message;
+                    }
+                    if (!message.empty()) {
+                        return message;
+                    }
+                    if (!type.empty()) {
+                        return type;
+                    }
                 }
             }
             // DECISION: bounded fallback so a validation array without a
-            // parseable msg/type still yields a non-empty detail (never dump
-            // the raw array).
+            // parseable msg/type (including an empty array) still yields a
+            // non-empty detail (never dump the raw array).
             return "validation error (422)";
         }
     }

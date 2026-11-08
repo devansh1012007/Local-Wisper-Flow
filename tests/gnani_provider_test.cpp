@@ -329,3 +329,16 @@ TEST_CASE("provider surfaces validation array without msg or type") {
     CHECK(!result.attempts[0].detail.empty());
     CHECK(result.attempts[0].detail.find("validation error") != std::string::npos);
 }
+
+TEST_CASE("provider surfaces validation error for empty detail array") {
+    FakeTransport transport({ScriptedResponse{422,
+        R"({"detail":[]})",
+        "r422-empty-array"}});
+    GnaniProvider provider(transport, Settings());
+    const SttTranscription result = provider.Transcribe(ConstantAudio(16000), {});
+    CHECK(!result.success);
+    CHECK(result.error == SttErrorCategory::InvalidRequest);
+    REQUIRE(result.attempts.size() == 1);
+    CHECK(!result.attempts[0].detail.empty());
+    CHECK(result.attempts[0].detail.find("validation error") != std::string::npos);
+}
