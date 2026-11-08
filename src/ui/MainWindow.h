@@ -2,10 +2,14 @@
 
 #include "core/DictationFSM.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdio>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 struct GLFWwindow;
@@ -23,6 +27,7 @@ class NotesStore;
 class ApiKeyStore;
 class HistoryStore;
 class PersonalDictionary;
+class IHttpTransport;
 
 namespace lwf::ui::pages {
 class DictionaryPage;
@@ -135,6 +140,27 @@ public:
 
     void SetDataResetStores(DataResetStores stores);
 
+    // Non-owning transport for the Cleanup model list Refresh. The caller
+    // (main.cpp) keeps the instance alive longer than this window; nullptr
+    // disables Refresh and never crashes the picker.
+    void SetModelsTransport(IHttpTransport* transport);
+
+    // One off-thread models-list fetch, primitives only, so this header
+    // stays free of the backend model tree (the F9 copy lint scans every
+    // literal in src/ui, including #include paths, for banned terms).
+    // main.cpp maps the backend fetch result onto this shape; the worker
+    // calls the fetcher off the UI thread and only the latch result is read
+    // back on the UI thread.
+    struct ModelListResult {
+        bool ok = false;  // false when the fetch failed (error is set)
+        bool empty = false;  // true when the fetch succeeded with zero ids
+        std::vector<std::string> ids;
+        std::string error;
+    };
+    using ModelListFetcher =
+        std::function<ModelListResult(IHttpTransport&, const std::string&)>;
+    void SetModelsFetcher(ModelListFetcher fetcher);
+
     bool FirstRunNeeded() const;
 
 private:
@@ -181,6 +207,10 @@ private:
                        std::size_t buffer_size, bool& remove_armed, bool& focus_keep_pending,
                        std::string& error, float scale);
     void ClearApiKeyInputs();
+    // Store-first, then environment key resolution for the OpenRouter models
+    // Refresh, mirroring main.cpp:376-382. SECURITY: callers keep the value
+    // off-screen and never log it.
+    std::string ResolveOpenRouterKey() const;
 
     struct TextField {
         char buffer[512] = {};
@@ -264,6 +294,24 @@ private:
     TextField remote_endpoint_field_;
     TextField stt_language_field_;
     TextField cleanup_language_policy_field_;
+    TextField openrouter_model_field_;
+    // OpenRouter cleanup-model picker (Settings > Cleanup). The fetched id
+    // list is a runtime cache only, never persisted. The fetch runs on a
+    // worker std::thread (max 8s) that calls the injected ModelListFetcher
+    // and writes its result into the mutex-guarded latch; the UI thread
+    // consumes the latch each Cleanup-card frame, so the 8s GET never
+    // freezes either window. INVARIANT: openrouter_models_busy_ is touched
+    // only on the UI thread (set on spawn, cleared on consume); the worker
+    // never reads or writes it.
+    IHttpTransport* models_transport_ = nullptr;
+    ModelListFetcher models_fetcher_;
+    std::vector<std::string> openrouter_models_;
+    std::atomic<bool> openrouter_models_busy_{false};
+    std::string openrouter_models_error_;
+    std::mutex openrouter_models_latch_mutex_;
+    bool openrouter_models_latch_ready_ = false;  // guarded by latch mutex
+    ModelListResult openrouter_models_latch_;  // guarded by latch mutex
+    std::thread openrouter_models_worker_;  // joined in ~MainWindow
     // Microphone picker (Settings > Speech): capture-device display names
     // enumerated ONCE per app run on the first DrawSpeechPage pass.
     // INVARIANT: ListCaptureDevices() inits a ma_context, so it must never be

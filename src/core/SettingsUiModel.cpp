@@ -78,6 +78,20 @@ int MatchMicDeviceIndex(const std::vector<std::string>& names, const std::string
     return 0;
 }
 
+int MatchModelIndex(const std::vector<std::string>& fetched, const std::string& selected) {
+    // INVARIANT: no sentinel entry exists in this combo, so "no match" is -1
+    // and the caller layers its synthetic entry on top of this result.
+    if (selected.empty()) {
+        return -1;
+    }
+    for (std::size_t i = 0; i < fetched.size(); ++i) {
+        if (fetched[i] == selected) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
 ApiKeySource ApiKeySourceFor(bool has_saved, bool has_env) {
     if (has_saved) {
         return ApiKeySource::Saved;

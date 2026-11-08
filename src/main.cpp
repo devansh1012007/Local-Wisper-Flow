@@ -42,6 +42,7 @@
 #include "core/UiBus.h"
 #include "core/UnavailableProviders.h"
 #include "llm/LocalLlamaProvider.h"
+#include "llm/OpenRouterModels.h"
 #include "llm/OpenRouterProvider.h"
 #include "os/ActiveWindow.h"
 #include "os/CrashHandler.h"
@@ -579,6 +580,35 @@ int main() {
         tray.Start();
 
         MainWindow full(fsm, audio, config.Store(), ui_bus);
+        // DECISION: non-owning transport for the Cleanup model list Refresh.
+        // openrouter_http is declared before `full`, so it outlives the
+        // window; ~MainWindow joins the fetch worker before `full` is
+        // destroyed, so the worker never uses a dead transport.
+        full.SetModelsTransport(&openrouter_http);
+        // Composition root maps the Task-A fetch result onto the UI-facing
+        // primitives (ok/empty/ids/error) so MainWindow never includes the
+        // backend model tree (the F9 copy lint scans src/ui literals,
+        // including #include paths). Fetch errors share one UI message;
+        // errorDetail is already redacted + capped in Task A.
+        full.SetModelsFetcher([](IHttpTransport& transport,
+                                 const std::string& api_key) -> MainWindow::ModelListResult {
+            MainWindow::ModelListResult mapped;
+            const auto result = OpenRouterModels::FetchOpenRouterModels(transport, api_key);
+            switch (result.status) {
+                case OpenRouterModels::FetchStatus::Ok:
+                    mapped.ok = true;
+                    mapped.ids = result.modelIds;
+                    break;
+                case OpenRouterModels::FetchStatus::Empty:
+                    mapped.ok = true;
+                    mapped.empty = true;
+                    break;
+                default:
+                    mapped.error = result.errorDetail;
+                    break;
+            }
+            return mapped;
+        });
         full.SetDictionaryPage(
             std::make_unique<lwf::ui::pages::DictionaryPage>(dictionary_store, &dictionary));
         full.SetInsightsPage(std::make_unique<lwf::ui::insights::InsightsPage>(usage_stats));

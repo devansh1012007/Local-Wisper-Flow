@@ -26,6 +26,7 @@ until a PASS box is filled. Add one section per task id with exact steps.
 | F | F4 installer | per-user install, tasks, uninstall data choice |
 | S | S4-S8 cloud STT | consent UI, gating, fallback, secrets, cancellation, three providers |
 | MIC | MIC-003 microphone picker | Settings > Speech device list, restart banner, level meter per device |
+| OR | OR-UI-01 OpenRouter model picker | Settings > Cleanup live model list + manual id |
 
 Portable logic (FSM tables, tracker, pipeline, stores, streaming fallback,
 resilience/chaos, privacy) is unit-tested on Linux and covered by ctest; the
@@ -405,6 +406,46 @@ verified until a PASS box is filled.
    `%APPDATA%\LocalWisperFlow\config.json` -> `mic_device`, restart: the app
    still starts, the combo previews `System default`, and the log says the name
    was not found and the system default is used.
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+
+## OR-UI-01: OpenRouter model picker (Settings > Cleanup)
+
+Live model-list picker with a manual id fallback (branch
+`ops/ui-full-redesign`, Task B). Not claimed as verified until a PASS box is
+filled.
+
+Setup: in Settings > Cleanup choose `openrouter` in the backend combo and save
+an OpenRouter key (or set `OPENROUTER_API_KEY`). Note the network state you
+use for each step.
+
+a. Offline refresh + freeze check: go offline (airplane mode / unplugged). In
+   Settings > Cleanup press `Refresh model list`. Expected: the status line
+   shows `Loading models...` then an error (`Could not load the model list.` +
+   detail), and the app stays responsive the whole time - both the Mini badge
+   and the Full window render, hover, and animate while the button reads
+   `Loading models...` (the fetch is off-thread; an 8 s timeout must never
+   freeze either window). Pressing Refresh again during that time does nothing
+   (no second network call).
+b. List load: go online and press `Refresh model list`. Expected: status
+   becomes `<n> models available.` and the `Cleanup model` combo lists the
+   fetched ids in sorted order. When a model is already set and it is also in
+   the fetched list, the combo previews that value.
+c. Select, restart, cleanup: pick a model from the combo - the `Saved` label
+   flashes and the restart banner appears. Quit from the tray, relaunch, then
+   hold the hotkey and dictate a sentence: the Privacy tab mirrors the picked
+   model, and the returned text is cleaned (not raw dictation). Pressing
+   Refresh again after the restart now offers the same list, and the picked
+   model still previews in the combo.
+d. Manual id: in the `Type a model id` field (below the Refresh button) type a
+   valid model id not in the fetched list, press `Use this model`: the `Saved`
+   label flashes and the restart banner appears; after restart the combo
+   previews that id and a dictation with cleanup on works. Clearing the field
+   and pressing `Use this model` sets the model to empty (same as selecting
+   the `No model set` placeholder); after restart the combo previews
+   `No model set` and Settings > Privacy shows `OpenRouter model: not set`.
 
 ```
 [ ] PASS   [ ] FAIL   notes:

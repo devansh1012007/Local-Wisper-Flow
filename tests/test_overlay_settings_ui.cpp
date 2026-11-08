@@ -1552,8 +1552,12 @@ TEST_CASE("api key rows use masked input and named removal") {
     CHECK(content.find("ClearApiKeyInputs();") != std::string::npos);
     CHECK(content.find("Saved keys take precedence over environment variables") !=
           std::string::npos);
-    CHECK(content.find("\"The model is set in config.json; see the Privacy tab.\"") !=
+    // OR-UI-01 retired pointer: the config-editing hint is gone; the Cleanup
+    // card now carries the live model picker. The old literal is asserted
+    // ABSENT (not deleted) so restoring it turns this pin red.
+    CHECK(content.find("\"The model is set in config.json; see the Privacy tab.\"") ==
           std::string::npos);
+    CHECK(content.find("\"Cleanup model\"") != std::string::npos);
     // Stale env-only copy is gone from the Cloud page.
     CHECK(content.find("read from the environment") == std::string::npos);
     // The key value is never seeded into the buffer from the store.
@@ -1683,4 +1687,109 @@ TEST_CASE("speech page microphone picker replaces the dead free-text row") {
     const std::string header = ReadSource("src/ui/MainWindow.h");
     REQUIRE_FALSE(header.empty());
     CHECK(header.find("mic_device_field_") == std::string::npos);
+}
+
+TEST_CASE("cleanup model index maps stored value to the fetched list") {
+    // Pure index contract for the Cleanup-page model picker: there is no
+    // sentinel entry, so "" and not-found both return -1, and the comparison
+    // is case-sensitive.
+    const std::vector<std::string> none;
+    CHECK(SettingsUiModel::MatchModelIndex(none, "") == -1);
+    CHECK(SettingsUiModel::MatchModelIndex(none, "some/model") == -1);
+    const std::vector<std::string> fetched = {"a/model", "b/model", "c/model"};
+    CHECK(SettingsUiModel::MatchModelIndex(fetched, "") == -1);
+    CHECK(SettingsUiModel::MatchModelIndex(fetched, "a/model") == 0);
+    CHECK(SettingsUiModel::MatchModelIndex(fetched, "b/model") == 1);
+    CHECK(SettingsUiModel::MatchModelIndex(fetched, "c/model") == 2);
+    CHECK(SettingsUiModel::MatchModelIndex(fetched, "z/model") == -1);
+    CHECK(SettingsUiModel::MatchModelIndex(fetched, "A/model") == -1);
+    const std::vector<std::string> cased = {"gpt-x"};
+    CHECK(SettingsUiModel::MatchModelIndex(cased, "GPT-x") == -1);
+}
+
+TEST_CASE("cleanup card OpenRouter model picker wires refresh and persistence") {
+    // lwf_tests does not link ImGui, so the picker wiring is guarded
+    // lexically: the combo sits in the backend card, Refresh is the only
+    // network trigger (worker + latch, never on the UI thread), busy guard
+    // before the spawn, and every select path persists through
+    // openrouter_model with the restart banner (schema hot_apply=false).
+    const std::string content = ReadSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(content.empty());
+    CHECK(content.find("##card_cleanup_backend") != std::string::npos);
+    CHECK(content.find("##openrouter_model") != std::string::npos);
+    CHECK(content.find("\"Refresh model list\"") != std::string::npos);
+    CHECK(content.find("\"Cleanup model\"") != std::string::npos);
+    CHECK(content.find("\"Type a model id\"") != std::string::npos);
+    CHECK(content.find("\"Use this model\"") != std::string::npos);
+    CHECK(content.find("MatchModelIndex") != std::string::npos);
+    CHECK(content.find("##or_custom") != std::string::npos);
+    CHECK(content.find("##or_") != std::string::npos);
+    CHECK(content.find("edit config.json") == std::string::npos);
+    const std::size_t backend = content.find("##card_cleanup_backend");
+    REQUIRE(backend != std::string::npos);
+    CHECK(content.find("##openrouter_model", backend) != std::string::npos);
+    // The fetch call lives in main.cpp, not here: the F9 copy lint scans
+    // every literal in src/ui (including #include paths) for banned terms,
+    // and the fetcher's header sits under the banned "llm" tree, so the
+    // composition root maps the Task-A result onto UI-facing primitives and
+    // injects it (see SetModelsFetcher). The off-thread worker call itself
+    // stays in MainWindow.cpp through `models_fetcher_`.
+    const std::string main_content = ReadSource("src/main.cpp");
+    REQUIRE_FALSE(main_content.empty());
+    CHECK(main_content.find("OpenRouterModels::FetchOpenRouterModels") !=
+          std::string::npos);
+    CHECK(content.find("models_fetcher_") != std::string::npos);
+    // Persist + restart banner ordering, mirroring the ##llm_provider pin,
+    // hardened per occurrence like the ##mic_pick pin: EVERY select path
+    // (the combo loop and the manual Use-this-model commit) must set, flag
+    // the restart, then save, close enough that the flag and the save cannot
+    // be picked up from a later, unrelated settings card.
+    const auto count_occurrences = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    const std::string model_set_needle = "SetString(\"openrouter_model\"";
+    const std::size_t model_paths = count_occurrences(content, model_set_needle);
+    REQUIRE(model_paths >= 2);  // Combo loop + manual fallback.
+    std::size_t path_set = content.find(model_set_needle);
+    for (std::size_t path = 0; path < model_paths; ++path) {
+        REQUIRE(path_set != std::string::npos);
+        const std::size_t path_restart = content.find("restart_needed_ = true", path_set);
+        REQUIRE(path_restart != std::string::npos);
+        REQUIRE(path_restart - path_set < 200);  // Same select branch.
+        const std::size_t path_apply = content.find("ApplyAndSave()", path_restart);
+        REQUIRE(path_apply != std::string::npos);
+        REQUIRE(path_apply - path_restart < 200);  // Same select branch.
+        path_set = content.find(model_set_needle, path_set + model_set_needle.size());
+    }
+    // Busy-guard pin: the guard must sit between the Refresh button and the
+    // worker spawn, close enough that the spawn cannot be reached without it.
+    // (Removing the guard also removes the anchor, so this goes red.)
+    const std::size_t refresh_button = content.find("\"Refresh model list\"");
+    REQUIRE(refresh_button != std::string::npos);
+    const std::size_t busy_guard = content.find("if (openrouter_models_busy_", refresh_button);
+    REQUIRE(busy_guard != std::string::npos);
+    const std::size_t spawn = content.find("openrouter_models_worker_ =", busy_guard);
+    REQUIRE(spawn != std::string::npos);
+    // The whole Refresh handler (null check + key resolution + join +
+    // worker spawn) is about a kilobyte, so the guard-to-spawn window is
+    // 1000: close enough that the spawn cannot leave the Refresh handler.
+    CHECK(spawn - busy_guard < 1000);
+    // Latch-consumption pin: the worker writes the latch, the card draw reads
+    // it on the UI thread (busy cleared on consume).
+    const std::size_t latch = content.find("if (openrouter_models_latch_ready_)");
+    REQUIRE(latch != std::string::npos);
+    CHECK(content.find("openrouter_models_latch_.", latch) != std::string::npos);
+    CHECK(content.find("openrouter_models_busy_.store(false)") != std::string::npos);
+    const std::string header = ReadSource("src/ui/MainWindow.h");
+    REQUIRE_FALSE(header.empty());
+    CHECK(header.find("SetModelsTransport") != std::string::npos);
+    CHECK(header.find("openrouter_models_busy_") != std::string::npos);
+    CHECK(header.find("openrouter_model_field_") != std::string::npos);
+    CHECK(header.find("openrouter_models_worker_") != std::string::npos);
 }

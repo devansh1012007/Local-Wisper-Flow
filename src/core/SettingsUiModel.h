@@ -32,6 +32,17 @@ std::string ValidateLanguage(const std::string& code);
 // "System default" string, otherwise names[index - 1].
 int MatchMicDeviceIndex(const std::vector<std::string>& names, const std::string& selected);
 
+// Cleanup-model lookup (Settings > Cleanup). Returns the index i into the
+// FETCHED list with fetched[i] == selected, or -1 when there is no such entry:
+//   selected == ""            -> -1 (nothing set)
+//   selected not in fetched   -> -1
+//   empty fetched list        -> -1
+// The comparison is case-sensitive ("GPT-x" != "gpt-x"). There is no sentinel
+// entry: the caller adds a synthetic entry for the current stored value when
+// this returns -1 and the stored value is non-empty, so the active model is
+// always visible.
+int MatchModelIndex(const std::vector<std::string>& fetched, const std::string& selected);
+
 // API key entry helpers (Settings UI). Pure logic only: trim, source
 // derivation from live store/env state, and user-facing status labels.
 // Key material never crosses these functions; callers keep the secret in

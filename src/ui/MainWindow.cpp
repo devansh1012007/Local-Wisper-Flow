@@ -46,7 +46,9 @@ extern "C" void* glfwGetWin32Window(GLFWwindow* window);
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -155,6 +157,14 @@ MainWindow::MainWindow(const DictationFSM& fsm, const MiniaudioCapture& audio,
 }
 
 MainWindow::~MainWindow() {
+    // DECISION: join the models fetch worker here so it can never outlive
+    // MainWindow; the worker writes only the latch members, which stay valid
+    // until the destructor returns. A fetch in flight caps the exit wait at
+    // the 8s transport timeout, and the app never freezes mid-session because
+    // the UI thread only consumes the latch.
+    if (openrouter_models_worker_.joinable()) {
+        openrouter_models_worker_.join();
+    }
     Shutdown();
 }
 
@@ -338,6 +348,14 @@ void MainWindow::SetSnippetsPage(std::unique_ptr<lwf::ui::pages::SnippetsPage> p
 
 void MainWindow::SetDataResetStores(DataResetStores stores) {
     reset_stores_ = stores;
+}
+
+void MainWindow::SetModelsTransport(IHttpTransport* transport) {
+    models_transport_ = transport;
+}
+
+void MainWindow::SetModelsFetcher(ModelListFetcher fetcher) {
+    models_fetcher_ = std::move(fetcher);
 }
 
 bool MainWindow::FirstRunNeeded() const {
@@ -810,6 +828,20 @@ void MainWindow::ClearApiKeyInputs() {
     elevenlabs_key_error_.clear();
     muse_key_error_.clear();
     openrouter_key_error_.clear();
+}
+
+std::string MainWindow::ResolveOpenRouterKey() const {
+    std::string resolved_key;
+    if (reset_stores_.api_keys != nullptr) {
+        resolved_key = reset_stores_.api_keys->Get("openrouter");
+    }
+    if (resolved_key.empty()) {
+        const char* env_key = std::getenv("OPENROUTER_API_KEY");
+        if (env_key != nullptr) {
+            resolved_key = env_key;
+        }
+    }
+    return resolved_key;
 }
 
 void MainWindow::DrawApiKeyRow(const char* store_id, const char* display_name,
@@ -1592,7 +1624,150 @@ void MainWindow::DrawCleanupPage(float scale) {
                       openrouter_key_buffer_, sizeof(openrouter_key_buffer_),
                       openrouter_remove_armed_, openrouter_keep_focus_pending_,
                       openrouter_key_error_, scale);
-        ImGui::TextDisabled("The model is set in config.json; see the Privacy tab.");
+        // DECISION: the models fetch runs on a worker std::thread that writes
+        // a mutex-guarded result latch, consumed each Cleanup-card frame here.
+        // The 8s GET therefore never blocks either window; Refresh is the only
+        // network trigger (no fetch on startup or page open, offline-first).
+        // DECISION: the single injected transport is reused for every Refresh;
+        // no client is created here.
+        // DECISION: selecting the "No model set" placeholder clears the model
+        // (sets openrouter_model to ""). That placeholder is the only entry
+        // when nothing is set and no list is loaded.
+        ImGui::TextUnformatted("Cleanup model");
+        {
+            std::lock_guard<std::mutex> latch_lock(openrouter_models_latch_mutex_);
+            if (openrouter_models_latch_ready_) {
+                // SECURITY: the fetch error text is already redacted + capped
+                // by the fetch layer; it carries no key and no transcript,
+                // and the "%s" format below never re-interprets it.
+                if (openrouter_models_latch_.ok && !openrouter_models_latch_.empty) {
+                    openrouter_models_ = openrouter_models_latch_.ids;
+                    openrouter_models_error_.clear();
+                } else if (openrouter_models_latch_.ok) {
+                    openrouter_models_.clear();
+                    openrouter_models_error_ = "No models returned.";
+                } else {
+                    openrouter_models_error_ = "Could not load the model list.";
+                    if (!openrouter_models_latch_.error.empty()) {
+                        openrouter_models_error_ += " ";
+                        openrouter_models_error_ += openrouter_models_latch_.error;
+                    }
+                }
+                openrouter_models_latch_ready_ = false;
+                openrouter_models_busy_.store(false);
+            }
+        }
+        if (openrouter_models_busy_.load()) {
+            ImGui::TextDisabled("Loading models...");
+        } else if (!openrouter_models_error_.empty()) {
+            ImGui::TextDisabled("%s", openrouter_models_error_.c_str());
+        } else if (!openrouter_models_.empty()) {
+            ImGui::TextDisabled("%d models available.",
+                                static_cast<int>(openrouter_models_.size()));
+        } else {
+            ImGui::TextDisabled("Model list not loaded.");
+        }
+        {
+            const std::string current_model = settings_.GetString("openrouter_model");
+            const int model_match =
+                SettingsUiModel::MatchModelIndex(openrouter_models_, current_model);
+            // The synthetic entry (index 0, added only when the stored value
+            // is non-empty and not in the fetched list) keeps the active
+            // model visible before Task A's sorted list.
+            const bool synthetic_present = !current_model.empty() && model_match == -1;
+            struct ModelEntry {
+                std::string value;
+                std::string label;
+            };
+            std::vector<ModelEntry> model_entries;
+            if (synthetic_present) {
+                model_entries.push_back({current_model, current_model});
+            } else if (openrouter_models_.empty() && current_model.empty()) {
+                model_entries.push_back({"", "No model set"});
+            }
+            for (const std::string& model_id : openrouter_models_) {
+                model_entries.push_back({model_id, model_id});
+            }
+            int selected_entry = -1;
+            if (synthetic_present) {
+                selected_entry = 0;
+            } else if (model_match >= 0) {
+                selected_entry = model_match;
+            } else if (openrouter_models_.empty()) {
+                selected_entry = 0;
+            }
+            const char* model_preview =
+                current_model.empty() ? "No model set" : current_model.c_str();
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::BeginCombo("##openrouter_model", model_preview)) {
+                for (std::size_t entry_index = 0; entry_index < model_entries.size();
+                     ++entry_index) {
+                    const std::string item =
+                        model_entries[entry_index].label + "##or_" +
+                        std::to_string(entry_index);
+                    if (ImGui::Selectable(item.c_str(),
+                                          static_cast<int>(entry_index) == selected_entry)) {
+                        settings_.SetString("openrouter_model",
+                                             model_entries[entry_index].value);
+                        restart_needed_ = true;
+                        ApplyAndSave();
+                        std::snprintf(openrouter_model_field_.buffer,
+                                      sizeof(openrouter_model_field_.buffer), "%s",
+                                      model_entries[entry_index].value.c_str());
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+        {
+            const bool models_busy = openrouter_models_busy_.load();
+            ImGui::BeginDisabled(models_busy);
+            const bool refresh_pressed = ImGui::Button(models_busy ? "Loading models..."
+                                                                    : "Refresh model list");
+            ImGui::EndDisabled();
+            if (refresh_pressed) {
+                if (openrouter_models_busy_.load()) {
+                    // Busy guard: re-Refresh while busy is a no-op.
+                } else if (models_transport_ == nullptr || !models_fetcher_) {
+                    openrouter_models_error_ = "Model list is not available.";
+                } else {
+                    // SECURITY: the key is copied for the worker, never shown.
+                    const std::string resolved_key = ResolveOpenRouterKey();
+                    openrouter_models_error_.clear();
+                    openrouter_models_busy_.store(true);
+                    IHttpTransport* transport = models_transport_;
+                    ModelListFetcher fetcher = models_fetcher_;
+                    if (openrouter_models_worker_.joinable()) {
+                        openrouter_models_worker_.join();
+                    }
+                    openrouter_models_worker_ = std::thread([this, transport, fetcher, resolved_key]() {
+                        ModelListResult result = fetcher(*transport, resolved_key);
+                        std::lock_guard<std::mutex> latch_lock(openrouter_models_latch_mutex_);
+                        openrouter_models_latch_ = std::move(result);
+                        openrouter_models_latch_ready_ = true;
+                    });
+                }
+            }
+        }
+        // Manual fallback (escape hatch): the buffer is seeded once from the
+        // stored value and synced on each commit; it is never cleared on
+        // commit or tab switch (declared, non-secret value; the model-path
+        // field lifecycle, not the key-row lifecycle). TrimApiKeyInput is the
+        // shared whitespace trim.
+        openrouter_model_field_.Seed(settings_.GetString("openrouter_model"));
+        ImGui::TextUnformatted("Type a model id");
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputText("##or_custom", openrouter_model_field_.buffer,
+                         sizeof(openrouter_model_field_.buffer));
+        if (ImGui::Button("Use this model")) {
+            const std::string trimmed =
+                SettingsUiModel::TrimApiKeyInput(openrouter_model_field_.buffer);
+            settings_.SetString("openrouter_model", trimmed);
+            restart_needed_ = true;
+            ApplyAndSave();
+            std::snprintf(openrouter_model_field_.buffer, sizeof(openrouter_model_field_.buffer),
+                          "%s", trimmed.c_str());
+        }
     }
     EndCard(scale);
 }
@@ -1629,7 +1804,7 @@ void MainWindow::DrawPrivacyPage(float scale) {
                                "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
             const std::string openrouter_model = settings_.GetString("openrouter_model");
             ImGui::Text("OpenRouter model: %s",
-                        openrouter_model.empty() ? "not set (edit config.json)" : openrouter_model.c_str());
+                        openrouter_model.empty() ? "not set" : openrouter_model.c_str());
         }
         ImGui::Separator();
         ImGui::TextWrapped("%s", "No telemetry. By default no network calls except explicit model "
