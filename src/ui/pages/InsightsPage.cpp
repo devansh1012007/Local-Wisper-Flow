@@ -155,6 +155,7 @@ void InsightsPage::DrawHeader(float scale) {
         OpenShare();
     }
     ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + badge + 8.0f * scale));
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
 }
 
 void InsightsPage::DrawTabs(float scale) {
@@ -181,6 +182,7 @@ void InsightsPage::DrawRow1(float scale) {
     DrawCardC(card_w, scale);
     bottom = std::max(bottom, ImGui::GetCursorScreenPos().y);
     ImGui::SetCursorScreenPos(ImVec2(origin.x, bottom + 16.0f * scale));
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
 }
 
 void InsightsPage::DrawCardA(float width, float scale) {
@@ -258,6 +260,7 @@ void InsightsPage::DrawRow2(float scale) {
     DrawCardE(right_w, scale);
     bottom = std::max(bottom, ImGui::GetCursorScreenPos().y);
     ImGui::SetCursorScreenPos(ImVec2(origin.x, bottom + 16.0f * scale));
+    ImGui::Dummy(ImVec2(0.0f, 0.0f));
 }
 
 void InsightsPage::DrawCardD(float width, float scale) {
