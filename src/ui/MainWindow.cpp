@@ -1291,13 +1291,14 @@ void MainWindow::DrawSpeechPage(float scale) {
                                                   : mic_devices_[selected_index - 1].c_str();
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::BeginCombo("##mic_pick", preview)) {
-            if (ImGui::Selectable("System default", selected_index == 0)) {
+            if (ImGui::Selectable("System default##mic_0", selected_index == 0)) {
                 settings_.SetString("mic_device", "");
                 restart_needed_ = true;
                 ApplyAndSave();
             }
             for (std::size_t i = 0; i < mic_devices_.size(); ++i) {
-                if (ImGui::Selectable(mic_devices_[i].c_str(),
+                std::string item = mic_devices_[i] + "##mic_" + std::to_string(i + 1);
+                if (ImGui::Selectable(item.c_str(),
                                       selected_index == static_cast<int>(i) + 1)) {
                     settings_.SetString("mic_device", mic_devices_[i]);
                     restart_needed_ = true;
