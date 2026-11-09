@@ -2741,7 +2741,7 @@ void MainWindow::DrawTransformsPage(float scale) {
 
 void MainWindow::DrawScratchpadPage(float scale) {
     if (scratchpad_page_) {
-        scratchpad_page_->Draw(scale);
+        scratchpad_page_->Draw(scale, *current_palette_);
         return;
     }
     DrawPageChrome("Scratchpad", "A scratch space for notes.", scale);

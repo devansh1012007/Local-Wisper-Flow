@@ -22,13 +22,13 @@ namespace {
 using lwf::ui::Color;
 using lwf::ui::Pack;
 // T2b: the ImGui style follows PaletteForTheme (Graphite default, Paper via
-// the `theme` key); direct Pack(kLightPalette...) custom draws stay Paper
-// until T10e re-skins them. Historical mapping note retained: studio style
-// -> ApplyImGuiStyle mapping was 1:1 (card_bg_white/card_bg -> surface,
-// teal_700 -> accent, ink -> text, page_bg -> bg); Padding/rounding/ChildBg
-// drift noted in audit (32 -> 16, 8 -> 6, white -> transparent);
-// studio_metrics fonts/radii kept as-is.
-using lwf::ui::kLightPalette;
+// the `theme` key). T10e: the tab chrome reads the live current_palette_
+// member (Init promotes the store selection, ApplyTheme queues the live
+// swap, RenderFrame applies it with this window's context current).
+// Historical mapping note retained: studio style -> ApplyImGuiStyle mapping
+// was 1:1 (card_bg_white/card_bg -> surface, teal_700 -> accent, ink -> text,
+// page_bg -> bg); Padding/rounding/ChildBg drift noted in audit (32 -> 16,
+// 8 -> 6, white -> transparent); studio_metrics fonts/radii kept as-is.
 namespace studio_metrics = lwf::ui::studio_metrics;
 
 int ScratchpadBodyCallback(ImGuiInputTextCallbackData* data) {
@@ -481,19 +481,19 @@ void ScratchpadWindow::DrawTabs(float scale) {
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         const bool active = static_cast<int>(i) == active_index_;
         if (active) {
-            draw.AddRectFilled(pos, ImVec2(pos.x + tab_w, pos.y + tab_h), Pack(kLightPalette.surface),
+            draw.AddRectFilled(pos, ImVec2(pos.x + tab_w, pos.y + tab_h), Pack(current_palette_->surface),
                                studio_metrics::radius_chip * scale);
         } else {
-            draw.AddRectFilled(pos, ImVec2(pos.x + tab_w, pos.y + tab_h), Pack(kLightPalette.surface),
+            draw.AddRectFilled(pos, ImVec2(pos.x + tab_w, pos.y + tab_h), Pack(current_palette_->surface),
                                studio_metrics::radius_chip * scale);
         }
         if (ImGui::IsItemFocused()) {
             draw.AddRect(ImVec2(pos.x - 2.0f * scale, pos.y - 2.0f * scale),
                          ImVec2(pos.x + tab_w + 2.0f * scale, pos.y + tab_h + 2.0f * scale),
-                         Pack(kLightPalette.accent), studio_metrics::radius_chip * scale, 0, 2.0f * scale);
+                         Pack(current_palette_->accent), studio_metrics::radius_chip * scale, 0, 2.0f * scale);
         }
         ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-        draw.AddText(ImVec2(pos.x + 12.0f * scale, pos.y + (tab_h - text_size.y) * 0.5f), Pack(kLightPalette.text),
+        draw.AddText(ImVec2(pos.x + 12.0f * scale, pos.y + (tab_h - text_size.y) * 0.5f), Pack(current_palette_->text),
                      display.c_str());
         ImGui::PopFont();
         if (pressed) {
@@ -506,7 +506,7 @@ void ScratchpadWindow::DrawTabs(float scale) {
         const bool close_pressed =
             ImGui::InvisibleButton(close_id.c_str(), ImVec2(28.0f * scale, tab_h), ImGuiButtonFlags_EnableNav);
         draw.AddText(ImVec2(close_pos.x + 8.0f * scale, close_pos.y + (tab_h - 16.0f * scale) * 0.5f),
-                     Pack(kLightPalette.muted), "x");
+                     Pack(current_palette_->muted), "x");
         if (close_pressed) {
             close_index = static_cast<int>(i);
         }

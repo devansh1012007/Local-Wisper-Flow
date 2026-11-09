@@ -1218,6 +1218,43 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
     CHECK(insights_content.find("kTabVoice") == std::string::npos);
     CHECK(insights_content.find("TabRow") == std::string::npos);
     CHECK(insights_content.find("DrawShareDialog") == std::string::npos);
+    // T10e: Scratchpad page threads the live palette (no Paper read), keeps
+    // the HeatColor(3) undo fill, and passes it to its widgets.
+    std::ifstream scratchpad_page("src/ui/pages/ScratchpadPage.cpp");
+    REQUIRE(static_cast<bool>(scratchpad_page));
+    const std::string scratchpad_page_content((std::istreambuf_iterator<char>(scratchpad_page)),
+                                              std::istreambuf_iterator<char>());
+    CHECK(scratchpad_page_content.find("kLightPalette") == std::string::npos);
+    CHECK(scratchpad_page_content.find("Pack(palette.text)") != std::string::npos);
+    CHECK(scratchpad_page_content.find("Pack(palette.muted)") != std::string::npos);
+    CHECK(scratchpad_page_content.find("Pack(palette.surface)") != std::string::npos);
+    CHECK(scratchpad_page_content.find("Pack(palette.border)") != std::string::npos);
+    CHECK(scratchpad_page_content.find("Pack(palette.accent)") != std::string::npos);
+    CHECK(scratchpad_page_content.find("HeatColor(3)") != std::string::npos);
+    // T10e: Scratchpad editor chrome reads the live current_palette_ (never
+    // Paper); the clear color and tab fills follow the same pointer.
+    std::ifstream scratchpad_window("src/ui/ScratchpadWindow.cpp");
+    REQUIRE(static_cast<bool>(scratchpad_window));
+    const std::string scratchpad_window_content((std::istreambuf_iterator<char>(scratchpad_window)),
+                                                std::istreambuf_iterator<char>());
+    CHECK(scratchpad_window_content.find("kLightPalette") == std::string::npos);
+    CHECK(scratchpad_window_content.find("current_palette_->surface") != std::string::npos);
+    CHECK(scratchpad_window_content.find("current_palette_->text") != std::string::npos);
+    CHECK(scratchpad_window_content.find("current_palette_->muted") != std::string::npos);
+    CHECK(scratchpad_window_content.find("current_palette_->accent") != std::string::npos);
+    CHECK(scratchpad_window_content.find("current_palette_->bg") != std::string::npos);
+    // T10e MainWindow wiring: the page receives the live palette (scoped to
+    // DrawScratchpadPage so a lookalike elsewhere cannot satisfy the pin).
+    std::ifstream main_window_scratch("src/ui/MainWindow.cpp");
+    REQUIRE(static_cast<bool>(main_window_scratch));
+    const std::string main_window_scratch_content(
+        (std::istreambuf_iterator<char>(main_window_scratch)), std::istreambuf_iterator<char>());
+    const std::size_t scratch_fn = main_window_scratch_content.find("void MainWindow::DrawScratchpadPage");
+    REQUIRE(scratch_fn != std::string::npos);
+    const std::size_t scratch_next = main_window_scratch_content.find("void MainWindow::DrawGeneralPage", scratch_fn);
+    REQUIRE(scratch_next != std::string::npos);
+    const std::string scratch_span = main_window_scratch_content.substr(scratch_fn, scratch_next - scratch_fn);
+    CHECK(scratch_span.find("scratchpad_page_->Draw(scale, *current_palette_)") != std::string::npos);
 }
 
 TEST_CASE("Phase 5 pages carry cursor Dummy compensation") {
