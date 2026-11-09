@@ -10,7 +10,11 @@ evidence gathered so far.
    x86_64-windows-gnu -Isrc <file>` on a machine that has it.
    Redesign note (2026-11-08, `ops/ui-full-redesign` Ph2-ShimDel + Ph7 docs):
    G3 remains pending here — no zig on the dev box; Ph7 changes are docs
-   only (no build needed).
+   only (no build needed). T13a (2026-11-09, `ops/ui-redesign-v2`):
+   G3 again pending — no zig; touches `src/ui/MainWindow.{h,cpp}` +
+   `src/core/Onboarding.{h,cpp}` with `os/WindowsDownloader.h` from the
+   UI TU (`zig c++ -fsyntax-only -target x86_64-windows-gnu -Isrc
+   src/ui/MainWindow.cpp` owed).
 
 2. D8 model hashes: model URLs and SHA-256 values in `models.json` must be copied
    from the real model pages, never invented. Unverified entries ship with

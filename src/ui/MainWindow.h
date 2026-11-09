@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/DictationFSM.h"
+#include "core/Onboarding.h"
 
 #include <atomic>
 #include <cstddef>
@@ -329,6 +330,26 @@ private:
     bool openrouter_models_latch_ready_ = false;  // guarded by latch mutex
     ModelListResult openrouter_models_latch_;  // guarded by latch mutex
     std::thread openrouter_models_worker_;  // joined in ~MainWindow
+    // Speech-model download (T13a): catalog-driven through the exe-dir
+    // models.json (Q2 may leave url empty, in which case the control is
+    // inert). The worker thread owns the synchronous transfer; progress
+    // reaches the UI through one polled atomic, the terminal result through
+    // the mutex latch, and the UI thread alone drives download_model_.
+    // The latch is consumed in RunOnce before the hidden early-out, so
+    // completion survives the window being hidden or the page switched.
+    // INVARIANT: download_busy_ is touched only on the UI thread (set on
+    // spawn, cleared on consume); the worker never touches ImGui, settings
+    // or the model, and the latch mutex is the only shared mutable state
+    // besides the progress atomic and the cancel flag.
+    Onboarding::DownloadModel download_model_;
+    std::atomic<bool> download_busy_{false};
+    std::atomic<bool> download_cancelled_{false};
+    std::atomic<std::uint64_t> download_downloaded_{0};
+    std::string download_stored_path_;
+    std::mutex download_latch_mutex_;
+    bool download_latch_ready_ = false;  // guarded by latch mutex
+    Onboarding::DownloadSnapshot download_latch_;  // guarded by latch mutex
+    std::thread download_worker_;  // joined in ~MainWindow
     // Microphone picker (Settings > Speech): capture-device display names
     // enumerated ONCE per app run on the first DrawSpeechPage pass.
     // INVARIANT: ListCaptureDevices() inits a ma_context, so it must never be

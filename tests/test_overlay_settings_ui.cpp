@@ -1971,6 +1971,62 @@ TEST_CASE("T5 settings General and Speech ruled rows pin") {
     CHECK(theme_span.find("restart_needed_ = true") == std::string::npos);
 }
 
+TEST_CASE("T13a speech model download wiring pin") {
+    // The catalog-driven Download control lives in DrawSpeechPage only:
+    // worker thread, cancel flag, latch, empty-url disabled state, and the
+    // ErrorCode mapping. The transfer layer itself stays in os/ (T13a adds
+    // no network code), and Speech is the only page that spawns it.
+    const std::string content = ReadSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(content.empty());
+    const std::size_t speech = content.find("void MainWindow::DrawSpeechPage");
+    REQUIRE(speech != std::string::npos);
+    const std::size_t cloud_fn = content.find("void MainWindow::DrawCloudPage", speech);
+    REQUIRE(cloud_fn != std::string::npos);
+    const std::string speech_src = content.substr(speech, cloud_fn - speech);
+    CHECK(speech_src.find("ParseModelsJson") != std::string::npos);
+    CHECK(speech_src.find("BeginDisabled(") != std::string::npos);
+    CHECK(speech_src.find("\"Download##download_speech\"") != std::string::npos);
+    CHECK(speech_src.find("\"Cancel##cancel_download\"") != std::string::npos);
+    CHECK(speech_src.find("download_busy_.load()") != std::string::npos);
+    CHECK(speech_src.find("download_cancelled_.store(true)") != std::string::npos);
+    CHECK(speech_src.find("IsSafeFileName") != std::string::npos);
+    CHECK(speech_src.find("PlanDownloadStart") != std::string::npos);
+    CHECK(speech_src.find("GetDataDir()") != std::string::npos);
+    // The latch is consumed in RunOnce (before the hidden early-out), not
+    // on the Speech page, so completion survives a hidden window.
+    const std::size_t run_once = content.find("void MainWindow::RunOnce");
+    REQUIRE(run_once != std::string::npos);
+    const std::size_t run_once_end = content.find("void MainWindow::RenderPages", run_once);
+    REQUIRE(run_once_end != std::string::npos);
+    const std::string run_once_src = content.substr(run_once, run_once_end - run_once);
+    CHECK(run_once_src.find("download_latch_mutex_") != std::string::npos);
+    CHECK(run_once_src.find("download_model_.OnSuccess()") != std::string::npos);
+    CHECK(run_once_src.find("download_model_.OnFailed(") != std::string::npos);
+    CHECK(run_once_src.find("download_model_.OnCancelled()") != std::string::npos);
+    // The worker owns the synchronous transfer and is joined in the
+    // destructor after the cancel flag is set; the worker never touches
+    // ImGui. The ErrorCode mapping stays in the portable model.
+    CHECK(content.find("WindowsDownloader downloader") != std::string::npos);
+    CHECK(content.find("MapDownloadError") != std::string::npos);
+    CHECK(content.find("IsCancellationDetail") != std::string::npos);
+    const std::size_t dtor = content.find("MainWindow::~MainWindow()");
+    REQUIRE(dtor != std::string::npos);
+    const std::size_t init_fn = content.find("bool MainWindow::Init()", dtor);
+    REQUIRE(init_fn != std::string::npos);
+    const std::string dtor_src = content.substr(dtor, init_fn - dtor);
+    CHECK(dtor_src.find("download_worker_.join()") != std::string::npos);
+    const std::string onboarding = ReadSource("src/core/Onboarding.cpp");
+    REQUIRE_FALSE(onboarding.empty());
+    CHECK(onboarding.find("ErrorCode::DownloadFailed") != std::string::npos);
+    CHECK(onboarding.find("ErrorCode::ChecksumMismatch") != std::string::npos);
+    // Zero new network code: no OS network headers in the UI translation
+    // unit, and the transfer header (cstdint/functional/optional/string
+    // only) is the only network-adjacent include added.
+    CHECK(content.find("windows.h") == std::string::npos);
+    CHECK(content.find("winhttp.h") == std::string::npos);
+    CHECK(content.find("os/WindowsDownloader.h") != std::string::npos);
+}
+
 TEST_CASE("cleanup model index maps stored value to the fetched list") {
     // Pure index contract for the Cleanup-page model picker: there is no
     // sentinel entry, so "" and not-found both return -1, and the comparison

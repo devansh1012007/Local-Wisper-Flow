@@ -107,3 +107,165 @@ TEST_CASE("resume planner covers every branch") {
     const Onboarding::ResumePlan unknown_remote = Onboarding::PlanResume(400, 0, "sha", "");
     CHECK_FALSE(unknown_remote.valid);
 }
+
+TEST_CASE("download model lifecycle: start, monotonic progress, terminal states") {
+    Onboarding::DownloadModel model;
+    const Onboarding::DownloadSnapshot fresh = model.Snapshot();
+    CHECK(fresh.state == Onboarding::DownloadState::Idle);
+    CHECK(fresh.downloaded == 0);
+    CHECK(fresh.total == 0);
+    CHECK(fresh.destination.empty());
+    CHECK_FALSE(model.IsDownloading());
+
+    // An empty destination can never start.
+    CHECK_FALSE(model.Start("", 1000));
+    CHECK(model.Snapshot().state == Onboarding::DownloadState::Idle);
+
+    CHECK(model.Start("models/x.bin", 1000));
+    CHECK(model.IsDownloading());
+    CHECK(model.Snapshot().state == Onboarding::DownloadState::Downloading);
+    CHECK(model.Snapshot().destination == "models/x.bin");
+    CHECK(model.Snapshot().total == 1000);
+    CHECK(model.Snapshot().downloaded == 0);
+
+    // Start-while-downloading is refused and changes nothing.
+    CHECK_FALSE(model.Start("models/y.bin", 5));
+    CHECK(model.Snapshot().destination == "models/x.bin");
+    CHECK(model.Snapshot().total == 1000);
+
+    // Progress is monotonic and clamps to the total.
+    model.OnProgress(400);
+    CHECK(model.Snapshot().downloaded == 400);
+    model.OnProgress(300);
+    CHECK(model.Snapshot().downloaded == 400);
+    model.OnProgress(5000);
+    CHECK(model.Snapshot().downloaded == 1000);
+    CHECK(model.ProgressFraction() == 1.0);
+
+    // Terminal transitions apply only from Downloading, and success keeps
+    // the destination info for the caller to persist.
+    model.OnSuccess();
+    CHECK(model.Snapshot().state == Onboarding::DownloadState::Success);
+    CHECK_FALSE(model.IsDownloading());
+    CHECK(model.Snapshot().destination == "models/x.bin");
+    CHECK(model.Snapshot().downloaded == 1000);
+    // Late progress and a second terminal transition are ignored.
+    model.OnProgress(0);
+    model.OnCancelled();
+    CHECK(model.Snapshot().state == Onboarding::DownloadState::Success);
+    CHECK(model.Snapshot().downloaded == 1000);
+}
+
+TEST_CASE("download model: indeterminate total and cancel/failure paths") {
+    Onboarding::DownloadModel indeterminate;
+    CHECK(indeterminate.Start("models/y.bin", 0));
+    CHECK(indeterminate.ProgressFraction() == -1.0);
+    indeterminate.OnProgress(1234);
+    CHECK(indeterminate.Snapshot().downloaded == 1234);
+    CHECK(indeterminate.ProgressFraction() == -1.0);
+    indeterminate.OnCancelled();
+    CHECK(indeterminate.Snapshot().state == Onboarding::DownloadState::Cancelled);
+
+    Onboarding::DownloadModel failed;
+    CHECK(failed.Start("models/z.bin", 10));
+    Onboarding::DownloadError error;
+    error.code = ErrorCode::ChecksumMismatch;
+    error.detail = "downloaded file failed verification";
+    failed.OnFailed(error);
+    const Onboarding::DownloadSnapshot snapshot = failed.Snapshot();
+    CHECK(snapshot.state == Onboarding::DownloadState::Failed);
+    CHECK(snapshot.error.code == ErrorCode::ChecksumMismatch);
+    CHECK(snapshot.error.detail == "downloaded file failed verification");
+
+    // Terminal calls from Idle are no-ops.
+    Onboarding::DownloadModel idle;
+    idle.OnSuccess();
+    idle.OnCancelled();
+    idle.OnFailed(error);
+    idle.OnProgress(9);
+    CHECK(idle.Snapshot().state == Onboarding::DownloadState::Idle);
+    CHECK(idle.Snapshot().downloaded == 0);
+
+    // Reset returns any state to Idle and clears everything.
+    failed.Reset();
+    CHECK(failed.Snapshot().state == Onboarding::DownloadState::Idle);
+    CHECK(failed.Snapshot().downloaded == 0);
+    CHECK(failed.Snapshot().destination.empty());
+    CHECK(failed.Snapshot().error.detail.empty());
+    failed.Reset();
+    CHECK(failed.Start("models/again.bin", 1));
+    CHECK(failed.Snapshot().state == Onboarding::DownloadState::Downloading);
+    CHECK(failed.Snapshot().total == 1);
+}
+
+TEST_CASE("download error mapping preserves codes and labels other codes unknown") {
+    const Onboarding::DownloadError failed =
+        Onboarding::MapDownloadError(ErrorCode::DownloadFailed, "request failed");
+    CHECK(failed.code == ErrorCode::DownloadFailed);
+    CHECK(failed.detail == "request failed");
+
+    const Onboarding::DownloadError bad =
+        Onboarding::MapDownloadError(ErrorCode::ChecksumMismatch, "mismatch");
+    CHECK(bad.code == ErrorCode::ChecksumMismatch);
+    CHECK(bad.detail == "mismatch");
+
+    const Onboarding::DownloadError other = Onboarding::MapDownloadError(ErrorCode::SttFailed, "x");
+    CHECK(other.code == ErrorCode::Unknown);
+    CHECK(other.detail == "x");
+
+    // The transfer layer throws the cancel detail when its progress
+    // callback returns false; the predicate pins that string contract.
+    CHECK(Onboarding::IsCancellationDetail("download cancelled by user"));
+    CHECK_FALSE(Onboarding::IsCancellationDetail("request failed"));
+    CHECK_FALSE(Onboarding::IsCancellationDetail(""));
+}
+
+TEST_CASE("download start plan skips only a verified-complete destination") {
+    // Verified complete: skip, no transfer.
+    const Onboarding::DownloadStartPlan done =
+        Onboarding::PlanDownloadStart(1000, 1000, "sha", "sha");
+    CHECK(done.skip);
+
+    // Hash mismatch on a complete file: download again from scratch.
+    const Onboarding::DownloadStartPlan bad =
+        Onboarding::PlanDownloadStart(1000, 1000, "sha", "other");
+    CHECK_FALSE(bad.skip);
+    CHECK(bad.resume_offset == 0);
+
+    // Unknown remote size: never skip.
+    const Onboarding::DownloadStartPlan unknown =
+        Onboarding::PlanDownloadStart(0, 0, "", "");
+    CHECK_FALSE(unknown.skip);
+
+    // Partial file: resume offset carries through, no skip.
+    const Onboarding::DownloadStartPlan partial =
+        Onboarding::PlanDownloadStart(400, 1000, "sha", "");
+    CHECK_FALSE(partial.skip);
+    CHECK(partial.resume_offset == 400);
+
+    // No expected hash and no file: full download, no skip.
+    const Onboarding::DownloadStartPlan fresh =
+        Onboarding::PlanDownloadStart(0, 1000, "", "");
+    CHECK_FALSE(fresh.skip);
+    CHECK(fresh.resume_offset == 0);
+}
+
+TEST_CASE("download file name safety rejects separators and parents") {
+    CHECK(Onboarding::IsSafeFileName("ggml-base.en.bin"));
+    CHECK(Onboarding::IsSafeFileName("qwen2.5-1.5b-instruct-q4_k_m.gguf"));
+    CHECK_FALSE(Onboarding::IsSafeFileName(""));
+    CHECK_FALSE(Onboarding::IsSafeFileName("../evil.bin"));
+    CHECK_FALSE(Onboarding::IsSafeFileName("a/b.bin"));
+    CHECK_FALSE(Onboarding::IsSafeFileName("a\\b.bin"));
+    CHECK_FALSE(Onboarding::IsSafeFileName(".."));
+    CHECK_FALSE(Onboarding::IsSafeFileName("."));
+    // MAJOR-2 hardening: drive/ADS, Windows-invalid chars, trailing dot/space.
+    CHECK_FALSE(Onboarding::IsSafeFileName("C:evil.bin"));
+    CHECK_FALSE(Onboarding::IsSafeFileName("foo:bar"));
+    CHECK_FALSE(Onboarding::IsSafeFileName("a<>b"));
+    CHECK_FALSE(Onboarding::IsSafeFileName("a|b"));
+    CHECK_FALSE(Onboarding::IsSafeFileName("a?b"));
+    CHECK_FALSE(Onboarding::IsSafeFileName("a*b"));
+    CHECK_FALSE(Onboarding::IsSafeFileName("trailing."));
+    CHECK_FALSE(Onboarding::IsSafeFileName("trailing "));
+}

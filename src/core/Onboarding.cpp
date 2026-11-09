@@ -98,4 +98,125 @@ ResumePlan PlanResume(std::uint64_t existing_bytes, std::uint64_t remote_size,
     return plan;
 }
 
+DownloadError MapDownloadError(ErrorCode code, const std::string& detail) {
+    DownloadError error;
+    error.detail = detail;
+    switch (code) {
+        case ErrorCode::DownloadFailed:
+        case ErrorCode::ChecksumMismatch:
+            error.code = code;
+            break;
+        default:
+            error.code = ErrorCode::Unknown;
+            break;
+    }
+    return error;
+}
+
+bool IsCancellationDetail(const std::string& detail) {
+    return detail == "download cancelled by user";
+}
+
+bool IsSafeFileName(const std::string& name) {
+    if (name.empty() || name == "." || name == "..") {
+        return false;
+    }
+    // Windows trims trailing dots/spaces, so "evil " could collide with a
+    // real file of the trimmed name; reject them (MAJOR-2 hardening).
+    const char last = name.back();
+    if (last == '.' || last == ' ') {
+        return false;
+    }
+    // Reject ':' (drive root / alternate data streams), Windows-invalid
+    // filename chars <>"|?*, and path separators.
+    // SECURITY: catalog names are attacker-influenced via models.json (Q2).
+    return name.find_first_of("/\\:<>\"|?*") == std::string::npos;
+}
+
+DownloadStartPlan PlanDownloadStart(std::uint64_t existing_bytes, std::uint64_t remote_size,
+                                    const std::string& expected_sha256,
+                                    const std::string& actual_sha256) {
+    DownloadStartPlan start;
+    const ResumePlan plan =
+        PlanResume(existing_bytes, remote_size, expected_sha256, actual_sha256);
+    if (!plan.valid) {
+        return start;
+    }
+    start.resume_offset = plan.start_offset;
+    // A complete file that needs no verification (matching hash, or no
+    // expected hash) skips the transfer entirely; this mirrors the early
+    // return the transfer layer makes on the same inputs.
+    start.skip =
+        existing_bytes > 0 && plan.start_offset == 0 && !plan.verify_required;
+    return start;
+}
+
+bool DownloadModel::Start(const std::string& destination, std::uint64_t total) {
+    if (snapshot_.state == DownloadState::Downloading || destination.empty()) {
+        return false;
+    }
+    snapshot_.state = DownloadState::Downloading;
+    snapshot_.downloaded = 0;
+    snapshot_.total = total;
+    snapshot_.destination = destination;
+    snapshot_.error = DownloadError{};
+    return true;
+}
+
+void DownloadModel::OnProgress(std::uint64_t downloaded) {
+    if (snapshot_.state != DownloadState::Downloading) {
+        return;
+    }
+    if (downloaded <= snapshot_.downloaded) {
+        return;
+    }
+    if (snapshot_.total > 0 && downloaded > snapshot_.total) {
+        downloaded = snapshot_.total;
+    }
+    snapshot_.downloaded = downloaded;
+}
+
+void DownloadModel::OnSuccess() {
+    if (snapshot_.state != DownloadState::Downloading) {
+        return;
+    }
+    snapshot_.state = DownloadState::Success;
+}
+
+void DownloadModel::OnCancelled() {
+    if (snapshot_.state != DownloadState::Downloading) {
+        return;
+    }
+    snapshot_.state = DownloadState::Cancelled;
+}
+
+void DownloadModel::OnFailed(const DownloadError& error) {
+    if (snapshot_.state != DownloadState::Downloading) {
+        return;
+    }
+    snapshot_.state = DownloadState::Failed;
+    snapshot_.error = error;
+}
+
+void DownloadModel::Reset() {
+    snapshot_ = DownloadSnapshot{};
+}
+
+DownloadSnapshot DownloadModel::Snapshot() const {
+    return snapshot_;
+}
+
+bool DownloadModel::IsDownloading() const {
+    return snapshot_.state == DownloadState::Downloading;
+}
+
+double DownloadModel::ProgressFraction() const {
+    if (snapshot_.total == 0) {
+        return -1.0;
+    }
+    const std::uint64_t clamped =
+        snapshot_.downloaded > snapshot_.total ? snapshot_.total : snapshot_.downloaded;
+    return static_cast<double>(clamped) / static_cast<double>(snapshot_.total);
+}
+
 }
