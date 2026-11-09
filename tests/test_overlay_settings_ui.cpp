@@ -258,9 +258,8 @@ TEST_CASE("design px font tokens follow the hairline type scale") {
     // Hairline type scale (DESIGN §3.4): title 24 / section 14 / body 13 /
     // helper 12. Token names are kept (values only): wordmark/page_title
     // are title, card_title is section, body is body, mini is helper.
-    // Rail canonicalised 208 -> 220 (live kRailWidth=220 always won; the
-    // token was dead), fade_in 0.12 -> 0.15 (functional motion band).
-    CHECK(metrics::rail_width == 220.0f);
+    // T4a: the rail token is retired with the rail (no metrics::rail_width).
+    // fade_in 0.12 -> 0.15 (functional motion band).
     CHECK(metrics::fade_in == 0.15f);
     CHECK(metrics::radius_card == 10.0f);
     CHECK(metrics::topstrip_height == 48.0f);
@@ -540,14 +539,35 @@ TEST_CASE("main window keyboard nav and commit-on-deactivate wiring") {
         }
         return count;
     };
-    // A1: keyboard nav opt-in on the IO config and both InvisibleButtons
-    // (ToggleSwitch + rail page buttons).
+    // A1: keyboard nav opt-in on the IO config. EnableNav now lives inside
+    // TopStripItem (src/ui/widgets/Buttons.cpp, pinned by the T3 widget
+    // sweep) and the file-local ToggleSwitch; every strip destination is
+    // keyboard-focusable through its TopStripItem call site below.
     CHECK(content.find("NavEnableKeyboard") != std::string::npos);
-    CHECK(count_occurrences(content, "ImGuiButtonFlags_EnableNav") >= 2);
-    // R-W2-001: the rail switches on the InvisibleButton activation return
+    CHECK(content.find("lwf::ui::widgets::TopStripItem") != std::string::npos);
+    CHECK(count_occurrences(content, "##strip_") >= 7);
+    // m1: EnableNav must live inside TopStripItem itself
+    // (src/ui/widgets/Buttons.cpp), not merely somewhere in the file. Anchor
+    // on the function and require the flag after it and before its return,
+    // so deleting the flag from TopStripItem turns this pin red even though
+    // other widgets in the same file keep their own EnableNav.
+    std::ifstream buttons_top("src/ui/widgets/Buttons.cpp");
+    REQUIRE(static_cast<bool>(buttons_top));
+    const std::string buttons_content((std::istreambuf_iterator<char>(buttons_top)),
+                                      std::istreambuf_iterator<char>());
+    const std::size_t topstrip_fn = buttons_content.find("bool TopStripItem");
+    REQUIRE(topstrip_fn != std::string::npos);
+    const std::size_t enable_nav =
+        buttons_content.find("ImGuiButtonFlags_EnableNav", topstrip_fn);
+    REQUIRE(enable_nav != std::string::npos);
+    const std::size_t topstrip_return =
+        buttons_content.find("return pressed;", topstrip_fn);
+    REQUIRE(topstrip_return != std::string::npos);
+    CHECK(enable_nav < topstrip_return);
+    // R-W2-001: the strip switches on the TopStripItem activation return
     // (covers keyboard), never on mouse-only IsItemClicked.
     CHECK(content.find("const bool pressed =") != std::string::npos);
-    CHECK(content.find("InvisibleButton(item.id") != std::string::npos);
+    CHECK(content.find("TopStripItem(item.id") != std::string::npos);
     CHECK(content.find("if (ImGui::IsItemClicked(") == std::string::npos);
     // Focus restore is NavActive-gated and fires before SetKeyboardFocusHere
     // is handed to the next item.
@@ -556,7 +576,7 @@ TEST_CASE("main window keyboard nav and commit-on-deactivate wiring") {
     REQUIRE(nav_active != std::string::npos);
     REQUIRE(focus_here != std::string::npos);
     CHECK(nav_active < focus_here);
-    // R-W2-003: only SetVisible and Welcome-Finish arm the restore; the rail
+    // R-W2-003: only SetVisible and Welcome-Finish arm the restore; the strip
     // press must clear it (focus is already on the pressed item).
     CHECK(count_occurrences(content, "page_focus_pending_ = true") == 2);
     // A3: "Copied" dwell driven by copied_until_ and the shared token.
@@ -680,18 +700,29 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     REQUIRE(static_cast<bool>(main_window));
     const std::string content((std::istreambuf_iterator<char>(main_window)),
                               std::istreambuf_iterator<char>());
-    CHECK(content.find("##nav_home") != std::string::npos);
-    CHECK(content.find("##nav_insights") != std::string::npos);
-    CHECK(content.find("##nav_dictionary") != std::string::npos);
-    CHECK(content.find("##nav_snippets") != std::string::npos);
-    CHECK(content.find("##nav_transforms") != std::string::npos);
-    CHECK(content.find("##nav_scratchpad") != std::string::npos);
-    CHECK(content.find("##nav_settings") != std::string::npos);
-    CHECK(content.find("##nav_speech") == std::string::npos);
-    CHECK(content.find("##nav_cloud") == std::string::npos);
-    CHECK(content.find("##nav_cleanup") == std::string::npos);
-    CHECK(content.find("##nav_privacy") == std::string::npos);
-    CHECK(content.find("##nav_about") == std::string::npos);
+    CHECK(content.find("##strip_home") != std::string::npos);
+    CHECK(content.find("##strip_insights") != std::string::npos);
+    CHECK(content.find("##strip_dictionary") != std::string::npos);
+    CHECK(content.find("##strip_snippets") != std::string::npos);
+    CHECK(content.find("##strip_transforms") != std::string::npos);
+    CHECK(content.find("##strip_scratchpad") != std::string::npos);
+    CHECK(content.find("##strip_settings") != std::string::npos);
+    CHECK(content.find("##nav_home") == std::string::npos);
+    CHECK(content.find("##nav_insights") == std::string::npos);
+    CHECK(content.find("##nav_dictionary") == std::string::npos);
+    CHECK(content.find("##nav_snippets") == std::string::npos);
+    CHECK(content.find("##nav_transforms") == std::string::npos);
+    CHECK(content.find("##nav_scratchpad") == std::string::npos);
+    CHECK(content.find("##nav_settings") == std::string::npos);
+    CHECK(content.find("##strip_speech") == std::string::npos);
+    CHECK(content.find("##strip_cloud") == std::string::npos);
+    CHECK(content.find("##strip_cleanup") == std::string::npos);
+    CHECK(content.find("##strip_privacy") == std::string::npos);
+    CHECK(content.find("##strip_about") == std::string::npos);
+    CHECK(content.find("DrawRail") == std::string::npos);
+    CHECK(content.find("##rail") == std::string::npos);
+    CHECK(content.find("void MainWindow::DrawTopStrip") != std::string::npos);
+    CHECK(content.find("topstrip_height * scale") != std::string::npos);
     CHECK(content.find("##tab_general") != std::string::npos);
     CHECK(content.find("##tab_speech") != std::string::npos);
     CHECK(content.find("##tab_cloud") != std::string::npos);
@@ -699,8 +730,8 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("##tab_privacy") != std::string::npos);
     CHECK(content.find("##tab_about") != std::string::npos);
     CHECK(count_occurrences(content, "Not available yet.") == 5);
-    CHECK(content.find("kRailWidth") != std::string::npos);
-    CHECK(content.find("40.0f * scale") != std::string::npos);
+    CHECK(content.find("kRailWidth") == std::string::npos);
+    CHECK(content.find("40.0f * scale") == std::string::npos);
     CHECK(content.find("font_card_title_px") != std::string::npos);
     CHECK(content.find("PersistPage();") != std::string::npos);
     CHECK(content.find("last_page") != std::string::npos);

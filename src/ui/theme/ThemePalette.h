@@ -123,7 +123,6 @@ inline constexpr float radius_control = 6.0f;   // buttons, inputs, chips
 inline constexpr float radius_card = 10.0f;     // cards, windows
 inline constexpr float radius_pill = 999.0f;    // dot, pill, switches
 
-inline constexpr float rail_width = 220.0f;      // Full window navigation rail (was 208; live kRailWidth=220 wins — canonicalised)
 inline constexpr float content_max = 640.0f;     // widest page content, left aligned
 inline constexpr float control_min_height = 32.0f;  // controls are at least 32 px tall
 inline constexpr float topstrip_height = 48.0f;   // Hairline top-strip height (DESIGN §3.3)

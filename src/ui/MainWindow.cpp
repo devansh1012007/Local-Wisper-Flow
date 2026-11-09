@@ -26,6 +26,7 @@
 #include "ui/pages/TransformsPage.h"
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
+#include "ui/widgets/Widgets.h"
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -62,11 +63,6 @@ namespace metrics = lwf::ui::metrics;
 using lwf::ui::Color;
 using lwf::ui::kLightPalette;
 using lwf::ui::Pack;
-
-// Rail width resolves from the canonical token instead of a second literal,
-// kept as kRailWidth so the kRailWidth pin stays while the value flows from
-// metrics::rail_width (220).
-constexpr float kRailWidth = metrics::rail_width;
 
 // Rail status-dot indent (Wave 2 T-003 file-local hoist): shared by the rail
 // and Home status dots ahead of the status word. No 14px spacing token.
@@ -452,7 +448,7 @@ void MainWindow::RunOnce(float) {
     // applied once via style.FontScaleMain in ApplyImGuiStyle.
     ImGui::PushFont(nullptr, metrics::font_body_px);
 
-    // Host window fills the client area; rail and page are children.
+    // Host window fills the client area; strip and page are children.
     ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -463,12 +459,12 @@ void MainWindow::RunOnce(float) {
                      ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
 
-    DrawRail(scale);
+    DrawTopStrip(scale);
 
-    const float rail_w = kRailWidth * scale;
-    const ImVec2 content_pos(rail_w, 0.0f);
-    const ImVec2 content_size(ImGui::GetIO().DisplaySize.x - rail_w,
-                              ImGui::GetIO().DisplaySize.y);
+    const float strip_h = metrics::topstrip_height * scale;
+    const ImVec2 content_pos(0.0f, strip_h);
+    const ImVec2 content_size(ImGui::GetIO().DisplaySize.x,
+                              ImGui::GetIO().DisplaySize.y - strip_h);
     ImGui::SetCursorScreenPos(content_pos);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
@@ -527,134 +523,188 @@ void MainWindow::RenderPages(float scale) {
     }
 }
 
-void MainWindow::DrawRail(float scale) {
-    const ImVec2 size(kRailWidth * scale, ImGui::GetIO().DisplaySize.y);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kLightPalette.surface));
-    ImGui::BeginChild("##rail", size, ImGuiChildFlags_None);
+void MainWindow::DrawTopStrip(float scale) {
+    // Hairline top strip (DESIGN.md section 7): wordmark at left, the seven
+    // destinations in rail order, a blank status reserve at the right end
+    // (owned by T4b, not drawn here), and the Hide ghost at the strip end.
+    // History/Profiles entries arrive in T11/T12 by appending to the same
+    // items array; the strip must work with 7 and accept 9 unchanged.
+    const float strip_h = metrics::topstrip_height * scale;
+    const float strip_w = ImGui::GetIO().DisplaySize.x;
+    // No filled panel: window background with a 1 px hairline at the bottom.
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::BeginChild("##strip", ImVec2(strip_w, strip_h), ImGuiChildFlags_None);
     ImGui::PopStyleColor();
+
+    // Wordmark at the design size until real fonts land, vertically centred
+    // in the strip. It reserves its slot so the items region can size off it.
+    ImGui::PushFont(nullptr, metrics::font_wordmark_px);
+    const ImVec2 wordmark_size = ImGui::CalcTextSize("Local Wisper Flow");
+    ImGui::PopFont();
+    const ImVec2 strip_origin = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2(wordmark_size.x, strip_h));
     {
-        const ImVec2 rail_pos = ImGui::GetWindowPos();
-        const float rail_right = rail_pos.x + size.x;
         ImDrawList& draw = *ImGui::GetWindowDrawList();
-        draw.AddLine(ImVec2(rail_right - 1.0f, rail_pos.y),
-                     ImVec2(rail_right - 1.0f, rail_pos.y + size.y), Pack(kLightPalette.border));
-
-        // Wordmark at the design size until real fonts land.
         ImGui::PushFont(nullptr, metrics::font_wordmark_px);
-        ImGui::TextUnformatted("Local Wisper Flow");
+        draw.AddText(ImVec2(strip_origin.x, strip_origin.y + (strip_h - wordmark_size.y) * 0.5f),
+                     Pack(kLightPalette.text), "Local Wisper Flow");
         ImGui::PopFont();
-        ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+    }
 
-        struct NavItem {
-            const char* id;
-            const char* label;
-            Page page;
-        };
-        const NavItem items[] = {
-            {"##nav_home", "Home", Page::Home},
-            {"##nav_insights", "Insights", Page::Insights},
-            {"##nav_dictionary", "Dictionary", Page::Dictionary},
-            {"##nav_snippets", "Snippets", Page::Snippets},
-            {"##nav_transforms", "Transforms", Page::Transforms},
-            {"##nav_scratchpad", "Scratchpad", Page::Scratchpad},
-            {"##nav_settings", "Settings", Page::Settings},
-        };
+    struct NavItem {
+        const char* id;
+        const char* label;
+        Page page;
+    };
+    // Same order as the retired rail. Welcome is not a strip destination.
+    const NavItem items[] = {
+        {"##strip_home", "Home", Page::Home},
+        {"##strip_insights", "Insights", Page::Insights},
+        {"##strip_dictionary", "Dictionary", Page::Dictionary},
+        {"##strip_snippets", "Snippets", Page::Snippets},
+        {"##strip_transforms", "Transforms", Page::Transforms},
+        {"##strip_scratchpad", "Scratchpad", Page::Scratchpad},
+        {"##strip_settings", "Settings", Page::Settings},
+    };
 
-        const float item_h = 40.0f * scale;
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        const float font_h = ImGui::GetFontSize();
-        // Restore keyboard focus after a page switch or re-show, only when the
-        // user is actually driving with the keyboard (NavActive) so a mouse
-        // click or tray pop never steals focus. The next focusable item (the
-        // first rail button) receives it. Any mouse use cancels a stale arm:
-        // a mouse-first user who clicks anywhere (rail or content) must not
-        // have the next Tab yank focus back to the rail (R-W2-003).
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            page_focus_pending_ = false;
-        }
-        if (page_focus_pending_ && ImGui::GetIO().NavActive) {
-            ImGui::SetKeyboardFocusHere();
-            page_focus_pending_ = false;
-        }
+    // Right-end reserve: blank status space for T4b plus the Hide ghost
+    // (LightButton padding is metrics::space_m per side). The reserve is
+    // left empty on purpose; T4b draws the status line into it.
+    const float gap = metrics::space_s * scale;
+    const float status_reserve = metrics::space_xl * 3.0f * scale;
+    float hide_w = 0.0f;
+    {
+        ImGui::PushFont(nullptr, metrics::font_body_px);
+        hide_w = ImGui::CalcTextSize("Hide").x + metrics::space_xl * scale + 2.0f * scale;
+        ImGui::PopFont();
+    }
+    float avail = strip_w - wordmark_size.x - status_reserve - hide_w - 3.0f * gap;
+    if (avail < 0.0f) {
+        avail = 0.0f;
+    }
+
+    // Overflow (DESIGN.md section 7): labels never wrap. Truncate with an
+    // ellipsis from the end first (the first item that does not fit shrinks
+    // to the remaining width), then the items region scrolls horizontally
+    // as the fallback. No second row, no menu. The edge fade is not
+    // implemented (noted deviation): the scrollbar and the truncation together
+    // keep every destination reachable without a fake fade.
+    // INVARIANT: measurement is at the body font, matching TopStripItem.
+    const float item_pad = (metrics::space_s + metrics::space_xs) * scale;
+    std::vector<std::string> labels;
+    labels.reserve(sizeof(items) / sizeof(items[0]));
+    {
+        ImGui::PushFont(nullptr, metrics::font_body_px);
+        float running = 0.0f;
+        bool truncated = false;
+        // The render loop below puts ImGui::SameLine() between items; each
+        // SameLine() advances by style.ItemSpacing.x, so the budget carries
+        // one ItemSpacing.x per item after the first (kept in `natural` via
+        // the labels.empty() first-item test). Rendering measures with the
+        // same style that spaces items, so the budget cannot drift from the
+        // drawn layout (ItemSpacing.x == metrics::space_s * scale).
+        const float item_gap = ImGui::GetStyle().ItemSpacing.x;
         for (const NavItem& item : items) {
-            if (item.page == Page::Settings) {
-                ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
-                ImGui::Separator();
-                ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+            const std::string label(item.label);
+            const float natural = ImGui::CalcTextSize(label.c_str()).x + item_pad +
+                                  (labels.empty() ? 0.0f : item_gap);
+            if (!truncated && running + natural <= avail) {
+                running += natural;
+                labels.push_back(label);
+                continue;
             }
-            const ImVec2 p = ImGui::GetCursorScreenPos();
-            const float w = ImGui::GetContentRegionAvail().x;
-            // DECISION: switch on the InvisibleButton activation return, not
-            // IsItemClicked. Vendored IsItemClicked is IsMouseClicked &&
-            // IsItemHovered, while keyboard (nav) activation returns
-            // pressed=true without setting HoveredId, so discarding the
-            // return made Enter/Space on a focused rail item a no-op
-            // (R-W2-001). The return covers mouse and keyboard alike.
-            const bool pressed =
-                ImGui::InvisibleButton(item.id, ImVec2(w, item_h), ImGuiButtonFlags_EnableNav);
-            if (pressed) {
-                page_ = item.page;
-                PersistPage();
-                validation_error_.clear();  // errors belong to the page that set them
-                ClearApiKeyInputs();
-                // Focus is already on the pressed item; never arm the restore
-                // here (mouse or keyboard). A stale arm would yank focus to
-                // the first rail button on a later Tab (R-W2-003).
-                page_focus_pending_ = false;
+            if (!truncated) {
+                const float remaining = avail - running;
+                std::string candidate = label;
+                while (!candidate.empty() &&
+                       ImGui::CalcTextSize((candidate + "...").c_str()).x + item_pad >
+                           remaining) {
+                    candidate.pop_back();
+                }
+                if (!candidate.empty()) {
+                    labels.push_back(candidate + "...");
+                    running = avail;
+                    truncated = true;
+                    continue;
+                }
+                // Too little room even for an ellipsis: keep the full label
+                // and let the horizontal scroll carry it.
+                labels.push_back(label);
+                running += natural;
+                truncated = true;
+                continue;
             }
-            const bool active = page_ == item.page;
-            const bool hovered = ImGui::IsItemHovered();
-            if (ImGui::IsItemFocused()) {
-                draw.AddRect(ImVec2(p.x - 2.0f * scale, p.y - 2.0f * scale),
-                             ImVec2(p.x + w + 2.0f * scale, p.y + item_h + 2.0f * scale),
-                             Pack(kLightPalette.focus), 2.0f * scale, 0, 2.0f * scale);
-            }
-            const std::uint32_t color =
-                active ? kLightPalette.text : (hovered ? kLightPalette.text : kLightPalette.muted);
-            if (active) {
-                draw.AddRectFilled(p, ImVec2(p.x + w, p.y + item_h),
-                                   Pack(kLightPalette.text, 0.10f), 8.0f * scale);
-            }
-            draw.AddText(ImVec2(p.x + 19.0f * scale, p.y + (item_h - font_h) * 0.5f),
-                         Pack(color), item.label);
+            labels.push_back(label);
+            running += natural;
         }
         ImGui::PopFont();
+    }
 
-        // Rail bottom: live status and the way back to mini.
-        const float line = ImGui::GetTextLineHeightWithSpacing();
-        const float bottom_h =
-            2.0f * metrics::space_m * scale + 3.0f * line + metrics::space_s * scale +
-            metrics::control_min_height * scale;
-        if (ImGui::GetContentRegionAvail().y > bottom_h) {
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
-                                 ImGui::GetContentRegionAvail().y - bottom_h);
+    // Items region: horizontal scroll is the overflow fallback. The thin
+    // scrollbar keeps the 48 px strip height inside the token.
+    ImGui::SameLine();
+    ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, metrics::space_s * scale);
+    ImGui::BeginChild("##strip_items", ImVec2(avail, strip_h), ImGuiChildFlags_None,
+                      ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::PopStyleVar();
+    // Restore keyboard focus after a page switch or re-show, only when the
+    // user is actually driving with the keyboard (NavActive) so a mouse
+    // click or tray pop never steals focus. Runs immediately before the
+    // first strip item so that item receives it. Any mouse use cancels a
+    // stale arm: a mouse-first user who clicks anywhere (strip or content)
+    // must not have the next Tab yank focus back to the strip (R-W2-003).
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        page_focus_pending_ = false;
+    }
+    if (page_focus_pending_ && ImGui::GetIO().NavActive) {
+        ImGui::SetKeyboardFocusHere();
+        page_focus_pending_ = false;
+    }
+    std::size_t index = 0;
+    for (const NavItem& item : items) {
+        // DECISION: switch on the TopStripItem activation return, not
+        // IsItemClicked. The widget's InvisibleButton activation returns
+        // pressed=true for both mouse and keyboard (nav) activation, so one
+        // check covers Tab+Enter/Space alike (R-W2-001).
+        const bool pressed = lwf::ui::widgets::TopStripItem(item.id, labels[index].c_str(),
+                                                            page_ == item.page, scale);
+        if (pressed) {
+            page_ = item.page;
+            PersistPage();
+            validation_error_.clear();  // errors belong to the page that set them
+            ClearApiKeyInputs();
+            // Focus is already on the pressed item; never arm the restore
+            // here (mouse or keyboard). A stale arm would yank focus to
+            // the first strip item on a later Tab (R-W2-003).
+            page_focus_pending_ = false;
         }
-        ImGui::Separator();
-        const State fsm_state = fsm_.CurrentState();
-        const bool enabled = settings_.GetBool("dictation_enabled");
-        const char* status_word = "Ready";
-        std::uint32_t status_color = kLightPalette.ok;
-        if (!enabled) {
-            status_word = "Paused";
-            status_color = kLightPalette.muted;
-        } else if (fsm_state == State::CAPTURING) {
-            status_word = "Listening";
-            status_color = kLightPalette.accent;
-        } else if (fsm_state == State::TRANSCRIBING || fsm_state == State::POSTPROCESSING ||
-                   fsm_state == State::EMITTING) {
-            status_word = "Thinking";
-            status_color = kLightPalette.text;
+        ++index;
+        if (index < sizeof(items) / sizeof(items[0])) {
+            ImGui::SameLine();
         }
-        const ImVec2 status_pos = ImGui::GetCursorScreenPos();
-        draw.AddCircleFilled(ImVec2(status_pos.x + 4.0f * scale, status_pos.y + line * 0.5f),
-                             4.0f * scale, Pack(status_color));
-        ImGui::Dummy(ImVec2(kStatusDotIndent * scale, 0.0f));
-        ImGui::SameLine();
-        ImGui::TextUnformatted(status_word);
-        ImGui::TextDisabled("The mini dot shows this too.");
-        if (ImGui::Button("Hide window")) {
-            SetVisible(false);
-        }
+    }
+    ImGui::EndChild();
+
+    // Blank status reserve (T4b owns the status line drawn here).
+    ImGui::SameLine();
+    ImGui::Dummy(ImVec2(status_reserve, 0.0f));
+    // Hide affordance, relocated from the rail bottom: a ghost item at the
+    // strip's right end. DECISION: reuse widgets::LightButton (the Hairline
+    // ghost) instead of a hand-drawn InvisibleButton, so the strip end
+    // keeps a focus ring and keyboard activation with no new chrome.
+    ImGui::SameLine();
+    ImGui::SetCursorPosY((strip_h - (metrics::space_xl + metrics::space_s) * scale) * 0.5f);
+    if (lwf::ui::widgets::LightButton("##strip_hide", "Hide", scale)) {
+        SetVisible(false);
+    }
+
+    // Bottom hairline of the strip.
+    {
+        const ImVec2 strip_pos = ImGui::GetWindowPos();
+        ImDrawList& draw = *ImGui::GetWindowDrawList();
+        draw.AddLine(ImVec2(strip_pos.x, strip_pos.y + strip_h - 1.0f * scale),
+                     ImVec2(strip_pos.x + strip_w, strip_pos.y + strip_h - 1.0f * scale),
+                     Pack(kLightPalette.border), 1.0f * scale);
     }
     ImGui::EndChild();
 }

@@ -41,7 +41,7 @@ class TransformsPage;
 struct Palette;
 }
 
-// The Full window: rail navigation plus pages (Home, Insights, Dictionary,
+// The Full window: top-strip navigation plus pages (Home, Insights, Dictionary,
 // Snippets, Transforms, Scratchpad, Settings, and the first-run Welcome).
 // T2b: the shell applies the selected palette (PaletteForTheme, Graphite
 // default); custom-drawn chrome converts per-surface in T3+.
@@ -176,7 +176,7 @@ private:
 
     void RenderPages(float scale);
 
-    void DrawRail(float scale);
+    void DrawTopStrip(float scale);
     void DrawPageChrome(const char* title, const char* subtitle, float scale);
     void DrawHomePage(float scale);
     void DrawInsightsPage(float scale);
