@@ -36,7 +36,7 @@ struct Toast {
     void Show(const std::string& message, const std::string& action_label);
     void Dismiss();
     bool IsVisible() const;
-    // DECISION: default is Ivory primary (kLightPalette via Widgets.h
+    // DECISION: default is Paper primary (kLightPalette via Widgets.h
     // companion); callers that carry a Palette pass it explicitly so the dark
     // variant is a runtime choice, not a second hard-coded palette.
     void Draw(float scale,

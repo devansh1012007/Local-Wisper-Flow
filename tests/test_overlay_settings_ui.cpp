@@ -1026,8 +1026,13 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
                                       std::istreambuf_iterator<char>());
     CHECK(buttons_content.find("const float h = studio_metrics::hit_size * scale") !=
           std::string::npos);
-    CHECK(buttons_content.find("value ? Pack(palette.text) : Pack(palette.muted)") !=
+    // T3 hairline toggle: the filled text/muted track is gone; the knob is a
+    // square sized from metrics::status_square — on-state accent square,
+    // off-state muted hairline square, hairline track (AddRect outline).
+    CHECK(buttons_content.find("value ? Pack(palette.text) : Pack(palette.muted)") ==
           std::string::npos);
+    CHECK(buttons_content.find("metrics::status_square * scale") != std::string::npos);
+    CHECK(buttons_content.find("draw.AddRect(p, ImVec2(p.x + w, p.y + h)") != std::string::npos);
     std::ifstream overlays("src/ui/widgets/Overlays.cpp");
     REQUIRE(static_cast<bool>(overlays));
     const std::string overlays_content((std::istreambuf_iterator<char>(overlays)),
@@ -1061,6 +1066,24 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
                                       std::istreambuf_iterator<char>());
     CHECK(display_content.find("using lwf::ui::HeatColor;") != std::string::npos);
     CHECK(display_content.find("case 4:") == std::string::npos);
+    // T3 new widgets + deletion of the card primitives (DESIGN §6: no
+    // card/filled-panel primitive remains). TopStripItem carries the 48 px
+    // top-strip token, StatusSquare the 8 px status-square token, the ruled
+    // Row the 52 px row token — all hairline-drawn (no child, no fill).
+    std::ifstream widgets_h("src/ui/widgets/Widgets.h");
+    REQUIRE(static_cast<bool>(widgets_h));
+    const std::string widgets_h_content((std::istreambuf_iterator<char>(widgets_h)),
+                                        std::istreambuf_iterator<char>());
+    CHECK(widgets_h_content.find("TopStripItem") != std::string::npos);
+    CHECK(widgets_h_content.find("StatusSquare") != std::string::npos);
+    CHECK(widgets_h_content.find("void Row(") != std::string::npos);
+    CHECK(widgets_h_content.find("RowEnd") != std::string::npos);
+    CHECK(widgets_h_content.find("RowList") == std::string::npos);
+    CHECK(widgets_h_content.find("StatCard") == std::string::npos);
+    CHECK(buttons_content.find("metrics::topstrip_height * scale") != std::string::npos);
+    CHECK(display_content.find("metrics::status_square") != std::string::npos);
+    CHECK(display_content.find("studio_metrics::row_height * scale") != std::string::npos);
+    CHECK(display_content.find("BeginChild") == std::string::npos);
     std::ifstream insights("src/ui/pages/InsightsPage.cpp");
     REQUIRE(static_cast<bool>(insights));
     const std::string insights_content((std::istreambuf_iterator<char>(insights)),

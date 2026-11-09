@@ -33,12 +33,12 @@ void DrawBorder(const ImVec2& min, const ImVec2& max, float radius, float scale,
     draw.AddRect(min, max, Pack(border_color), radius, 0, 1.0f * scale);
 }
 
-bool StyleButton(const char* id, const char* label, const ImVec2& size, std::uint32_t fill,
-                 std::uint32_t hover, std::uint32_t active, std::uint32_t text, float scale,
+bool StyleButton(const char* id, const char* label, const ImVec2& size, const ImVec4& fill,
+                 const ImVec4& hover, const ImVec4& active, std::uint32_t text, float scale,
                  const lwf::ui::Palette& palette) {
-    ImGui::PushStyleColor(ImGuiCol_Button, Color(fill));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(hover));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, Color(active));
+    ImGui::PushStyleColor(ImGuiCol_Button, fill);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hover);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, active);
     ImGui::PushStyleColor(ImGuiCol_Text, Color(text));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, studio_metrics::radius_button * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16.0f * scale, 8.0f * scale));
@@ -58,8 +58,8 @@ bool StyleButton(const char* id, const char* label, const ImVec2& size, std::uin
 }
 
 bool PrimaryButton(const char* id, const char* label, float scale, const lwf::ui::Palette& palette) {
-    const bool pressed = StyleButton(id, label, ImVec2(0.0f, 40.0f * scale), palette.accent,
-                                     palette.accent, palette.accent,
+    const bool pressed = StyleButton(id, label, ImVec2(0.0f, 40.0f * scale), Color(palette.accent),
+                                     Color(palette.accent), Color(palette.accent),
                                      palette.on_accent, scale, palette);
     const ImVec2 min = ImGui::GetItemRectMin();
     const ImVec2 max = ImGui::GetItemRectMax();
@@ -68,9 +68,13 @@ bool PrimaryButton(const char* id, const char* label, float scale, const lwf::ui
 }
 
 bool LightButton(const char* id, const char* label, float scale, const lwf::ui::Palette& palette) {
+    // Hairline ghost button (DESIGN §6): transparent middle, 1 px hairline
+    // border; hover/active shift only (a faint border-token wash, never a
+    // surface fill).
     const bool pressed = StyleButton(id, label, ImVec2(0.0f, 40.0f * scale),
-                                     palette.surface, palette.border,
-                                     palette.border, palette.text, scale, palette);
+                                     ImVec4(0.0f, 0.0f, 0.0f, 0.0f),
+                                     Color(palette.border, 0.15f), Color(palette.border, 0.25f),
+                                     palette.text, scale, palette);
     const ImVec2 min = ImGui::GetItemRectMin();
     const ImVec2 max = ImGui::GetItemRectMax();
     DrawBorder(min, max, studio_metrics::radius_button * scale, scale, palette.border);
@@ -79,7 +83,9 @@ bool LightButton(const char* id, const char* label, float scale, const lwf::ui::
 
 bool OutlinePill(const char* id, const char* label, bool enabled, float scale, const lwf::ui::Palette& palette) {
     const std::uint32_t text = enabled ? palette.text : palette.muted;
-    const std::uint32_t border = enabled ? palette.text : palette.muted;
+    // Hairline outline: enabled draws the palette border token (1 px
+    // hairline), not the text color; disabled dims to muted.
+    const std::uint32_t border = enabled ? palette.border : palette.muted;
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, studio_metrics::radius_pill * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16.0f * scale, 8.0f * scale));
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -116,9 +122,9 @@ bool IconButton(const char* id, const char* glyph, float scale, const lwf::ui::P
         ImGui::InvisibleButton(safe_id, ImVec2(hit, hit), ImGuiButtonFlags_EnableNav);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     if (ImGui::IsItemHovered()) {
-        draw.AddRectFilled(pos, ImVec2(pos.x + hit, pos.y + hit),
-                           Pack(palette.border, 0.5f),
-                           studio_metrics::radius_chip * scale);
+        // Hairline hover: outline only, no fill.
+        draw.AddRect(pos, ImVec2(pos.x + hit, pos.y + hit), Pack(palette.border),
+                     studio_metrics::radius_chip * scale, 0, 1.0f * scale);
     }
     if (ImGui::IsItemFocused()) {
         DrawFocusRing(pos, ImVec2(pos.x + hit, pos.y + hit), scale, palette);
@@ -141,13 +147,21 @@ bool ToggleSwitch(const char* id, bool value, float scale, const lwf::ui::Palett
     if (ImGui::IsItemFocused()) {
         DrawFocusRing(p, ImVec2(p.x + w, p.y + h), scale, palette);
     }
-    draw.AddRectFilled(p, ImVec2(p.x + w, p.y + h),
-                       value ? Pack(palette.text) : Pack(palette.muted), h * 0.5f);
-    const float knob = 20.0f * scale;
+    // Hairline track (1 px outline, transparent fill) + square knob sized
+    // from the status-square token. On-state: filled accent square (the
+    // square is the color carrier); off-state: muted hairline square. The
+    // 52x32 hit box, EnableNav and focus ring are unchanged.
+    draw.AddRect(p, ImVec2(p.x + w, p.y + h), Pack(palette.border), 0.0f, 0, 1.0f * scale);
+    const float knob = metrics::status_square * scale;
     const float pad = 4.0f * scale;
     const float x = value ? p.x + w - pad - knob : p.x + pad;
-    draw.AddCircleFilled(ImVec2(x + knob * 0.5f, p.y + h * 0.5f), knob * 0.5f,
-                         Pack(palette.surface));
+    const ImVec2 knob_min(x, p.y + (h - knob) * 0.5f);
+    const ImVec2 knob_max(x + knob, knob_min.y + knob);
+    if (value) {
+        draw.AddRectFilled(knob_min, knob_max, Pack(palette.accent));
+    } else {
+        draw.AddRect(knob_min, knob_max, Pack(palette.muted), 0.0f, 0, 1.0f * scale);
+    }
     return toggled;
 }
 
@@ -161,8 +175,7 @@ void Keycap(const char* label, float scale, const lwf::ui::Palette& palette) {
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const ImVec2 size(text_size.x + pad_x * 2.0f, h);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
-    draw.AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
-                       Pack(palette.surface), studio_metrics::radius_chip * scale);
+    // Hairline box outline, transparent fill (no surface fill).
     DrawBorder(pos, ImVec2(pos.x + size.x, pos.y + size.y),
                studio_metrics::radius_chip * scale, scale, palette.border);
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
@@ -185,18 +198,20 @@ bool Chip(const char* id, const char* label, bool selected, float scale, const l
     const bool pressed = ImGui::InvisibleButton(safe_id, size, ImGuiButtonFlags_EnableNav);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     if (selected) {
-        draw.AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
-                           Pack(palette.border), studio_metrics::radius_pill * scale);
+        // Selected: 2 px accent underline instead of a border fill.
+        draw.AddLine(ImVec2(pos.x + 2.0f * scale, pos.y + size.y - 1.0f * scale),
+                     ImVec2(pos.x + size.x - 2.0f * scale, pos.y + size.y - 1.0f * scale),
+                     Pack(palette.accent), 2.0f * scale);
     } else {
-        draw.AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y),
-                           Pack(palette.surface, 0.18f),
-                           studio_metrics::radius_pill * scale);
+        // Unselected: hairline outline + text, transparent fill.
+        draw.AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), Pack(palette.border),
+                     studio_metrics::radius_pill * scale, 0, 1.0f * scale);
     }
     if (ImGui::IsItemFocused()) {
         DrawFocusRing(pos, ImVec2(pos.x + size.x, pos.y + size.y), scale, palette);
     }
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-    const std::uint32_t text = selected ? palette.accent : palette.text;
+    const std::uint32_t text = selected ? palette.text : palette.muted;
     draw.AddText(ImVec2(pos.x + pad_x, pos.y + (size.y - text_size.y) * 0.5f), Pack(text),
                  safe_label);
     ImGui::PopFont();
@@ -213,8 +228,9 @@ void BadgeBeta(float scale, const lwf::ui::Palette& palette) {
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const ImVec2 size(text_size.x + pad_x * 2.0f, h);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
-    draw.AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), Pack(palette.border),
-                       studio_metrics::radius_pill * scale);
+    // Hairline outline pill, no border fill. 24 px static, kept by design.
+    draw.AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), Pack(palette.border),
+                 studio_metrics::radius_pill * scale, 0, 1.0f * scale);
     ImGui::PushFont(nullptr, studio_metrics::font_caps_px);
     draw.AddText(ImVec2(pos.x + pad_x, pos.y + (size.y - text_size.y) * 0.5f),
                  Pack(palette.accent), spaced.c_str());
@@ -267,6 +283,39 @@ void TabRow(const char* id, const char* const* tabs, int count, int* selected, f
     draw.AddLine(ImVec2(origin.x, row_y), ImVec2(origin.x + row_w, row_y),
                  Pack(palette.border), 1.0f * scale);
     ImGui::PopFont();
+}
+
+bool TopStripItem(const char* id, const char* label, bool active, float scale,
+                  const lwf::ui::Palette& palette) {
+    const char* safe_id = id == nullptr ? "" : id;
+    const char* safe_label = label == nullptr ? "" : label;
+    ImGui::PushFont(nullptr, metrics::font_body_px);
+    const ImVec2 text_size = ImGui::CalcTextSize(safe_label);
+    ImGui::PopFont();
+    // The item is exactly the top-strip height (metrics::topstrip_height),
+    // which keeps the hit height >= 32 (studio_metrics::hit_size) per AC-G2.
+    // No fills: active state is a 2 px accent underline at the strip bottom
+    // (TabRow geometry), text carries the rest of the state.
+    const float strip_h = metrics::topstrip_height * scale;
+    const ImVec2 size(text_size.x + 12.0f * scale, strip_h);
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const bool pressed = ImGui::InvisibleButton(safe_id, size, ImGuiButtonFlags_EnableNav);
+    ImDrawList& draw = *ImGui::GetWindowDrawList();
+    const bool hovered = ImGui::IsItemHovered();
+    const std::uint32_t color = active ? palette.text : (hovered ? palette.text : palette.muted);
+    ImGui::PushFont(nullptr, metrics::font_body_px);
+    draw.AddText(ImVec2(pos.x + 6.0f * scale, pos.y + (strip_h - text_size.y) * 0.5f),
+                 Pack(color), safe_label);
+    ImGui::PopFont();
+    if (active) {
+        draw.AddLine(ImVec2(pos.x + 2.0f * scale, pos.y + strip_h - 1.0f * scale),
+                     ImVec2(pos.x + size.x - 2.0f * scale, pos.y + strip_h - 1.0f * scale),
+                     Pack(palette.accent), 2.0f * scale);
+    }
+    if (ImGui::IsItemFocused()) {
+        DrawFocusRing(pos, ImVec2(pos.x + size.x, pos.y + size.y), scale, palette);
+    }
+    return pressed;
 }
 
 }

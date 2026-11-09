@@ -38,6 +38,19 @@ bool Modal::Begin(const char* title, float scale) {
     const bool visible = ImGui::BeginPopupModal(title, &open_, ImGuiWindowFlags_NoResize);
     ImGui::PopStyleVar();
     visible_ = visible;
+    if (visible) {
+        // Hairline language: 1 px accent hairline under the title row. The
+        // accent comes from ApplyImGuiStyle's style colors (this overlay
+        // takes no palette), ImGuiCol_CheckMark the same accent source the
+        // style uses for checks.
+        ImDrawList& draw = *ImGui::GetWindowDrawList();
+        const ImVec2 wp = ImGui::GetWindowPos();
+        const float y = wp.y + ImGui::GetFrameHeight();
+        draw.AddLine(ImVec2(wp.x, y), ImVec2(wp.x + ImGui::GetWindowWidth(), y),
+                     ImGui::ColorConvertFloat4ToU32(
+                         ImGui::GetStyle().Colors[ImGuiCol_CheckMark]),
+                     1.0f * scale);
+    }
     if (visible && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
         Close();
     }
@@ -86,6 +99,18 @@ bool Sheet::Begin(const char* title, float width, float scale) {
                                                     ImGuiWindowFlags_NoCollapse);
     ImGui::PopStyleVar();
     visible_ = visible;
+    if (visible) {
+        // Hairline language: 1 px left hairline (separator style color, the
+        // palette border token via ApplyImGuiStyle) inset past the popup
+        // border, spanning the sheet height.
+        ImDrawList& draw = *ImGui::GetWindowDrawList();
+        const ImVec2 wp = ImGui::GetWindowPos();
+        const float x = wp.x + 1.0f * scale;
+        draw.AddLine(ImVec2(x, wp.y), ImVec2(x, wp.y + ImGui::GetWindowHeight()),
+                     ImGui::ColorConvertFloat4ToU32(
+                         ImGui::GetStyle().Colors[ImGuiCol_Separator]),
+                     1.0f * scale);
+    }
     if (visible && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
         Close();
     }
@@ -137,12 +162,10 @@ void Toast::Draw(float scale, const lwf::ui::Palette& palette) {
     const ImVec2 viewport = ImGui::GetIO().DisplaySize;
     const ImVec2 pos(viewport.x * 0.5f - w * 0.5f, viewport.y - h - 24.0f * scale);
     ImDrawList& draw = *ImGui::GetWindowDrawList();
-    // Full-window toast uses the card surface fill (light in both themes) so
-    // message + action text meet 4.5: accent on surface is 6.10 Ivory / 7.35
-    // dark (Ph3 attempt #2; the old dark text-fill gave 2.38/1.80). Border is
-    // 1 px + surface step for elevation (R9), never state on its own.
-    draw.AddRectFilled(pos, ImVec2(pos.x + w, pos.y + h), Pack(palette.surface),
-                       studio_metrics::radius_pill * scale);
+    // Full-window toast (hairline language): hairline outline box,
+    // transparent fill — message + action text sit on the window background
+    // inside the 1 px border-token outline, never on a surface fill. Border
+    // is 1 px and never carries state on its own (R9).
     draw.AddRect(pos, ImVec2(pos.x + w, pos.y + h), Pack(palette.border),
                  studio_metrics::radius_pill * scale, 0, 1.0f * scale);
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
@@ -159,9 +182,10 @@ void Toast::Draw(float scale, const lwf::ui::Palette& palette) {
         const ImVec2 saved_cursor = ImGui::GetCursorScreenPos();
         const std::string button_label = action_label_ + "##toast_action";
         ImGui::SetCursorScreenPos(button_min);
-        // Action text is accent on surface (single accent per view): 6.10
-        // in Ivory primary and 7.35 in the dark variant — both pass 4.5.
-        // Focus ring is palette.focus at 2 px (already handled below).
+        // Action text is accent on the window background (single accent per
+        // view): the accent token passes 4.5:1 as text on bg in both themes
+        // (DESIGN §4: 12.66 Graphite / 6.60 Paper). Focus ring is
+        // palette.focus at 2 px (already handled below).
         ImGui::PushStyleColor(ImGuiCol_Text, Color(palette.accent));
         if (ImGui::Button(button_label.c_str(), button_size)) {
             action_pending_ = true;
