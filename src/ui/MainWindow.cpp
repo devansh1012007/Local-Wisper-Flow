@@ -118,16 +118,21 @@ bool ToggleSwitch(const char* id, bool value, float scale) {
 // Button for the masked key rows: at least 32px tall (R10), accent fill
 // for the primary action, and a 2px focus ring when keyboard focused
 // (R11). The label carries the meaning; color never carries state alone.
-bool KeyButton(const char* id, const char* label, bool accent, float scale) {
+// T6: the palette is passed explicitly (the live *current_palette_ from
+// DrawApiKeyRow) so the chrome follows the theme switcher, never the
+// Paper default. KeyButton has exactly one caller (DrawApiKeyRow, 4
+// call sites); grep-verified before this signature change.
+bool KeyButton(const char* id, const char* label, bool accent, float scale,
+               const lwf::ui::Palette& palette) {
     const float height = metrics::control_min_height * scale;
     const std::string button_label =
         std::string(label == nullptr ? "" : label) + "##" + (id == nullptr ? "" : id);
     bool pressed = false;
     if (accent) {
-        ImGui::PushStyleColor(ImGuiCol_Button, Color(kLightPalette.accent));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kLightPalette.accent));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, Color(kLightPalette.accent));
-        ImGui::PushStyleColor(ImGuiCol_Text, Color(kLightPalette.on_accent));
+        ImGui::PushStyleColor(ImGuiCol_Button, Color(palette.accent));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(palette.accent));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, Color(palette.accent));
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(palette.on_accent));
         pressed = ImGui::Button(button_label.c_str(), ImVec2(0.0f, height));
         ImGui::PopStyleColor(4);
     } else {
@@ -139,7 +144,7 @@ bool KeyButton(const char* id, const char* label, bool accent, float scale) {
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         draw.AddRect(ImVec2(item_min.x - 2.0f * scale, item_min.y - 2.0f * scale),
                      ImVec2(item_max.x + 2.0f * scale, item_max.y + 2.0f * scale),
-                     Pack(kLightPalette.focus), metrics::radius_control * scale, 0,
+                     Pack(palette.focus), metrics::radius_control * scale, 0,
                      2.0f * scale);
     }
     return pressed;
@@ -1105,8 +1110,9 @@ void MainWindow::DrawApiKeyRow(const char* store_id, const char* display_name,
     const char* status_word = SettingsUiModel::ApiKeyStatusWord(source);
     const char* source_label = SettingsUiModel::ApiKeySourceLabel(source);
     // Status: dot shape + word + source word (never color alone, R8).
-    const std::uint32_t dot_color =
-        source == SettingsUiModel::ApiKeySource::NotSet ? kLightPalette.muted : kLightPalette.ok;
+    const std::uint32_t dot_color = source == SettingsUiModel::ApiKeySource::NotSet
+                                        ? current_palette_->muted
+                                        : current_palette_->ok;
     ImGui::TextUnformatted(display_name);
     ImGui::SameLine();
     const ImVec2 dot_pos = ImGui::GetCursorScreenPos();
@@ -1131,18 +1137,19 @@ void MainWindow::DrawApiKeyRow(const char* store_id, const char* display_name,
         }
         // SECURITY: the question names the service so the destructive
         // action is explicit (R13); the key value never appears here.
-        ImGui::TextColored(Color(kLightPalette.err), "%s", confirm_question);
+        ImGui::TextColored(Color(current_palette_->err), "%s", confirm_question);
         const std::string remove_id = std::string("##remove_") + store_id;
         bool do_remove = false;
         bool do_keep = false;
-        do_remove = KeyButton(remove_id.c_str(), confirm_button, false, scale);
+        do_remove =
+            KeyButton(remove_id.c_str(), confirm_button, false, scale, *current_palette_);
         ImGui::SameLine();
         if (focus_keep_pending) {
             ImGui::SetKeyboardFocusHere();
             focus_keep_pending = false;
         }
         const std::string keep_id = std::string("##keep_") + store_id;
-        do_keep = KeyButton(keep_id.c_str(), "Keep key", false, scale);
+        do_keep = KeyButton(keep_id.c_str(), "Keep key", false, scale, *current_palette_);
         if (do_remove) {
             if (store->Remove(store_id)) {
                 std::memset(buffer, 0, buffer_size);
@@ -1161,7 +1168,7 @@ void MainWindow::DrawApiKeyRow(const char* store_id, const char* display_name,
             focus_keep_pending = false;
         }
         if (!error.empty()) {
-            ImGui::TextColored(Color(kLightPalette.err), "%s", error.c_str());
+            ImGui::TextColored(Color(current_palette_->err), "%s", error.c_str());
         }
         return;
     }
@@ -1174,15 +1181,15 @@ void MainWindow::DrawApiKeyRow(const char* store_id, const char* display_name,
         ImDrawList& input_draw = *ImGui::GetWindowDrawList();
         input_draw.AddRect(ImVec2(input_min.x - 2.0f * scale, input_min.y - 2.0f * scale),
                            ImVec2(input_max.x + 2.0f * scale, input_max.y + 2.0f * scale),
-                           Pack(kLightPalette.focus), metrics::radius_control * scale, 0,
+                           Pack(current_palette_->focus), metrics::radius_control * scale, 0,
                            2.0f * scale);
     }
     ImGui::TextDisabled("Paste a key to save");
     if (!error.empty()) {
-        ImGui::TextColored(Color(kLightPalette.err), "%s", error.c_str());
+        ImGui::TextColored(Color(current_palette_->err), "%s", error.c_str());
     }
     const std::string save_id = std::string("##save_") + store_id;
-    if (KeyButton(save_id.c_str(), "Save key", true, scale)) {
+    if (KeyButton(save_id.c_str(), "Save key", true, scale, *current_palette_)) {
         const std::string trimmed = SettingsUiModel::TrimApiKeyInput(buffer);
         const std::string save_error = SettingsUiModel::ApiKeySaveError(trimmed);
         if (!save_error.empty()) {
@@ -1199,7 +1206,7 @@ void MainWindow::DrawApiKeyRow(const char* store_id, const char* display_name,
     if (has_saved) {
         ImGui::SameLine();
         const std::string remove_id = std::string("##remove_saved_") + store_id;
-        if (KeyButton(remove_id.c_str(), "Remove saved key", false, scale)) {
+        if (KeyButton(remove_id.c_str(), "Remove saved key", false, scale, *current_palette_)) {
             std::memset(buffer, 0, buffer_size);
             error.clear();
             remove_armed = true;
@@ -1769,20 +1776,25 @@ void MainWindow::DrawSpeechPage(float scale) {
 void MainWindow::DrawCloudPage(float scale) {
     DrawPageChrome("Cloud", "Where your speech is transcribed.", scale);
     DrawRestartBanner(scale);
-
-    const float width = std::min(ImGui::GetContentRegionAvail().x, metrics::content_max * scale);
-
-    BeginCard("##card_cloud_provider", width, scale);
+    // T6 ruled rows (DESIGN §6): same migration note as DrawGeneralPage;
+    // first rows reuse the former BeginCard ids. INVARIANT (from the T5
+    // review): slider/combo slots are 248 design px wide, not 240 — a
+    // source-scan pin asserts the 248 value; keep it.
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Service");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Service");
-        ImGui::PopFont();
-
         static const char* kProviderItems[] = {"local", "gnani", "elevenlabs", "muse"};
         const std::string provider = settings_.GetString("stt_provider");
         int provider_index = provider == "gnani" ? 1
                              : provider == "elevenlabs" ? 2
                              : provider == "muse" ? 3 : 0;
+        lwf::ui::widgets::Row("##card_cloud_provider", "Service",
+                              "Dictation runs on this machine by default. A cloud service sends "
+                              "recordings to its own servers for transcription.",
+                              248.0f * scale, scale, *current_palette_);
+        ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::BeginCombo("##stt_provider", kProviderItems[provider_index])) {
             for (int item = 0; item < 4; ++item) {
                 if (ImGui::Selectable(kProviderItems[item], item == provider_index)) {
@@ -1793,66 +1805,106 @@ void MainWindow::DrawCloudPage(float scale) {
             }
             ImGui::EndCombo();
         }
-        ImGui::TextWrapped("Dictation runs on this machine by default. A cloud service sends "
-                           "recordings to its own servers for transcription.");
-        ImGui::Separator();
-        ImGui::TextUnformatted("Cloud language");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_stt_language", "Cloud language",
+                              "ISO language, or a comma list (e.g. hi,en).", 248.0f * scale, scale,
+                              *current_palette_);
         StringFieldRow("stt_language", stt_language_field_, "##stt_language", false);
-        ImGui::TextDisabled("ISO language, or a comma list (e.g. hi,en).");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_stt_timeout", "Wait time", nullptr, 248.0f * scale, scale,
+                              *current_palette_);
         IntRow("stt_timeout_ms", "##stt_timeout_ms", 1000, 60000, "wait at most %d ms");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_stt_max_clips", "Maximum clips", nullptr, 248.0f * scale,
+                              scale, *current_palette_);
         IntRow("stt_max_clips", "##stt_max_clips", 1, 200, "at most %d clips");
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
-
-    BeginCard("##card_cloud_keys", width, scale);
-    {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Saved keys");
-        ImGui::PopFont();
-        ImGui::TextWrapped("Saved keys take precedence over environment variables. "
-                           "Keys are kept apart from settings and are never shown again "
-                           "after saving.");
-        DrawApiKeyRow("gnani", "Gnani", ApiKeyEnvFor("gnani"), "Remove saved Gnani key?",
-                      "Remove Gnani key", gnani_key_buffer_, sizeof(gnani_key_buffer_),
-                      gnani_remove_armed_, gnani_keep_focus_pending_, gnani_key_error_, scale);
-        ImGui::Separator();
-        DrawApiKeyRow("elevenlabs", "ElevenLabs", ApiKeyEnvFor("elevenlabs"),
-                      "Remove saved ElevenLabs key?", "Remove ElevenLabs key",
-                      elevenlabs_key_buffer_, sizeof(elevenlabs_key_buffer_),
-                      elevenlabs_remove_armed_, elevenlabs_keep_focus_pending_,
-                      elevenlabs_key_error_, scale);
-        ImGui::Separator();
-        DrawApiKeyRow("muse", "Muse", ApiKeyEnvFor("muse"), "Remove saved Muse key?",
-                      "Remove Muse key", muse_key_buffer_, sizeof(muse_key_buffer_),
-                      muse_remove_armed_, muse_keep_focus_pending_, muse_key_error_, scale);
+    // IntRow writes validation_error_ for these two rows; Cloud drew none
+    // before T6. Drawn after the row block in the live palette (T5 pattern).
+    if (!validation_error_.empty()) {
+        ImGui::TextColored(Color(current_palette_->err), "%s", validation_error_.c_str());
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_remote_engine", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Saved keys");
+    ImGui::PopFont();
+    // BLOCK EXCEPTION (DESIGN §6, as-built T6): a ruled Row reserves the
+    // 52 px row height, but a key row (status line, masked input, save /
+    // remove buttons) is taller than 52 px and holds several controls; it
+    // cannot sit inside a Row slot. The section therefore stays an
+    // uncarded block on the page background. The former BeginCard id is
+    // carried by the PushID below (not a comment) so the page-structure
+    // pin keeps passing.
+    ImGui::PushID("##card_cloud_keys");
+    ImGui::TextWrapped("Saved keys take precedence over environment variables. "
+                       "Keys are kept apart from settings and are never shown again "
+                       "after saving.");
+    DrawApiKeyRow("gnani", "Gnani", ApiKeyEnvFor("gnani"), "Remove saved Gnani key?",
+                  "Remove Gnani key", gnani_key_buffer_, sizeof(gnani_key_buffer_),
+                  gnani_remove_armed_, gnani_keep_focus_pending_, gnani_key_error_, scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+    DrawApiKeyRow("elevenlabs", "ElevenLabs", ApiKeyEnvFor("elevenlabs"),
+                  "Remove saved ElevenLabs key?", "Remove ElevenLabs key",
+                  elevenlabs_key_buffer_, sizeof(elevenlabs_key_buffer_),
+                  elevenlabs_remove_armed_, elevenlabs_keep_focus_pending_,
+                  elevenlabs_key_error_, scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+    DrawApiKeyRow("muse", "Muse", ApiKeyEnvFor("muse"), "Remove saved Muse key?",
+                  "Remove Muse key", muse_key_buffer_, sizeof(muse_key_buffer_),
+                  muse_remove_armed_, muse_keep_focus_pending_, muse_key_error_, scale);
+    ImGui::PopID();
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Remote engine");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Remote engine");
-        ImGui::PopFont();
-        BoolRow("use_remote", "Use remote engine", "Send audio to a local gRPC engine", scale);
+        const bool remote = settings_.GetBool("use_remote");
+        lwf::ui::widgets::Row("##card_remote_engine", "Use remote engine",
+                              "Send audio to a local gRPC engine", 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##use_remote", remote, scale, *current_palette_)) {
+            settings_.SetBool("use_remote", !remote);
+            ApplyAndSave();
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_remote_endpoint", "Remote address",
+                              "Host and port of the remote engine.", 248.0f * scale, scale,
+                              *current_palette_);
         StringFieldRow("remote_endpoint", remote_endpoint_field_, "##remote_endpoint", false);
-        ImGui::TextDisabled("Host and port of the remote engine.");
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_cloud_consent", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Consent");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Consent");
-        ImGui::PopFont();
-
-        bool consent = settings_.GetBool("stt_consent_accepted");
-        if (ToggleRow("I understand; enable cloud transcription", consent, nullptr, scale)) {
+        const bool consent = settings_.GetBool("stt_consent_accepted");
+        lwf::ui::widgets::Row("##card_cloud_consent", "I understand; enable cloud transcription",
+                              nullptr, 52.0f * scale, scale, *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##stt_consent_accepted", consent, scale,
+                                           *current_palette_)) {
             settings_.SetBool("stt_consent_accepted", !consent);
             restart_needed_ = true;
             ApplyAndSave();
         }
+        lwf::ui::widgets::RowEnd(scale);
         if (consent && settings_.GetString("stt_provider") != "local") {
-            ImGui::TextColored(Color(kLightPalette.warn),
+            ImGui::TextColored(Color(current_palette_->warn),
                                "Cloud is active only while a key is present.");
             ImGui::TextWrapped("Saved keys take precedence over environment variables. "
                                "The key is never written to config.json, logs, or history. "
@@ -1860,28 +1912,32 @@ void MainWindow::DrawCloudPage(float scale) {
                                "on this computer.");
         }
     }
-    EndCard(scale);
 }
 
 void MainWindow::DrawCleanupPage(float scale) {
     DrawPageChrome("Cleanup", "How dictation text is polished before it is typed.", scale);
     DrawRestartBanner(scale);
-
-    const float width = std::min(ImGui::GetContentRegionAvail().x, metrics::content_max * scale);
-
-    BeginCard("##card_cleanup", width, scale);
+    // T6 ruled rows (DESIGN §6): same migration note as DrawGeneralPage;
+    // first rows reuse the former BeginCard ids. Slider slots are 248
+    // design px wide, not 240 (pinned; see DrawCloudPage INVARIANT note).
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Cleanup");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Cleanup");
-        ImGui::PopFont();
-
-        bool enabled = settings_.GetBool("cleanup_enabled");
-        if (ToggleRow("Enable cleanup", enabled, nullptr, scale)) {
+        const bool enabled = settings_.GetBool("cleanup_enabled");
+        lwf::ui::widgets::Row("##card_cleanup", "Enable cleanup", nullptr, 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##cleanup_enabled", enabled, scale,
+                                           *current_palette_)) {
             settings_.SetBool("cleanup_enabled", !enabled);
             ApplyAndSave();
         }
-        ImGui::Separator();
-
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_cleanup_min_words", "Minimum words", nullptr,
+                              248.0f * scale, scale, *current_palette_);
         int min_words = settings_.GetInt("cleanup_min_words");
         ImGui::SetNextItemWidth(-1.0f);
         ImGui::SliderInt("##min_words", &min_words, 1, 100, "skip short: %d words");
@@ -1894,6 +1950,11 @@ void MainWindow::DrawCleanupPage(float scale) {
                 ApplyAndSave();
             }
         }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_cleanup_timeout", "Wait time", nullptr, 248.0f * scale, scale,
+                              *current_palette_);
         int timeout = settings_.GetInt("cleanup_timeout_ms");
         ImGui::SetNextItemWidth(-1.0f);
         ImGui::SliderInt("##timeout", &timeout, 200, 30000, "give up after %d ms");
@@ -1901,47 +1962,85 @@ void MainWindow::DrawCleanupPage(float scale) {
             settings_.SetInt("cleanup_timeout_ms", timeout);
             ApplyAndSave();
         }
-        bool aggressive = settings_.GetBool("spoken_commands_aggressive");
-        if (ToggleRow("Aggressive spoken commands", aggressive,
-                      "Rewrite commands even inside longer sentences", scale)) {
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        const bool aggressive = settings_.GetBool("spoken_commands_aggressive");
+        lwf::ui::widgets::Row("##row_spoken_commands", "Aggressive spoken commands",
+                              "Rewrite commands even inside longer sentences", 52.0f * scale,
+                              scale, *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##spoken_commands_aggressive", aggressive, scale,
+                                           *current_palette_)) {
             settings_.SetBool("spoken_commands_aggressive", !aggressive);
             ApplyAndSave();
         }
-        BoolRow("dictionary_fuzzy", "Fuzzy dictionary matching", "Correct near-misses", scale);
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        const bool fuzzy = settings_.GetBool("dictionary_fuzzy");
+        lwf::ui::widgets::Row("##row_dictionary_fuzzy", "Fuzzy dictionary matching",
+                              "Correct near-misses", 52.0f * scale, scale, *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##dictionary_fuzzy", fuzzy, scale,
+                                           *current_palette_)) {
+            settings_.SetBool("dictionary_fuzzy", !fuzzy);
+            ApplyAndSave();
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_command_timeout", "Command wait", nullptr, 248.0f * scale,
+                              scale, *current_palette_);
         IntRow("command_timeout_ms", "##command_timeout_ms", 500, 60000, "command %d ms");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_inject_delay", "Wait before typing", nullptr,
+                              248.0f * scale, scale, *current_palette_);
         IntRow("inject_delay_ms", "##inject_delay_ms", 0, 500, "wait %d ms before typing");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_cleanup_language_policy", "Language policy",
+                              "Language policy for cleanup (e.g. keep).", 248.0f * scale, scale,
+                              *current_palette_);
         StringFieldRow("cleanup_language_policy", cleanup_language_policy_field_,
                        "##cleanup_language_policy", false);
-        ImGui::TextDisabled("Language policy for cleanup (e.g. keep).");
-        {
-            static const char* kSnippetItems[] = {"whole", "contains"};
-            const std::string mode = settings_.GetString("snippet_mode");
-            int mode_index = mode == "contains" ? 1 : 0;
-            if (ImGui::BeginCombo("##snippet_mode", kSnippetItems[mode_index])) {
-                for (int item = 0; item < 2; ++item) {
-                    if (ImGui::Selectable(kSnippetItems[item], item == mode_index)) {
-                        settings_.SetString("snippet_mode", kSnippetItems[item]);
-                        ApplyAndSave();
-                    }
-                }
-                ImGui::EndCombo();
-            }
-            ImGui::TextDisabled("When snippets expand.");
-        }
-        if (!validation_error_.empty()) {
-            ImGui::TextColored(Color(kLightPalette.err), "%s", validation_error_.c_str());
-        }
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
-
-    BeginCard("##card_cleanup_backend", width, scale);
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Cleanup backend");
-        ImGui::PopFont();
+        lwf::ui::widgets::Row("##row_snippet_mode", "Snippet expansion", "When snippets expand.",
+                              248.0f * scale, scale, *current_palette_);
+        static const char* kSnippetItems[] = {"whole", "contains"};
+        const std::string mode = settings_.GetString("snippet_mode");
+        int mode_index = mode == "contains" ? 1 : 0;
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::BeginCombo("##snippet_mode", kSnippetItems[mode_index])) {
+            for (int item = 0; item < 2; ++item) {
+                if (ImGui::Selectable(kSnippetItems[item], item == mode_index)) {
+                    settings_.SetString("snippet_mode", kSnippetItems[item]);
+                    ApplyAndSave();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    if (!validation_error_.empty()) {
+        ImGui::TextColored(Color(current_palette_->err), "%s", validation_error_.c_str());
+    }
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Cleanup backend");
+    ImGui::PopFont();
+
+    {
         static const char* kLlmItems[] = {"local", "openrouter"};
         const std::string backend = settings_.GetString("llm_provider");
         int backend_index = backend == "openrouter" ? 1 : 0;
+        lwf::ui::widgets::Row("##card_cleanup_backend", "Cleanup backend", nullptr,
+                              248.0f * scale, scale, *current_palette_);
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::BeginCombo("##llm_provider", kLlmItems[backend_index])) {
             for (int item = 0; item < 2; ++item) {
@@ -1953,21 +2052,31 @@ void MainWindow::DrawCleanupPage(float scale) {
             }
             ImGui::EndCombo();
         }
+        lwf::ui::widgets::RowEnd(scale);
         if (settings_.GetString("llm_provider") == "openrouter") {
-            ImGui::TextColored(Color(kLightPalette.warn),
+            ImGui::TextColored(Color(current_palette_->warn),
                                "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
         } else {
             ImGui::TextDisabled("Local cleanup runs on this machine.");
         }
-        ImGui::Separator();
-        ImGui::TextWrapped("Saved keys take precedence over environment variables. "
-                           "Keys are kept apart from settings and are never shown again "
-                           "after saving.");
-        DrawApiKeyRow("openrouter", "OpenRouter", "OPENROUTER_API_KEY",
-                      "Remove saved OpenRouter key?", "Remove OpenRouter key",
-                      openrouter_key_buffer_, sizeof(openrouter_key_buffer_),
-                      openrouter_remove_armed_, openrouter_keep_focus_pending_,
-                      openrouter_key_error_, scale);
+    }
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+    // BLOCK EXCEPTION (DESIGN §6, as-built T6 — see DrawCloudPage note):
+    // the key row and the model picker are each taller than the 52 px
+    // ruled row and hold several controls, so both stay uncarded blocks
+    // on the page background. Picker invariants below are unchanged:
+    // lazy entry build only while the popup is open (##openrouter_model),
+    // SetString -> restart -> ApplyAndSave per select, Refresh as the only
+    // network trigger, manual fallback seed-once, and the literal
+    // "OPENROUTER_API_KEY" (generic ResolveApiKey drops env support).
+    ImGui::TextWrapped("Saved keys take precedence over environment variables. "
+                       "Keys are kept apart from settings and are never shown again "
+                       "after saving.");
+    DrawApiKeyRow("openrouter", "OpenRouter", "OPENROUTER_API_KEY",
+                  "Remove saved OpenRouter key?", "Remove OpenRouter key",
+                  openrouter_key_buffer_, sizeof(openrouter_key_buffer_),
+                  openrouter_remove_armed_, openrouter_keep_focus_pending_,
+                  openrouter_key_error_, scale);
         // DECISION: the models fetch runs on a worker std::thread that writes
         // a mutex-guarded result latch, consumed each Cleanup-card frame here.
         // The 8s GET therefore never blocks either window; Refresh is the only
@@ -2120,8 +2229,6 @@ void MainWindow::DrawCleanupPage(float scale) {
             std::snprintf(openrouter_model_field_.buffer, sizeof(openrouter_model_field_.buffer),
                           "%s", trimmed.c_str());
         }
-    }
-    EndCard(scale);
 }
 
 void MainWindow::DrawPrivacyPage(float scale) {

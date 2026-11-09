@@ -2076,3 +2076,137 @@ TEST_CASE("cleanup card OpenRouter model picker wires refresh and persistence") 
     CHECK(header.find("openrouter_model_field_") != std::string::npos);
     CHECK(header.find("openrouter_models_worker_") != std::string::npos);
 }
+
+TEST_CASE("T6 settings Cloud and Cleanup ruled rows pin") {
+    // T6-owned pins: the two tabs use ruled rows (widgets::Row +
+    // widgets::ToggleSwitch with the live palette), keep or carry their
+    // former card ids, keep the forced restart (stt_provider, consent and
+    // llm_provider spans) and the hot-apply absence (snippet_mode span),
+    // and keep the F1 live-palette fixes for err/warn plus the API-key
+    // chrome (dot, focus rect, KeyButton). The key-row + picker blocks
+    // stay uncarded (documented block exception: taller than the 52 px
+    // ruled row) and keep the literal OPENROUTER_API_KEY + lazy entry
+    // build. Span-scoped like the T5 case so a Home/Privacy/About Paper
+    // read or a lookalike string cannot satisfy the pins by accident.
+    const std::string content = ReadSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(content.empty());
+    const std::size_t cloud = content.find("void MainWindow::DrawCloudPage");
+    REQUIRE(cloud != std::string::npos);
+    const std::size_t cleanup = content.find("void MainWindow::DrawCleanupPage", cloud);
+    REQUIRE(cleanup != std::string::npos);
+    const std::size_t privacy = content.find("void MainWindow::DrawPrivacyPage", cleanup);
+    REQUIRE(privacy != std::string::npos);
+    const std::string cloud_src = content.substr(cloud, cleanup - cloud);
+    const std::string cleanup_src = content.substr(cleanup, privacy - cleanup);
+    const auto count_occurrences = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    // Ruled rows with the live palette (never the Paper default).
+    CHECK(cloud_src.find("widgets::Row(") != std::string::npos);
+    CHECK(cloud_src.find("*current_palette_") != std::string::npos);
+    CHECK(cleanup_src.find("widgets::Row(") != std::string::npos);
+    CHECK(cleanup_src.find("*current_palette_") != std::string::npos);
+    // T6 toggles use the widget switch directly (local ToggleRow/BoolRow stay).
+    CHECK(cloud_src.find("widgets::ToggleSwitch(") != std::string::npos);
+    CHECK(cleanup_src.find("widgets::ToggleSwitch(") != std::string::npos);
+    CHECK(cloud_src.find("ToggleRow(") == std::string::npos);
+    CHECK(cloud_src.find("BoolRow(") == std::string::npos);
+    CHECK(cleanup_src.find("ToggleRow(") == std::string::npos);
+    CHECK(cleanup_src.find("BoolRow(") == std::string::npos);
+    // These two tabs no longer call BeginCard (the def stays for T7-T8).
+    CHECK(cloud_src.find("BeginCard(") == std::string::npos);
+    CHECK(cleanup_src.find("BeginCard(") == std::string::npos);
+    CHECK(content.find("void MainWindow::BeginCard") != std::string::npos);
+    // Restart banner: kept on both pages, not duplicated.
+    CHECK(count_occurrences(cloud_src, "DrawRestartBanner(scale)") == 1);
+    CHECK(count_occurrences(cleanup_src, "DrawRestartBanner(scale)") == 1);
+    // Former card ids: rows carry them directly; the key block carries
+    // ##card_cloud_keys via a real PushID (a comment alone must not pass).
+    CHECK(cloud_src.find("\"##card_cloud_provider\"") != std::string::npos);
+    CHECK(cloud_src.find("ImGui::PushID(\"##card_cloud_keys\")") != std::string::npos);
+    CHECK(cloud_src.find("\"##card_remote_engine\"") != std::string::npos);
+    CHECK(cloud_src.find("\"##card_cloud_consent\"") != std::string::npos);
+    CHECK(cleanup_src.find("\"##card_cleanup\"") != std::string::npos);
+    CHECK(cleanup_src.find("\"##card_cleanup_backend\"") != std::string::npos);
+    // Slider/combo slots are 248 design px, not 240 (substring pin).
+    CHECK(cloud_src.find("248.0f * scale") != std::string::npos);
+    CHECK(cleanup_src.find("248.0f * scale") != std::string::npos);
+    CHECK(cloud_src.find("240.0f * scale") == std::string::npos);
+    CHECK(cleanup_src.find("240.0f * scale") == std::string::npos);
+    // Forced restart kept: each span must set the flag before its RowEnd.
+    const auto span_has_restart = [](const std::string& src, const std::string& row_id) {
+        const std::size_t row = src.find(row_id);
+        if (row == std::string::npos) {
+            return false;
+        }
+        const std::size_t row_end = src.find("RowEnd(scale)", row);
+        if (row_end == std::string::npos) {
+            return false;
+        }
+        return src.find("restart_needed_ = true", row) < row_end;
+    };
+    CHECK(span_has_restart(cloud_src, "\"##card_cloud_provider\""));
+    CHECK(span_has_restart(cloud_src, "\"##card_cloud_consent\""));
+    CHECK(span_has_restart(cleanup_src, "\"##card_cleanup_backend\""));
+    // Consent warn gate kept: active only when a non-local service is set.
+    CHECK(cloud_src.find("settings_.GetString(\"stt_provider\") != \"local\"") !=
+          std::string::npos);
+    // Hot-apply absence: snippet_mode is hot_apply=true with no force, so
+    // its span must not set the flag.
+    {
+        const std::size_t row = cleanup_src.find("\"##row_snippet_mode\"");
+        REQUIRE(row != std::string::npos);
+        const std::size_t row_end = cleanup_src.find("RowEnd(scale)", row);
+        REQUIRE(row_end != std::string::npos);
+        const std::string span = cleanup_src.substr(row, row_end - row);
+        CHECK(span.find("restart_needed_ = true") == std::string::npos);
+    }
+    // F1 err/warn in the live palette, Paper variant pinned out of both
+    // spans. Cloud also draws the validation error after the row block.
+    CHECK(count_occurrences(cloud_src, "Color(current_palette_->err") >= 1);
+    CHECK(count_occurrences(cloud_src, "Color(current_palette_->warn") >= 1);
+    CHECK(count_occurrences(cleanup_src, "Color(current_palette_->err") >= 1);
+    CHECK(count_occurrences(cleanup_src, "Color(current_palette_->warn") >= 1);
+    CHECK(cloud_src.find("Color(kLightPalette.err") == std::string::npos);
+    CHECK(cloud_src.find("Color(kLightPalette.warn") == std::string::npos);
+    CHECK(cleanup_src.find("Color(kLightPalette.err") == std::string::npos);
+    CHECK(cleanup_src.find("Color(kLightPalette.warn") == std::string::npos);
+    // API-key row chrome in the live palette: 3 error sites + dot + focus.
+    const std::size_t key_row = content.find("void MainWindow::DrawApiKeyRow");
+    REQUIRE(key_row != std::string::npos);
+    const std::size_t persist_fn = content.find("void MainWindow::PersistPage", key_row);
+    REQUIRE(persist_fn != std::string::npos);
+    const std::string key_row_src = content.substr(key_row, persist_fn - key_row);
+    CHECK(count_occurrences(key_row_src, "Color(current_palette_->err") >= 3);
+    CHECK(key_row_src.find("current_palette_->ok") != std::string::npos);
+    CHECK(key_row_src.find("current_palette_->muted") != std::string::npos);
+    CHECK(key_row_src.find("current_palette_->focus") != std::string::npos);
+    CHECK(key_row_src.find("kLightPalette") == std::string::npos);
+    // KeyButton internals in the passed palette (button chrome + focus).
+    const std::size_t key_button = content.find("bool KeyButton(");
+    REQUIRE(key_button != std::string::npos);
+    const std::size_t key_button_end = content.find("}  // namespace", key_button);
+    REQUIRE(key_button_end != std::string::npos);
+    const std::string key_button_src = content.substr(key_button, key_button_end - key_button);
+    CHECK(key_button_src.find("palette.accent") != std::string::npos);
+    CHECK(key_button_src.find("palette.on_accent") != std::string::npos);
+    CHECK(key_button_src.find("palette.focus") != std::string::npos);
+    CHECK(key_button_src.find("kLightPalette") == std::string::npos);
+    // Block exception + picker identity: the backend key row keeps the
+    // literal env name, and the lazy entry build comment survives.
+    CHECK(cleanup_src.find("BLOCK EXCEPTION") != std::string::npos);
+    CHECK(cloud_src.find("BLOCK EXCEPTION") != std::string::npos);
+    CHECK(cleanup_src.find("\"OPENROUTER_API_KEY\"") != std::string::npos);
+    CHECK(cleanup_src.find("build the entry list lazily, only when the popup") !=
+          std::string::npos);
+    CHECK(cleanup_src.find("DrawApiKeyRow(\"openrouter\"") != std::string::npos);
+    const std::size_t backend = cleanup_src.find("\"##card_cleanup_backend\"");
+    REQUIRE(backend != std::string::npos);
+    CHECK(cleanup_src.find("##openrouter_model", backend) != std::string::npos);
+}
