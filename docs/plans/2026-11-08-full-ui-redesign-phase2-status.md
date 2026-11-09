@@ -1,5 +1,7 @@
 # Phase 2 Status — Token Unify (2026-11-08)
 
+> SUPERSEDED 2026-11-09 by ui-redesign-v2 plan (owner decision). The redesign direction was replaced; this document is retained for history only. New plan: C:\Users\devan\.opencode\plan\ui-redesign-v2-draft.md
+
 Branch: `ops/ui-full-redesign`
 Commit: `5736431` feat(ui): Phase 2 token unify Ivory primary + tests
 Base: `511afee` docs(design): Phase 1 mockup full unify Ivory light primary

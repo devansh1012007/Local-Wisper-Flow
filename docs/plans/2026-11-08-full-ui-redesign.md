@@ -1,5 +1,7 @@
 # Full UI Redesign Plan — 2026-11-08
 
+> SUPERSEDED 2026-11-09 by ui-redesign-v2 plan (owner decision). The redesign direction was replaced; this document is retained for history only. New plan: C:\Users\devan\.opencode\plan\ui-redesign-v2-draft.md
+
 Status: DRAFT. Branch for implementation: `ops/ui-full-redesign` (new branch from hierarchy tip 3963bab).
 Spec/source: user request "change the color palate and fully redesigne the ui" + skill @lwf-desktop-gui + AGENTS.md rules.
 

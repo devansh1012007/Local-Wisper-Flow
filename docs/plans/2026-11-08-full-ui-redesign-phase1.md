@@ -1,4 +1,7 @@
 # Phase 1 — Design + Mockup (for coder brief)
+
+> SUPERSEDED 2026-11-09 by ui-redesign-v2 plan (owner decision). The redesign direction was replaced; this document is retained for history only. New plan: C:\Users\devan\.opencode\plan\ui-redesign-v2-draft.md
+
 Owner decision: Full unify + Ivory light primary.
 Scope: docs/design/mockup.html only (plus records in this file). Do NOT touch src/ui theme headers or tests in Phase 1 — Phase 2 consumes Ph1 token table.
 Mockup must: present Ivory Light as primary theme (Full/Mini/Home/Speech/Settings), keep dark as variant section with same struct fields, define new token set for single Palette (bg/surface/border/text/muted/accent/brass/on_accent/ok/warn/err/err_fill/focus/surface_alpha + studio-teal replacements absorbed), type scale, spacing grid, radii, controls >=32px, focus ring 2px, motion rules, state pairing (word+shape+color), contrast tables recomputed via WCAG formula meeting >=4.5 text incl accent/ok/warn/err/brass and >=3 non-text, hairlines exempt <3.0 with rows. Mark Studio teal as deprecated.
