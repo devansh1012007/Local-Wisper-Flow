@@ -2557,3 +2557,136 @@ TEST_CASE("T8 Home ruled rows pin") {
     CHECK(chips_src.find("current_palette_->border") != std::string::npos);
     CHECK(chips_src.find("current_palette_->muted") != std::string::npos);
 }
+
+TEST_CASE("T9 Welcome onboarding ruled rows and step-3 download pin") {
+    // T9-owned pins: Welcome uses ruled rows (widgets::Row + RowEnd with the
+    // live palette) plus documented uncarded blocks for the mic meter and
+    // the catalog listing (both taller than the 52 px ruled row, T6/T7
+    // precedent). The subtitle mismatch is fixed (Four, not Three), the
+    // restart banner is drawn (step 3 sets the flag via the model edit and
+    // the shared download latch), every color reads the live palette, and
+    // step 3 wires Download on the ONE shared worker with the Speech tab
+    // (same catalog rule, same spawn gate, same latch in RunOnce — no
+    // second worker, no Speech id reuse, so the T13a Speech pins stay
+    // green). Step-2 history is untouched: the hotkey mirror lives in
+    // SetLearnedHotkey (SetDetectedHotkey is dead API, left for T14) and
+    // the Finish focus arm stays the only Welcome page_focus_pending_
+    // site. Span-scoped DrawWelcomePage..EOF (Welcome is the last
+    // function in the file) so lookalike strings elsewhere cannot satisfy
+    // these pins by accident.
+    const std::string content = ReadSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(content.empty());
+    const std::size_t welcome = content.find("void MainWindow::DrawWelcomePage");
+    REQUIRE(welcome != std::string::npos);
+    const std::string welcome_src = content.substr(welcome);
+    const auto count_occurrences = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    // Subtitle mismatch fixed: Four present, Three absent (writer-vs-reader
+    // symmetry — the step labels still say 1..4 of 4 below).
+    CHECK(welcome_src.find("\"Four small steps and you are dictating.\"") != std::string::npos);
+    CHECK(welcome_src.find("Three small steps") == std::string::npos);
+    // Step labels and Welcome copy byte-identical (F9-clean sentences only).
+    CHECK(welcome_src.find("Step 1 of 4 - microphone test.") != std::string::npos);
+    CHECK(welcome_src.find("Step 2 of 4 - press your push-to-talk chord now.") != std::string::npos);
+    CHECK(welcome_src.find("Step 3 of 4 - models.") != std::string::npos);
+    CHECK(welcome_src.find("Step 4 of 4 - try it.") != std::string::npos);
+    CHECK(welcome_src.find("Speak now; the bar should move.") != std::string::npos);
+    CHECK(welcome_src.find("Waiting for a chord...") != std::string::npos);
+    CHECK(welcome_src.find("You can also learn a chord later from the Home page.") !=
+          std::string::npos);
+    CHECK(welcome_src.find("unverified file") != std::string::npos);
+    CHECK(welcome_src.find("Files are verified against the listed SHA-256 checksums.") !=
+          std::string::npos);
+    CHECK(welcome_src.find("Skip (I have models)") != std::string::npos);
+    CHECK(welcome_src.find("Hold the hotkey and read a sentence aloud.") != std::string::npos);
+    // Ruled rows with the live palette; the two tall sections stay blocks.
+    CHECK(welcome_src.find("widgets::Row(") != std::string::npos);
+    CHECK(welcome_src.find("widgets::RowEnd(") != std::string::npos);
+    CHECK(welcome_src.find("*current_palette_") != std::string::npos);
+    CHECK(count_occurrences(welcome_src, "widgets::Row(") >= 3);
+    CHECK(count_occurrences(welcome_src, "BLOCK EXCEPTION") >= 2);
+    // Headings carry the 16 px indent + card-title font (T5/T6/T7 pattern).
+    CHECK(welcome_src.find("SetCursorPosX(16.0f * scale)") != std::string::npos);
+    CHECK(welcome_src.find("PushFont(nullptr, metrics::font_card_title_px)") != std::string::npos);
+    // Welcome no longer calls BeginCard (the def stays for its own pins).
+    CHECK(welcome_src.find("BeginCard(") == std::string::npos);
+    CHECK(content.find("void MainWindow::BeginCard") != std::string::npos);
+    // Former card id carried by a real PushID (a comment alone must not pass).
+    CHECK(welcome_src.find("ImGui::PushID(\"##card_welcome\")") != std::string::npos);
+    CHECK(welcome_src.find("ImGui::PushID(\"##card_welcome_models\")") != std::string::npos);
+    // Restart banner: drawn once, after the page chrome (step-3 edits and
+    // download success set the flag; the RunOnce latch surfaces it here).
+    CHECK(count_occurrences(welcome_src, "DrawRestartBanner(scale)") == 1);
+    // F1 err/warn in the live palette, Paper variant pinned out of the span.
+    CHECK(count_occurrences(welcome_src, "Color(current_palette_->warn") >= 2);
+    CHECK(count_occurrences(welcome_src, "Color(current_palette_->err") >= 1);
+    CHECK(welcome_src.find("Color(kLightPalette.err") == std::string::npos);
+    CHECK(welcome_src.find("Color(kLightPalette.warn") == std::string::npos);
+    // Step-3 download: Welcome ids, never the Speech ids (same window would
+    // collide), same availability rule and spawn gate, shared latch.
+    CHECK(welcome_src.find("\"Download##download_welcome\"") != std::string::npos);
+    CHECK(welcome_src.find("\"Cancel##cancel_download_welcome\"") != std::string::npos);
+    CHECK(welcome_src.find("\"Download##download_speech\"") == std::string::npos);
+    CHECK(welcome_src.find("\"Cancel##cancel_download\"") == std::string::npos);
+    CHECK(welcome_src.find("ParseModelsJson") != std::string::npos);
+    CHECK(welcome_src.find("IsSafeFileName") != std::string::npos);
+    CHECK(welcome_src.find("PlanDownloadStart") != std::string::npos);
+    CHECK(welcome_src.find("BeginDisabled(") != std::string::npos);
+    CHECK(welcome_src.find("download_pressed && download_available && !download_busy_.load()") !=
+          std::string::npos);
+    CHECK(welcome_src.find("download_cancelled_.store(true)") != std::string::npos);
+    CHECK(welcome_src.find("download_model_.Snapshot()") != std::string::npos);
+    CHECK(welcome_src.find("Download complete. Restart the app to use the new model.") !=
+          std::string::npos);
+    CHECK(welcome_src.find("No download address is listed for this file yet.") != std::string::npos);
+    // Browse (and therefore the model-path edit) stays enabled during a
+    // transfer, mirroring Speech — the download disable must wrap only the
+    // Download button, never Browse.
+    {
+        const std::size_t browse = welcome_src.find("\"Browse...##browse_welcome\"");
+        REQUIRE(browse != std::string::npos);
+        const std::size_t disable = welcome_src.find("BeginDisabled(", browse);
+        REQUIRE(disable != std::string::npos);
+        CHECK(disable > browse);
+    }
+    // One shared download state struct, one worker thread (header) — the
+    // mirror-not-extract shape, no second worker for Welcome.
+    const std::string header = ReadSource("src/ui/MainWindow.h");
+    REQUIRE_FALSE(header.empty());
+    CHECK(count_occurrences(header, "Onboarding::DownloadModel download_model_") == 1);
+    CHECK(count_occurrences(header, "std::thread download_worker_") == 1);
+    // Step-2 history untouched: no StartLearnHotkey inside Welcome (the
+    // live writer is SetLearnedHotkey in main.cpp, which mirrors
+    // hotkey_ptt into detected_hotkey_); the dead SetDetectedHotkey API
+    // stays for the T14 sweep.
+    CHECK(welcome_src.find("StartLearnHotkey") == std::string::npos);
+    CHECK(welcome_src.find("SetDetectedHotkey") == std::string::npos);
+    const std::size_t learned = content.find("void MainWindow::SetLearnedHotkey");
+    REQUIRE(learned != std::string::npos);
+    const std::string learned_rest =
+        content.substr(learned, content.find("void MainWindow::SetRecorderError", learned) - learned);
+    CHECK(learned_rest.find("target_key == \"hotkey_ptt\"") != std::string::npos);
+    CHECK(learned_rest.find("detected_hotkey_ = chord;") != std::string::npos);
+    CHECK(content.find("void MainWindow::SetDetectedHotkey") != std::string::npos);
+    // Finish semantics byte-identical: first_run off + save + single focus
+    // arm (the global double-arm invariant at the strip stays green).
+    CHECK(count_occurrences(content, "page_focus_pending_ = true") == 2);
+    CHECK(count_occurrences(welcome_src, "page_focus_pending_ = true") == 1);
+    CHECK(welcome_src.find("SetBool(\"first_run\", false)") != std::string::npos);
+    CHECK(welcome_src.find("SetString(\"hotkey_ptt\"") != std::string::npos);
+    CHECK(welcome_src.find("SetString(\"whisper_model_path\"") != std::string::npos);
+    // Save count preserved (step-2 accept + Finish, plus the download
+    // skip path mirroring Speech).
+    CHECK(count_occurrences(welcome_src, "ApplyAndSave()") >= 2);
+    // Speech ids stay in the Speech span (collision guard reads the whole
+    // file so a rename-everywhere refactor cannot pass silently).
+    CHECK(content.find("\"Download##download_speech\"") != std::string::npos);
+    CHECK(content.find("\"Cancel##cancel_download\"") != std::string::npos);
+}
