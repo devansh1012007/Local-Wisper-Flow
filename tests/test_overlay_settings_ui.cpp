@@ -2366,3 +2366,138 @@ TEST_CASE("T7 settings Privacy and About ruled rows pin") {
     CHECK(about_src.find("SetInt(") == std::string::npos);
     CHECK(about_src.find("ApplyAndSave()") == std::string::npos);
 }
+
+TEST_CASE("T8 Home ruled rows pin") {
+    // T8-owned pins: Home uses ruled rows (widgets::Row +
+    // widgets::ToggleSwitch with the live palette), keeps or carries its
+    // five former card ids (first Row id or PushID for the uncarded
+    // blocks), keeps every write path verbatim (dictation double-write,
+    // Learn empty payload, Copied dwell), keeps the Trust gating
+    // divergence (no cleanup_enabled gate on Home), and reads every color
+    // from the live palette (F1 err/warn absence). Span-scoped
+    // DrawHomePage..DrawSpeechPage like the T5/T6/T7 cases so the General
+    // hotkey row's StartLearnPayload cannot satisfy the Learn pin.
+    const std::string content = ReadSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(content.empty());
+    const std::size_t home = content.find("void MainWindow::DrawHomePage");
+    REQUIRE(home != std::string::npos);
+    const std::size_t speech = content.find("void MainWindow::DrawSpeechPage", home);
+    REQUIRE(speech != std::string::npos);
+    const std::string home_src = content.substr(home, speech - home);
+    const auto count_occurrences = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    // Ruled rows with the live palette (never the Paper default).
+    CHECK(home_src.find("widgets::Row(") != std::string::npos);
+    CHECK(home_src.find("widgets::ToggleSwitch(") != std::string::npos);
+    CHECK(home_src.find("*current_palette_") != std::string::npos);
+    // T8 toggles use the widget switch directly (local ToggleRow/BoolRow stay).
+    CHECK(home_src.find("ToggleRow(") == std::string::npos);
+    CHECK(home_src.find("BoolRow(") == std::string::npos);
+    // Home no longer calls BeginCard (the def stays for later pages).
+    CHECK(home_src.find("BeginCard(") == std::string::npos);
+    CHECK(content.find("void MainWindow::BeginCard") != std::string::npos);
+    // Former card ids: rows carry them directly; the Trust and Last blocks
+    // carry theirs via real PushID (a comment alone must not pass).
+    CHECK(home_src.find("\"##card_now\"") != std::string::npos);
+    CHECK(home_src.find("\"##card_hotkey\"") != std::string::npos);
+    CHECK(home_src.find("ImGui::PushID(\"##card_trust\")") != std::string::npos);
+    CHECK(home_src.find("\"##card_quick\"") != std::string::npos);
+    CHECK(home_src.find("ImGui::PushID(\"##card_last\")") != std::string::npos);
+    // Hotkey compound slot is 360 design px (General precedent), toggles 52.
+    CHECK(home_src.find("360.0f * scale") != std::string::npos);
+    CHECK(home_src.find("52.0f * scale") != std::string::npos);
+    // Headings carry the 16 px indent + card-title font (T5/T6/T7 pattern).
+    CHECK(home_src.find("SetCursorPosX(16.0f * scale)") != std::string::npos);
+    CHECK(home_src.find("PushFont(nullptr, metrics::font_card_title_px)") != std::string::npos);
+    CHECK(home_src.find("TextUnformatted(\"Right now\")") != std::string::npos);
+    CHECK(home_src.find("TextUnformatted(\"Trust\")") != std::string::npos);
+    // F1: every color in the span reads the live palette (status colors +
+    // Trust warn included); no Paper read of any token remains.
+    CHECK(home_src.find("current_palette_->ok") != std::string::npos);
+    CHECK(home_src.find("current_palette_->muted") != std::string::npos);
+    CHECK(home_src.find("current_palette_->accent") != std::string::npos);
+    CHECK(home_src.find("current_palette_->text") != std::string::npos);
+    CHECK(home_src.find("current_palette_->warn") != std::string::npos);
+    CHECK(home_src.find("kLightPalette") == std::string::npos);
+    // Hot-apply: no restart flag and no restart banner anywhere on Home
+    // (every Home key is hot-apply; nothing restart-gated lands here).
+    CHECK(home_src.find("restart_needed_ = true") == std::string::npos);
+    CHECK(home_src.find("DrawRestartBanner(") == std::string::npos);
+    // Right-now FSM mapping, copy verbatim.
+    CHECK(home_src.find("status_word = \"Paused\"") != std::string::npos);
+    CHECK(home_src.find("\"Dictation is off.\"") != std::string::npos);
+    CHECK(home_src.find("status_word = \"Listening\"") != std::string::npos);
+    CHECK(home_src.find("\"Speak, then release.\"") != std::string::npos);
+    CHECK(home_src.find("status_word = \"Thinking\"") != std::string::npos);
+    CHECK(home_src.find("\"Turning speech into text.\"") != std::string::npos);
+    CHECK(home_src.find("\"Set a hotkey to start.\"") != std::string::npos);
+    CHECK(home_src.find("\"Hold the hotkey to dictate.\"") != std::string::npos);
+    CHECK(home_src.find("State::CAPTURING") != std::string::npos);
+    CHECK(home_src.find("State::TRANSCRIBING") != std::string::npos);
+    CHECK(home_src.find("State::POSTPROCESSING") != std::string::npos);
+    CHECK(home_src.find("State::EMITTING") != std::string::npos);
+    // Learn: posts StartLearnHotkey with an EMPTY payload (Home span only —
+    // the StartLearnPayload overload exists on General, outside this span).
+    CHECK(home_src.find("bus_.PostCommand(UiCommandType::StartLearnHotkey);") != std::string::npos);
+    CHECK(home_src.find("StartLearnPayload") == std::string::npos);
+    CHECK(home_src.find("\"Learn a new chord...\"") != std::string::npos);
+    CHECK(home_src.find("DrawHotkeyChips(settings_.GetString(\"hotkey_ptt\"), scale)") !=
+          std::string::npos);
+    // Trust: derivation + copy verbatim, and the gating divergence (Home
+    // does NOT read cleanup_enabled here; the strip does).
+    CHECK(home_src.find("settings_.GetString(\"stt_provider\")") != std::string::npos);
+    CHECK(home_src.find("settings_.GetBool(\"stt_consent_accepted\")") != std::string::npos);
+    CHECK(home_src.find("settings_.GetString(\"llm_provider\") == \"openrouter\"") !=
+          std::string::npos);
+    {
+        const std::size_t trust = home_src.find("ImGui::PushID(\"##card_trust\")");
+        REQUIRE(trust != std::string::npos);
+        const std::size_t trust_end = home_src.find("ImGui::PopID();", trust);
+        REQUIRE(trust_end != std::string::npos);
+        const std::string trust_src = home_src.substr(trust, trust_end - trust);
+        CHECK(trust_src.find("cleanup_enabled") == std::string::npos);
+        CHECK(trust_src.find("\"Speech is sent to %s for each sentence.\"") != std::string::npos);
+        CHECK(trust_src.find("\"Cleanup uses OpenRouter: text is sent to OpenRouter when "
+                             "cleanup is on.\"") != std::string::npos);
+        CHECK(trust_src.find("\"Everything runs on this computer.\"") != std::string::npos);
+        CHECK(trust_src.find("\"Cloud speech and OpenRouter cleanup are off.\"") !=
+              std::string::npos);
+    }
+    // Quick settings: ##<key> toggle ids + the dictation double-write
+    // (SetBool + SetEnabled + ApplyAndSave, in that order, close enough
+    // that a later card cannot supply the pin).
+    CHECK(home_src.find("widgets::ToggleSwitch(\"##dictation_enabled\"") != std::string::npos);
+    CHECK(home_src.find("widgets::ToggleSwitch(\"##cleanup_enabled\"") != std::string::npos);
+    CHECK(home_src.find("widgets::ToggleSwitch(\"##double_tap_handsfree\"") != std::string::npos);
+    CHECK(home_src.find("SetBool(\"dictation_enabled\", !dictation)") != std::string::npos);
+    CHECK(home_src.find("bus_.PostCommand(UiCommandType::SetEnabled, !dictation ? \"1\" : \"0\")") !=
+          std::string::npos);
+    CHECK(home_src.find("SetBool(\"cleanup_enabled\", !cleanup)") != std::string::npos);
+    CHECK(home_src.find("SetBool(\"double_tap_handsfree\", !hands_free)") != std::string::npos);
+    CHECK(count_occurrences(home_src, "ApplyAndSave()") == 3);
+    // Last dictation: Copied dwell + clipboard path, copy verbatim.
+    CHECK(home_src.find("copied_until_") != std::string::npos);
+    CHECK(home_src.find("\"Copied\"") != std::string::npos);
+    CHECK(home_src.find("ImGui::SetClipboardText(last_transcript_.c_str())") != std::string::npos);
+    CHECK(home_src.find("metrics::saved_dwell") != std::string::npos);
+    CHECK(home_src.find("\"Nothing yet.\"") != std::string::npos);
+    // Block exception literal (T6/T7 pin rule).
+    CHECK(count_occurrences(home_src, "BLOCK EXCEPTION") >= 2);
+    // DrawHotkeyChips internals (shared with General) read the live palette.
+    const std::size_t chips = content.find("void MainWindow::DrawHotkeyChips");
+    REQUIRE(chips != std::string::npos);
+    const std::size_t chips_end = content.find("void MainWindow::DrawGeneralHotkeyRow", chips);
+    REQUIRE(chips_end != std::string::npos);
+    const std::string chips_src = content.substr(chips, chips_end - chips);
+    CHECK(chips_src.find("kLightPalette") == std::string::npos);
+    CHECK(chips_src.find("current_palette_->text") != std::string::npos);
+    CHECK(chips_src.find("current_palette_->border") != std::string::npos);
+    CHECK(chips_src.find("current_palette_->muted") != std::string::npos);
+}

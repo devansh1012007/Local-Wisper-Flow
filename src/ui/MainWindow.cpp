@@ -1293,15 +1293,15 @@ void MainWindow::DrawHotkeyChips(const std::string& chord, float scale) {
         const ImVec2 text_size = ImGui::CalcTextSize(parts[i].c_str());
         const float chip_w = text_size.x + 2.0f * pad_x;
         draw.AddRectFilled(ImVec2(x, y), ImVec2(x + chip_w, y + chip_h),
-                           Pack(kLightPalette.text, 0.05f), metrics::radius_control * scale);
-        draw.AddRect(ImVec2(x, y), ImVec2(x + chip_w, y + chip_h), Pack(kLightPalette.border),
-                     metrics::radius_control * scale, 0, 1.0f * scale);
+                           Pack(current_palette_->text, 0.05f), metrics::radius_control * scale);
+        draw.AddRect(ImVec2(x, y), ImVec2(x + chip_w, y + chip_h),
+                     Pack(current_palette_->border), metrics::radius_control * scale, 0, 1.0f * scale);
         draw.AddText(ImVec2(x + pad_x, y + (chip_h - text_size.y) * 0.5f),
-                     Pack(kLightPalette.text), parts[i].c_str());
+                     Pack(current_palette_->text), parts[i].c_str());
         x += chip_w;
         if (i + 1 < parts.size()) {
             draw.AddText(ImVec2(x + 5.0f * scale, y + (chip_h - text_size.y) * 0.5f),
-                         Pack(kLightPalette.muted), "+");
+                         Pack(current_palette_->muted), "+");
             x += 18.0f * scale;
         }
     }
@@ -1381,38 +1381,48 @@ void MainWindow::DrawGeneralHotkeyRow(const std::string& config_key, const char*
 
 void MainWindow::DrawHomePage(float scale) {
     DrawPageChrome("Home", "Dictation runs on this computer and starts with one hotkey.", scale);
-
-    const float width = std::min(ImGui::GetContentRegionAvail().x, metrics::content_max * scale);
+    // T8 ruled rows (DESIGN §6): same migration note as DrawGeneralPage;
+    // first row reuses the former BeginCard id. Trust and Last dictation
+    // are taller than the 52 px ruled row (stacked sentences / wrapped
+    // transcript + Copy button), so they stay uncarded blocks (block
+    // exceptions, as in T6/T7); their former BeginCard ids are carried by
+    // PushID so the page-structure pins keep passing. All keys here are
+    // hot-apply: no restart flag is set on Home (no DrawRestartBanner).
     const State fsm_state = fsm_.CurrentState();
     const bool enabled = settings_.GetBool("dictation_enabled");
 
-    BeginCard("##card_now", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Right now");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Right now");
-        ImGui::PopFont();
         const std::string hotkey = settings_.GetString("hotkey_ptt");
         const char* rest = nullptr;
-        std::uint32_t status_color = kLightPalette.ok;
+        std::uint32_t status_color = current_palette_->ok;
         const char* status_word = "Ready";
         if (!enabled) {
             status_word = "Paused";
-            status_color = kLightPalette.muted;
+            status_color = current_palette_->muted;
             rest = "Dictation is off.";
         } else if (fsm_state == State::CAPTURING) {
             status_word = "Listening";
-            status_color = kLightPalette.accent;
+            status_color = current_palette_->accent;
             rest = "Speak, then release.";
         } else if (fsm_state == State::TRANSCRIBING || fsm_state == State::POSTPROCESSING ||
                    fsm_state == State::EMITTING) {
             status_word = "Thinking";
-            status_color = kLightPalette.text;
+            status_color = current_palette_->text;
             rest = "Turning speech into text.";
         } else if (hotkey.empty()) {
             rest = "Set a hotkey to start.";
         } else {
             rest = "Hold the hotkey to dictate.";
         }
+        // Read-only readout row (Privacy OpenRouter-model precedent): the
+        // status word + dot live in the control slot, the derived rest copy
+        // is the row helper.
+        lwf::ui::widgets::Row("##card_now", "Status", rest, 248.0f * scale, scale,
+                              *current_palette_);
         const ImVec2 word_pos = ImGui::GetCursorScreenPos();
         const float line = ImGui::GetTextLineHeight();
         ImDrawList& draw = *ImGui::GetWindowDrawList();
@@ -1421,29 +1431,42 @@ void MainWindow::DrawHomePage(float scale) {
         ImGui::Dummy(ImVec2(kStatusDotIndent * scale, 0.0f));
         ImGui::SameLine();
         ImGui::TextUnformatted(status_word);
-        ImGui::SameLine();
-        ImGui::TextDisabled("%s", rest);
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_hotkey", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Hotkey");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Hotkey");
-        ImGui::PopFont();
+        // 360 px compound slot (General hotkey-row precedent): chips + the
+        // Learn button on the slot line.
+        lwf::ui::widgets::Row("##card_hotkey", "Push-to-talk",
+                              "Hold to speak, release to type.", 360.0f * scale, scale,
+                              *current_palette_);
         DrawHotkeyChips(settings_.GetString("hotkey_ptt"), scale);
-        ImGui::TextDisabled("Hold to speak, release to type.");
+        // DrawHotkeyChips reserves via Dummy (cursor drops to a new line);
+        // keep the Learn button on that same line inside the 52 px slot.
+        ImGui::SameLine();
         if (ImGui::Button("Learn a new chord...")) {
             bus_.PostCommand(UiCommandType::StartLearnHotkey);
         }
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_trust", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Trust");
+    ImGui::PopFont();
+    // BLOCK EXCEPTION (DESIGN §6, as-built T8 — same note as DrawCloudPage):
+    // the cloud and OpenRouter lines are independent and can stack (two
+    // sentences + a warn line), taller than the 52 px ruled row, so Trust
+    // stays an uncarded block on the page background. DECISION: Home does
+    // not gate on cleanup_enabled (the strip does) — preserved as built.
+    ImGui::PushID("##card_trust");
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Trust");
-        ImGui::PopFont();
         const std::string provider = settings_.GetString("stt_provider");
         const bool cloud_active = provider != "local" && settings_.GetBool("stt_consent_accepted");
         const bool openrouter_cleanup = settings_.GetString("llm_provider") == "openrouter";
@@ -1456,7 +1479,7 @@ void MainWindow::DrawHomePage(float scale) {
                                 "computer.");
         }
         if (openrouter_cleanup) {
-            ImGui::TextColored(Color(kLightPalette.warn),
+            ImGui::TextColored(Color(current_palette_->warn),
                                "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
         }
         if (!cloud_active && !openrouter_cleanup) {
@@ -1464,37 +1487,56 @@ void MainWindow::DrawHomePage(float scale) {
             ImGui::TextDisabled("Cloud speech and OpenRouter cleanup are off.");
         }
     }
-    EndCard(scale);
+    ImGui::PopID();
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_quick", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Quick settings");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Quick settings");
-        ImGui::PopFont();
         bool dictation = settings_.GetBool("dictation_enabled");
-        if (ToggleRow("Dictation", dictation, nullptr, scale)) {
+        lwf::ui::widgets::Row("##card_quick", "Dictation", nullptr, 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##dictation_enabled", dictation, scale,
+                                           *current_palette_)) {
             settings_.SetBool("dictation_enabled", !dictation);
             bus_.PostCommand(UiCommandType::SetEnabled, !dictation ? "1" : "0");
             ApplyAndSave();
         }
+        lwf::ui::widgets::RowEnd(scale);
         bool cleanup = settings_.GetBool("cleanup_enabled");
-        if (ToggleRow("Clean up text", cleanup, "Polish dictation with the local model", scale)) {
+        lwf::ui::widgets::Row("##row_cleanup_enabled", "Clean up text",
+                              "Polish dictation with the local model", 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##cleanup_enabled", cleanup, scale,
+                                           *current_palette_)) {
             settings_.SetBool("cleanup_enabled", !cleanup);
             ApplyAndSave();
         }
+        lwf::ui::widgets::RowEnd(scale);
         bool hands_free = settings_.GetBool("double_tap_handsfree");
-        if (ToggleRow("Hands-free", hands_free, "Double-tap to talk without holding", scale)) {
+        lwf::ui::widgets::Row("##row_double_tap_handsfree", "Hands-free",
+                              "Double-tap to talk without holding", 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##double_tap_handsfree", hands_free, scale,
+                                           *current_palette_)) {
             settings_.SetBool("double_tap_handsfree", !hands_free);
             ApplyAndSave();
         }
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_last", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Last dictation");
+    ImGui::PopFont();
+    // BLOCK EXCEPTION (DESIGN §6, as-built T8 — same note as DrawCloudPage):
+    // the wrapped transcript plus the Copy button are taller than the
+    // 52 px ruled row, so Last dictation stays an uncarded block.
+    ImGui::PushID("##card_last");
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Last dictation");
-        ImGui::PopFont();
         if (last_transcript_.empty()) {
             ImGui::TextDisabled("Nothing yet.");
         } else {
@@ -1506,7 +1548,7 @@ void MainWindow::DrawHomePage(float scale) {
             }
         }
     }
-    EndCard(scale);
+    ImGui::PopID();
 }
 
 void MainWindow::DrawSpeechPage(float scale) {
