@@ -176,24 +176,25 @@ TEST_CASE("snippet editor validates and dedupes") {
     CHECK(error.find("4000") != std::string::npos);
 }
 
-TEST_CASE("theme palettes keep the mockup token values") {
+TEST_CASE("theme palettes keep the hairline token values") {
     using lwf::ui::kDarkPalette;
     using lwf::ui::kLightPalette;
-    CHECK(kDarkPalette.bg == 0x0E1714u);
-    CHECK(kDarkPalette.surface == 0x14221Du);
-    CHECK(kDarkPalette.border == 0x29392Fu);
-    CHECK(kDarkPalette.text == 0xEDE6D6u);
-    CHECK(kDarkPalette.muted == 0xA8B3AAu);
-    CHECK(kDarkPalette.accent == 0xC9A96Eu);
-    CHECK(kDarkPalette.err == 0xD98A8Fu);
-    CHECK(kLightPalette.bg == 0xF6F1E4u);
-    CHECK(kLightPalette.surface == 0xFFFDF7u);
-    CHECK(kLightPalette.text == 0x1C2B26u);
-    // Phase 2 unify (Ivory primary): the navy accent 0x1F3A5F is retired;
-    // accent==brass==focus==0x7A5C25 is the single-accent invariant (AC2).
-    CHECK(kLightPalette.accent == 0x7A5C25u);
-    CHECK(kLightPalette.brass == 0x7A5C25u);
-    CHECK(kLightPalette.focus == 0x7A5C25u);
+    CHECK(kDarkPalette.bg == 0x101214u);
+    CHECK(kDarkPalette.surface == 0x17191Cu);
+    CHECK(kDarkPalette.border == 0x2A2D31u);
+    CHECK(kDarkPalette.text == 0xE8E9EAu);
+    CHECK(kDarkPalette.muted == 0x9A9DA1u);
+    CHECK(kDarkPalette.accent == 0xB8E356u);
+    CHECK(kDarkPalette.err == 0xF08A8Fu);
+    CHECK(kLightPalette.bg == 0xF7F7F5u);
+    CHECK(kLightPalette.surface == 0xFFFFFFu);
+    CHECK(kLightPalette.text == 0x1A1A18u);
+    // Hairline accent A (DESIGN §4): per-theme derived lime, so
+    // accent==brass==focus==0x3F6212 is the single-accent invariant (AC2).
+    // Dark keeps its own lime 0xB8E356 (different value, same role).
+    CHECK(kLightPalette.accent == 0x3F6212u);
+    CHECK(kLightPalette.brass == 0x3F6212u);
+    CHECK(kLightPalette.focus == 0x3F6212u);
     CHECK(kLightPalette.accent == kLightPalette.brass);
     CHECK(kLightPalette.accent == kLightPalette.focus);
     CHECK(kLightPalette.brass == kLightPalette.focus);
@@ -202,14 +203,14 @@ TEST_CASE("theme palettes keep the mockup token values") {
 TEST_CASE("theme palettes satisfy the contrast policy except the two hairline pairs") {
     using lwf::ui::ContrastRatio;
     for (const lwf::ui::Palette& palette : {lwf::ui::kDarkPalette, lwf::ui::kLightPalette}) {
-        INFO((palette.bg == 0x0E1714u ? "dark" : "light"));
+        INFO((palette.bg == 0x101214u ? "dark" : "light"));
         // Body text: 4.5:1 on page background and card surface.
         CHECK(ContrastRatio(palette.text, palette.bg) >= 4.5);
         CHECK(ContrastRatio(palette.text, palette.surface) >= 4.5);
         // Helper text: 4.5:1.
         CHECK(ContrastRatio(palette.muted, palette.bg) >= 4.5);
         CHECK(ContrastRatio(palette.muted, palette.surface) >= 4.5);
-        // Meaningful colors: 4.5:1 (the mockup passes them at body level).
+        // Meaningful colors: 4.5:1 (Hairline DESIGN §5 passes them at body level).
         CHECK(ContrastRatio(palette.accent, palette.surface) >= 4.5);
         CHECK(ContrastRatio(palette.ok, palette.surface) >= 4.5);
         CHECK(ContrastRatio(palette.warn, palette.surface) >= 4.5);
@@ -219,7 +220,7 @@ TEST_CASE("theme palettes satisfy the contrast policy except the two hairline pa
         CHECK(ContrastRatio(palette.on_accent, palette.accent) >= 4.5);
         // Meaningful non-text (focus ring, error dot fill) at 3:1. err_fill
         // is FILL-ONLY, never text: it is asserted at 3.0 here and must never
-        // be asserted at 4.5 as text (mockup R8: state never color-alone).
+        // be asserted at 4.5 as text (DESIGN §2: state never color-alone).
         CHECK(ContrastRatio(palette.focus, palette.surface) >= 3.0);
         CHECK(ContrastRatio(palette.err_fill, palette.surface) >= 3.0);
         // The two decorative hairline pairs are the documented exemption:
@@ -231,32 +232,31 @@ TEST_CASE("theme palettes satisfy the contrast policy except the two hairline pa
 
 TEST_CASE("contrast math matches the WCAG formula") {
     using lwf::ui::ContrastRatio;
-    CHECK(std::abs(ContrastRatio(0xEDE6D6, 0x0E1714) - 14.67) < 0.02);
-    CHECK(std::abs(ContrastRatio(0xEDE6D6, 0x14221D) - 13.23) < 0.02);
-    CHECK(std::abs(ContrastRatio(0xC9A96E, 0x14221D) - 7.35) < 0.02);
-    CHECK(std::abs(ContrastRatio(0x1C2B26, 0xF6F1E4) - 13.09) < 0.02);
+    CHECK(std::abs(ContrastRatio(0xE8E9EA, 0x101214) - 15.44) < 0.02);
+    CHECK(std::abs(ContrastRatio(0xE8E9EA, 0x17191C) - 14.49) < 0.02);
+    CHECK(std::abs(ContrastRatio(0xB8E356, 0x17191C) - 11.88) < 0.02);
+    CHECK(std::abs(ContrastRatio(0x1A1A18, 0xF7F7F5) - 16.25) < 0.02);
 }
 
-TEST_CASE("design px font tokens follow the mockup type scale") {
+TEST_CASE("design px font tokens follow the hairline type scale") {
     namespace metrics = lwf::ui::metrics;
-    // Phase 2 token unify (2026-11-08): font_body_px bumped 13 -> 14
-    // (approved). Helper text keeps its 13px visual via
-    // studio_metrics::font_helper_px until Phase 3 maps title/body
-    // separately; the two must not be silently conflated.
+    // Hairline type scale (DESIGN §3.4): title 24 / section 14 / body 13 /
+    // helper 12. Token names are kept (values only): wordmark/page_title
+    // are title, card_title is section, body is body, mini is helper.
     // Rail canonicalised 208 -> 220 (live kRailWidth=220 always won; the
     // token was dead), fade_in 0.12 -> 0.15 (functional motion band).
     CHECK(metrics::rail_width == 220.0f);
     CHECK(metrics::fade_in == 0.15f);
     CHECK(metrics::radius_card == 10.0f);
-    // Approved T-001 design mapping: mockup type scale s1=28 (page title),
-    // s2=18 (wordmark), s3=15 (card title), s4=14 (body) / s5=13 (helper) ->
-    // the design-px tokens below, with body text on font_body_px (14) and
-    // helper text on the studio helper token (13) until Phase 3 splits.
-    CHECK(metrics::font_wordmark_px == 18.0f);
-    CHECK(metrics::font_page_title_px == 28.0f);
-    CHECK(metrics::font_card_title_px == 15.0f);
-    CHECK(metrics::font_body_px == 14.0f);
-    CHECK(metrics::font_mini_text_px == 8.5f);
+    CHECK(metrics::topstrip_height == 48.0f);
+    CHECK(metrics::status_square == 8.0f);
+    // Hairline design mapping: title 24 (wordmark/page title),
+    // section 14 (card title), body 13, helper 12 (mini status label).
+    CHECK(metrics::font_wordmark_px == 24.0f);
+    CHECK(metrics::font_page_title_px == 24.0f);
+    CHECK(metrics::font_card_title_px == 14.0f);
+    CHECK(metrics::font_body_px == 13.0f);
+    CHECK(metrics::font_mini_text_px == 12.0f);
 }
 
 TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete scale api") {
@@ -711,19 +711,19 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(main_content.find("case UiCommandType::OpenScratchpad") != std::string::npos);
 }
 
-TEST_CASE("ivory palette keeps the primary token values") {
-    // Single-palette unify: the deprecated shim struct is deleted; pin the
-    // Ivory-primary kLightPalette values directly (mockup Phase 1). The
+TEST_CASE("hairline palette keeps the primary token values") {
+    // Hairline: the deprecated shim struct is deleted; pin the
+    // Paper kLightPalette values directly (DESIGN.md §3.2). The
     // HeatColor ramp stops are pinned via HeatColor (see helpers test).
     using lwf::ui::kLightPalette;
-    CHECK(kLightPalette.bg == 0xF6F1E4u);
-    CHECK(kLightPalette.surface == 0xFFFDF7u);
-    CHECK(kLightPalette.border == 0xD9CFBAu);
-    CHECK(kLightPalette.text == 0x1C2B26u);
-    CHECK(kLightPalette.muted == 0x5B665Fu);
-    CHECK(kLightPalette.accent == 0x7A5C25u);
-    CHECK(kLightPalette.brass == 0x7A5C25u);
-    CHECK(kLightPalette.focus == 0x7A5C25u);
+    CHECK(kLightPalette.bg == 0xF7F7F5u);
+    CHECK(kLightPalette.surface == 0xFFFFFFu);
+    CHECK(kLightPalette.border == 0xE2E2DFu);
+    CHECK(kLightPalette.text == 0x1A1A18u);
+    CHECK(kLightPalette.muted == 0x6B6B66u);
+    CHECK(kLightPalette.accent == 0x3F6212u);
+    CHECK(kLightPalette.brass == 0x3F6212u);
+    CHECK(kLightPalette.focus == 0x3F6212u);
     // Single-accent invariant: accent == brass == focus.
     CHECK(kLightPalette.accent == kLightPalette.brass);
     CHECK(kLightPalette.accent == kLightPalette.focus);
@@ -742,10 +742,10 @@ TEST_CASE("studio metrics layout tokens follow the shape scale") {
     CHECK(metrics::gap == 24.0f);
     CHECK(metrics::row_height == 52.0f);
     CHECK(metrics::hit_size == 32.0f);
-    CHECK(metrics::font_banner_px == 40.0f);
+    CHECK(metrics::font_banner_px == 24.0f);
     CHECK(metrics::font_caps_px == 12.0f);
-    CHECK(metrics::font_page_title_px == 28.0f);
-    CHECK(metrics::font_helper_px == 13.0f);
+    CHECK(metrics::font_page_title_px == 24.0f);
+    CHECK(metrics::font_helper_px == 12.0f);
     CHECK(metrics::toast_dwell_ms == 5000);
     CHECK(metrics::toast_dwell_s == 5.0f);
     CHECK(metrics::toast_dwell_s * 1000.0f == static_cast<float>(metrics::toast_dwell_ms));
@@ -754,9 +754,9 @@ TEST_CASE("studio metrics layout tokens follow the shape scale") {
     CHECK(metrics::activity_corner == 3.0f);
     CHECK(metrics::gauge_stroke == 14.0f);
     CHECK(metrics::progress_height == 28.0f);
-    CHECK(metrics::font_card_title_px == 15.0f);
+    CHECK(metrics::font_card_title_px == 14.0f);
     CHECK(metrics::font_heading_px == 24.0f);
-    CHECK(metrics::font_subheading_px == 17.0f);
+    CHECK(metrics::font_subheading_px == 14.0f);
     CHECK(metrics::font_glyph_px == 10.0f);
     CHECK(metrics::gap_micro == 6.0f);
     CHECK(metrics::gap_inline == 8.0f);
@@ -765,18 +765,18 @@ TEST_CASE("studio metrics layout tokens follow the shape scale") {
     CHECK(metrics::gap_block == 16.0f);
 }
 
-TEST_CASE("ivory palette contrast passes on text and accent pairs and muted on card fills") {
-    // Single-palette unify: the shim fields now resolve to the Ivory
+TEST_CASE("hairline palette contrast passes on text and accent pairs and muted on card fills") {
+    // Hairline: the shim fields now resolve to the Paper
     // kLightPalette fields (and HeatColor for the ramp stage). Thresholds
     // are otherwise unchanged (4.5 text / 3.0 meaningful / hairline <3.0).
     // Two honest adjustments, each commented:
-    //  - accent vs border is now accent(0x7A5C25) vs border(0xD9CFBA)
-    //    = 4.01 — moved to the non-text >=3.0 bucket (mockup §4B: light
+    //  - accent vs border is now accent(0x3F6212) vs border(0xE2E2DF)
+    //    = 5.45 — moved to the non-text >=3.0 bucket (DESIGN §10: light
     //    ramp steps are decorative, never text; ink text on the light ramp
     //    stays at >=4.5 below).
-    //  - ink vs muted (13.09/5.88 text values on each other) is 2.47 and
+    //  - ink vs muted (16.25/5.36 text values on their fills) is 3.25 and
     //    is REMOVED as a pair: muted is never rendered on ink in any view
-    //    (mockup §4B heat note: state never color-alone). Every real
+    //    (DESIGN §2 heat note: state never color-alone). Every real
     //    adjacency (muted on page/rail/card/banner, ink on ramp tints)
     //    is asserted below at its true threshold.
     using lwf::ui::ContrastRatio;
@@ -840,22 +840,21 @@ TEST_CASE("studio portable helpers classify heat and clamp and space caps") {
                   lwf::CalendarLevel(value, month_max));
         }
     }
-    // Brass ramp over surface (mockup §4B) — HeatLevel math is
-    // unchanged, only the color stops moved from teal to brass. L3 equals
-    // the deleted shim's teal_300 value by ramp coincidence, L4/L0 equal
-    // accent/border by the unify mapping; L1/L2 are ramp-only stops
-    // (0xE4DDCD/0xC3B599). Numeric count + legend always accompany cells
+    // Lime ramp over surface (DESIGN §10) — HeatLevel math is
+    // unchanged, only the color stops moved from brass to lime. L4/L0 equal
+    // accent/border by the Hairline mapping; L1/L2 are ramp-only stops
+    // (0xC9CCC4/0xABB1A4). Numeric count + legend always accompany cells
     // (state never color-alone).
-    CHECK(HeatColor(0) == 0xD9CFBAu);
-    CHECK(HeatColor(1) == 0xE4DDCDu);
-    CHECK(HeatColor(2) == 0xC3B599u);
-    CHECK(HeatColor(3) == 0xA28C64u);
-    CHECK(HeatColor(4) == 0x7A5C25u);
-    CHECK(HeatColor(9) == 0xD9CFBAu);
+    CHECK(HeatColor(0) == 0xE2E2DFu);
+    CHECK(HeatColor(1) == 0xC9CCC4u);
+    CHECK(HeatColor(2) == 0xABB1A4u);
+    CHECK(HeatColor(3) == 0x839178u);
+    CHECK(HeatColor(4) == 0x3F6212u);
+    CHECK(HeatColor(9) == 0xE2E2DFu);
     CHECK(HeatColor(0) == kLightPalette.border);
-    CHECK(HeatColor(3) == 0xA28C64u);
+    CHECK(HeatColor(3) == 0x839178u);
     CHECK(HeatColor(4) == kLightPalette.accent);
-    // Mockup §4B: ramp stages 3-4 meet >=3.0 against the surface; stages
+    // DESIGN §10: ramp stages 3-4 meet >=3.0 against the surface; stages
     // 0-2 are sub-3 surfaces whose state is carried by the numeric label.
     CHECK(lwf::ui::ContrastRatio(HeatColor(3), kLightPalette.surface) >= 3.0);
     CHECK(lwf::ui::ContrastRatio(HeatColor(4), kLightPalette.surface) >= 3.0);
