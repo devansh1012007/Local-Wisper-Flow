@@ -2732,7 +2732,7 @@ void MainWindow::DrawSnippetsPage(float scale) {
 
 void MainWindow::DrawTransformsPage(float scale) {
     if (transforms_page_) {
-        transforms_page_->Draw(scale);
+        transforms_page_->Draw(scale, *current_palette_);
         return;
     }
     DrawPageChrome("Transforms", "Rewrite selected text.", scale);

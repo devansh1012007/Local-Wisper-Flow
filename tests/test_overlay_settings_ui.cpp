@@ -1163,7 +1163,11 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
                                          std::istreambuf_iterator<char>());
     CHECK(transforms_content.find("kCardRadius") == std::string::npos);
     CHECK(transforms_content.find("studio_metrics::radius_card * scale") != std::string::npos);
-    CHECK(transforms_content.find("hovered ? kLightPalette.text : kLightPalette.accent") !=
+    // T10c: the link hover pair rides the live palette (was Paper-locked).
+    CHECK(transforms_content.find("hovered ? palette.text : palette.accent") !=
+          std::string::npos);
+    CHECK(transforms_content.find("kLightPalette") == std::string::npos);
+    CHECK(transforms_content.find("Color(palette.err), \"%s\", edit_error_.c_str()") !=
           std::string::npos);
     CHECK(transforms_content.find("ImGui::IsItemFocused()") != std::string::npos);
     std::ifstream palette_h("src/ui/theme/ThemePalette.h");
