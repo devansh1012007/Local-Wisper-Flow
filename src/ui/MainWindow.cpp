@@ -2714,7 +2714,7 @@ void MainWindow::DrawInsightsPage(float scale) {
 
 void MainWindow::DrawDictionaryPage(float scale) {
     if (dictionary_page_) {
-        dictionary_page_->Draw(scale);
+        dictionary_page_->Draw(scale, *current_palette_);
         return;
     }
     DrawPageChrome("Dictionary", "Words the app corrects.", scale);

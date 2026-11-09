@@ -15,7 +15,6 @@ namespace {
 
 using lwf::ui::Color;
 using lwf::ui::Pack;
-using lwf::ui::kLightPalette;
 
 // Control design widths (Wave 2 T-003 file-local hoists, not spacing tokens).
 constexpr float kSearchWidth = 240.0f;
@@ -76,7 +75,6 @@ void DictionaryPage::OpenAdd() {
     phrase_buffer_[0] = '\0';
     replacement_buffer_[0] = '\0';
     dialog_error_.clear();
-    share_checked_ = false;
     phrase_focus_pending_ = true;
     dialog_.Open();
 }
@@ -91,7 +89,6 @@ void DictionaryPage::OpenEdit(std::int64_t id) {
         CopyToBuffer(replacement_buffer_, sizeof(replacement_buffer_),
                      entry.has_replacement ? entry.replacement : std::string());
         dialog_error_.clear();
-        share_checked_ = false;
         phrase_focus_pending_ = true;
         dialog_.Open();
         return;
@@ -115,7 +112,7 @@ bool DictionaryPage::AttemptSubmit() {
     return false;
 }
 
-void DictionaryPage::Draw(float scale) {
+void DictionaryPage::Draw(float scale, const lwf::ui::Palette& palette) {
     if (!state_.load_attempted) {
         state_.load_attempted = true;
         (void)store_.Load();
@@ -130,40 +127,35 @@ void DictionaryPage::Draw(float scale) {
             (void)CommitExpiredPending(store_, state_, dict_, ImGui::GetTime());
         }
     }
-    DrawHeader(scale);
-    DrawBanner(scale);
-    DrawTabs(scale);
-    DrawToolbar(scale);
-    DrawRows(scale);
-    DrawDialog(scale);
-    toast_.Draw(scale);
+    DrawHeader(scale, palette);
+    DrawBanner(scale, palette);
+    DrawTabs(scale, palette);
+    DrawToolbar(scale, palette);
+    DrawRows(scale, palette);
+    DrawDialog(scale, palette);
+    toast_.Draw(scale, palette);
 }
 
-void DictionaryPage::DrawHeader(float scale) {
+void DictionaryPage::DrawHeader(float scale, const lwf::ui::Palette& palette) {
     ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
     ImGui::TextUnformatted("Dictionary");
     ImGui::PopFont();
     ImGui::SameLine(0.0f, studio_metrics::gap_block * scale);
-    if (widgets::PrimaryButton("dict_add_new", "Add new", scale)) {
+    if (widgets::PrimaryButton("dict_add_new", "Add new", scale, palette)) {
         OpenAdd();
     }
     ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_section * scale));
 }
 
-void DictionaryPage::DrawTabs(float scale) {
+void DictionaryPage::DrawTabs(float scale, const lwf::ui::Palette& palette) {
     static const char* const kTabs[] = {"All", "Personal"};
     int selected = state_.tab == DictionaryTab::Personal ? 1 : 0;
-    widgets::TabRow("##dict_tabs", kTabs, 2, &selected, scale);
+    widgets::TabRow("##dict_tabs", kTabs, 2, &selected, scale, palette);
     state_.tab = selected == 1 ? DictionaryTab::Personal : DictionaryTab::All;
-    ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
-    widgets::OutlinePill("##dict_shared_tab", "Shared with team", false, scale);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("Shared with team is not available locally");
-    }
     ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_section * scale));
 }
 
-void DictionaryPage::DrawToolbar(float scale) {
+void DictionaryPage::DrawToolbar(float scale, const lwf::ui::Palette& palette) {
     if (!dialog_.IsOpen() && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_F)) {
         search_focus_pending_ = true;
     }
@@ -177,7 +169,7 @@ void DictionaryPage::DrawToolbar(float scale) {
         state_.search = search_buffer_;
     }
     ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
-    if (widgets::LightButton("dict_sort", SortLabel(state_.sort), scale)) {
+    if (widgets::LightButton("dict_sort", SortLabel(state_.sort), scale, palette)) {
         ImGui::OpenPopup("##dict_sort_menu");
     }
     if (ImGui::BeginPopup("##dict_sort_menu")) {
@@ -193,7 +185,7 @@ void DictionaryPage::DrawToolbar(float scale) {
         ImGui::EndPopup();
     }
     ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
-    if (widgets::LightButton("dict_refresh", "Refresh", scale)) {
+    if (widgets::LightButton("dict_refresh", "Refresh", scale, palette)) {
         (void)store_.Reload();
         if (dict_ != nullptr) {
             (void)dict_->Reload();
@@ -202,14 +194,14 @@ void DictionaryPage::DrawToolbar(float scale) {
     ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_section * scale));
 }
 
-void DictionaryPage::DrawBanner(float scale) {
+void DictionaryPage::DrawBanner(float scale, const lwf::ui::Palette& palette) {
     if (!VisibleBanner(store_, state_)) {
         return;
     }
     bool open = true;
     widgets::Banner("##dict_banner", "Your words, spelled your way",
                     "Add the names and phrases you say. They will be spelled the way you meant.",
-                    &open, scale);
+                    &open, scale, palette);
     if (!open) {
         state_.banner_closed = true;
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap * scale));
@@ -223,7 +215,7 @@ void DictionaryPage::DrawBanner(float scale) {
                 ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
             }
             const std::string chip_id = std::string("##dict_chip_") + std::to_string(i);
-            if (widgets::Chip(chip_id.c_str(), chips[i].c_str(), false, scale)) {
+            if (widgets::Chip(chip_id.c_str(), chips[i].c_str(), false, scale, palette)) {
                 CopyToBuffer(search_buffer_, sizeof(search_buffer_), chips[i]);
                 state_.search = chips[i];
             }
@@ -232,9 +224,12 @@ void DictionaryPage::DrawBanner(float scale) {
     ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap * scale));
 }
 
-void DictionaryPage::DrawRows(float scale) {
+void DictionaryPage::DrawRows(float scale, const lwf::ui::Palette& palette) {
     const std::vector<DictionaryStore::Entry> rows = VisibleEntries(store_, state_);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kLightPalette.surface));
+    // T10a ruled rows: the list sits on the window background and rows are
+    // separated by 1 px hairlines (current palette border); the scrollable
+    // BeginChild stays because the list exceeds the window height.
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(palette.bg));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, studio_metrics::radius_row * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::BeginChild("##dict_rows", ImVec2(0.0f, 0.0f),
@@ -249,7 +244,7 @@ void DictionaryPage::DrawRows(float scale) {
         const ImVec2 text_size = ImGui::CalcTextSize(empty_text);
         draw.AddText(ImVec2(pos.x + 16.0f * scale,
                             pos.y + (studio_metrics::row_height * scale - text_size.y) * 0.5f),
-                     Pack(kLightPalette.muted), empty_text);
+                     Pack(palette.muted), empty_text);
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::row_height * scale));
         ImGui::PopFont();
     } else {
@@ -260,7 +255,7 @@ void DictionaryPage::DrawRows(float scale) {
             if (i > 0) {
                 const ImVec2 sep = ImGui::GetCursorScreenPos();
                 draw.AddLine(ImVec2(sep.x, sep.y), ImVec2(sep.x + width, sep.y),
-                             Pack(kLightPalette.border), 1.0f * scale);
+                             Pack(palette.border), 1.0f * scale);
             }
             const float row_h = studio_metrics::row_height * scale;
             const std::string row_id = std::string("##dict_row_") + std::to_string(entry.id);
@@ -275,24 +270,24 @@ void DictionaryPage::DrawRows(float scale) {
                 OpenEdit(entry.id);
             }
             if (hovered) {
-                draw.AddRectFilled(row_min, row_max, Pack(kLightPalette.border, 0.35f),
+                draw.AddRectFilled(row_min, row_max, Pack(palette.border, 0.35f),
                                    studio_metrics::radius_row * scale);
             }
             if (focused) {
                 draw.AddRect(ImVec2(row_min.x - 2.0f * scale, row_min.y - 2.0f * scale),
                              ImVec2(row_max.x + 2.0f * scale, row_max.y + 2.0f * scale),
-                             Pack(kLightPalette.accent), 4.0f * scale, 0, 2.0f * scale);
+                             Pack(palette.accent), 4.0f * scale, 0, 2.0f * scale);
             }
             ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
             ImDrawList& row_draw = *ImGui::GetWindowDrawList();
             row_draw.AddText(ImVec2(row_min.x + 16.0f * scale, row_min.y + 8.0f * scale),
-                             Pack(kLightPalette.text), RowText(entry).c_str());
+                             Pack(palette.text), RowText(entry).c_str());
             ImGui::PopFont();
             const std::string detail = RowDetail(entry);
             if (!detail.empty()) {
                 ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
                 row_draw.AddText(ImVec2(row_min.x + 16.0f * scale, row_min.y + 30.0f * scale),
-                                 Pack(kLightPalette.muted), detail.c_str());
+                                 Pack(palette.muted), detail.c_str());
                 ImGui::PopFont();
             }
             if (!hovered && !focused) {
@@ -311,19 +306,19 @@ void DictionaryPage::DrawRows(float scale) {
             ImGui::SetCursorScreenPos(
                 ImVec2(row_max.x - total - 12.0f * scale, row_min.y + (row_h - button_h) * 0.5f));
             const std::string star_id = std::string("dict_star_") + std::to_string(entry.id);
-            if (widgets::LightButton(star_id.c_str(), star_label.c_str(), scale)) {
+            if (widgets::LightButton(star_id.c_str(), star_label.c_str(), scale, palette)) {
                 (void)store_.SetStarred(entry.id, !entry.starred);
                 (void)store_.Save();
             }
             ImGui::SameLine(0.0f, button_gap);
             const std::string edit_id = std::string("dict_edit_") + std::to_string(entry.id);
-            if (widgets::LightButton(edit_id.c_str(), "Edit", scale)) {
+            if (widgets::LightButton(edit_id.c_str(), "Edit", scale, palette)) {
                 OpenEdit(entry.id);
             }
             ImGui::SameLine(0.0f, button_gap);
             const std::string delete_id =
                 std::string("dict_delete_") + std::to_string(entry.id);
-            if (widgets::LightButton(delete_id.c_str(), "Delete", scale)) {
+            if (widgets::LightButton(delete_id.c_str(), "Delete", scale, palette)) {
                 if (RequestDelete(store_, state_, dict_, entry.id, ImGui::GetTime())) {
                     toast_.Show(std::string("Deleted \"") + entry.phrase + "\"", "Undo");
                 }
@@ -335,7 +330,7 @@ void DictionaryPage::DrawRows(float scale) {
     ImGui::EndChild();
 }
 
-void DictionaryPage::DrawDialog(float scale) {
+void DictionaryPage::DrawDialog(float scale, const lwf::ui::Palette& palette) {
     if (!dialog_.IsOpen()) {
         return;
     }
@@ -358,22 +353,17 @@ void DictionaryPage::DrawDialog(float scale) {
             ImGui::InputTextWithHint("##dict_replacement", "Replace with", replacement_buffer_,
                                      sizeof(replacement_buffer_),
                                      ImGuiInputTextFlags_EnterReturnsTrue);
-        ImGui::BeginDisabled();
-        (void)ImGui::Checkbox("Share with team", &share_checked_);
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        ImGui::TextDisabled("Not available locally");
         if (!dialog_error_.empty()) {
-            ImGui::TextColored(Color(kLightPalette.err), "%s", dialog_error_.c_str());
+            ImGui::TextColored(Color(palette.err), "%s", dialog_error_.c_str());
         }
         if ((phrase_enter || replacement_enter) && AttemptSubmit()) {
             close_requested = true;
         }
-        if (widgets::LightButton("dict_cancel", "Cancel", scale)) {
+        if (widgets::LightButton("dict_cancel", "Cancel", scale, palette)) {
             close_requested = true;
         }
         ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
-        if (widgets::PrimaryButton("dict_confirm", editing_id_ == 0 ? "Add" : "Save", scale)) {
+        if (widgets::PrimaryButton("dict_confirm", editing_id_ == 0 ? "Add" : "Save", scale, palette)) {
             if (AttemptSubmit()) {
                 close_requested = true;
             }

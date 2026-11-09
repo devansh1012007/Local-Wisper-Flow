@@ -297,14 +297,21 @@ TEST_CASE("dictionary page add saves and reloads the pipeline dictionary") {
     CHECK(ReadFile(path).find("gihub") != std::string::npos);
 }
 
-TEST_CASE("dictionary page tabs share the local list while sharing is unavailable") {
+// T10a: the disabled "Shared with team" tab was removed honestly (no server
+// sharing exists); All/Personal keep rendering the same local list because
+// VisibleEntries filters on search/sort/pending only, with no tab partition.
+// Old assertion replaced here (quoted in docs/PROGRESS.md T10a):
+//   CHECK(VisibleEntries(store, all_state).size() == 2);
+//   CHECK(VisibleEntries(store, personal_state).size() == 2);
+// semantics unchanged for All/Personal; only the SharedTeam option is gone.
+TEST_CASE("dictionary page tabs render the shared local list without a team option") {
     const std::string dir = TempDir("tabs");
     DictionaryStore store(dir + "/dictionary.json");
     REQUIRE(store.Load());
     std::string error;
     REQUIRE(lwf::ui::pages::SubmitAdd(store, nullptr, "alpha", "", &error));
     lwf::ui::pages::DictionaryPageState all_state;
-    all_state.tab = lwf::ui::pages::DictionaryTab::All;
+    CHECK(all_state.tab == lwf::ui::pages::DictionaryTab::All);
     lwf::ui::pages::DictionaryPageState personal_state;
     personal_state.tab = lwf::ui::pages::DictionaryTab::Personal;
     CHECK(lwf::ui::pages::VisibleEntries(store, all_state).size() == 2);
@@ -325,15 +332,29 @@ TEST_CASE("dictionary page sources stay off the font scale ban and carry no copi
     CHECK(impl.find("Add new") != std::string::npos);
     CHECK(impl.find("Word or phrase") != std::string::npos);
     CHECK(impl.find("Replace with") != std::string::npos);
-    CHECK(impl.find("Share with team") != std::string::npos);
-    CHECK(impl.find("Not available locally") != std::string::npos);
+    // T10a: shared-team tab removed honestly — these strings must stay gone.
+    CHECK(impl.find("Share with team") == std::string::npos);
+    CHECK(impl.find("Not available locally") == std::string::npos);
+    CHECK(impl.find("OutlinePill") == std::string::npos);
+    CHECK(impl.find("SharedTeam") == std::string::npos);
+    CHECK(impl.find("share_checked_") == std::string::npos);
+    CHECK(header.find("SharedTeam") == std::string::npos);
+    // T10a F1: every custom draw and widget call threads the live palette.
+    CHECK(header.find("Draw(float scale, const lwf::ui::Palette") != std::string::npos);
+    CHECK(impl.find("kLightPalette") == std::string::npos);
+    CHECK(impl.find("palette.") != std::string::npos);
+    CHECK(impl.find("Color(palette.bg)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.border)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.muted)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.text)") != std::string::npos);
+    CHECK(impl.find("Color(palette.err)") != std::string::npos);
+    CHECK(impl.find("Color(kLightPalette.err)") == std::string::npos);
     CHECK(impl.find("Name (A-Z)") != std::string::npos);
     CHECK(impl.find("Newest") != std::string::npos);
     CHECK(impl.find("Most-used") != std::string::npos);
     CHECK(impl.find("Reload") != std::string::npos);
     CHECK(impl.find("PrimaryButton") != std::string::npos);
     CHECK(impl.find("TabRow") != std::string::npos);
-    CHECK(impl.find("OutlinePill") != std::string::npos);
     CHECK(impl.find("LightButton") != std::string::npos);
     CHECK(impl.find("Banner") != std::string::npos);
     CHECK(impl.find("Chip") != std::string::npos);

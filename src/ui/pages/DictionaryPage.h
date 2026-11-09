@@ -14,7 +14,7 @@ namespace lwf::ui::pages {
 
 enum class DictionarySort { NameAsc, Newest, MostUsed };
 
-enum class DictionaryTab { All, Personal, SharedTeam };
+enum class DictionaryTab { All, Personal };
 
 struct DictionaryPageState {
     std::string search;
@@ -256,15 +256,18 @@ public:
 
     void OpenAdd();
     void OpenEdit(std::int64_t id);
-    void Draw(float scale);
+    // T10a: the live palette is explicit. The default keeps the existing
+    // MainWindow call site compiling; wiring (*current_palette_) is owed in
+    // MainWindow::DrawDictionaryPage (see docs/PROGRESS.md T10a).
+    void Draw(float scale, const lwf::ui::Palette& palette = lwf::ui::kDarkPalette);
 
 private:
-    void DrawHeader(float scale);
-    void DrawTabs(float scale);
-    void DrawToolbar(float scale);
-    void DrawBanner(float scale);
-    void DrawRows(float scale);
-    void DrawDialog(float scale);
+    void DrawHeader(float scale, const lwf::ui::Palette& palette);
+    void DrawTabs(float scale, const lwf::ui::Palette& palette);
+    void DrawToolbar(float scale, const lwf::ui::Palette& palette);
+    void DrawBanner(float scale, const lwf::ui::Palette& palette);
+    void DrawRows(float scale, const lwf::ui::Palette& palette);
+    void DrawDialog(float scale, const lwf::ui::Palette& palette);
     bool AttemptSubmit();
 
     DictionaryStore& store_;
@@ -277,7 +280,6 @@ private:
     char replacement_buffer_[256] = {};
     std::string dialog_error_;
     std::int64_t editing_id_ = 0;
-    bool share_checked_ = false;
     bool search_focus_pending_ = false;
     bool phrase_focus_pending_ = false;
 };
