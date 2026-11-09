@@ -364,4 +364,15 @@ TEST_CASE("snippets page sources stay off the font scale ban and carry the brief
     CHECK(impl.find("editor_sheet_") != std::string::npos);
     CHECK(impl.find("kSnippetsUndoAction") != std::string::npos);
     CHECK(impl.find("IsItemClicked") == std::string::npos);
+    // T10b F1: every custom draw and widget call threads the live palette.
+    CHECK(header.find("Draw(float scale, const lwf::ui::Palette") != std::string::npos);
+    CHECK(impl.find("kLightPalette") == std::string::npos);
+    CHECK(impl.find("palette.") != std::string::npos);
+    CHECK(impl.find("Color(palette.bg)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.border)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.muted)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.text)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.accent)") != std::string::npos);
+    CHECK(impl.find("Color(palette.err)") != std::string::npos);
+    CHECK(impl.find("Color(kLightPalette.err)") == std::string::npos);
 }

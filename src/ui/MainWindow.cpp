@@ -2723,7 +2723,7 @@ void MainWindow::DrawDictionaryPage(float scale) {
 
 void MainWindow::DrawSnippetsPage(float scale) {
     if (snippets_page_) {
-        snippets_page_->Draw(scale);
+        snippets_page_->Draw(scale, *current_palette_);
         return;
     }
     DrawPageChrome("Snippets", "Reusable phrases.", scale);
