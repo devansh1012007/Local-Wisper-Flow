@@ -1,10 +1,10 @@
 # Hairline — Local Wisper Flow design specification
 
-Status: **DRAFT — pending owner sign-off**  
+Status: **SIGNED OFF — accent A lime/signal (2026-11-09)**  
 Branch: `ops/ui-redesign-v2`  
 Date: 2026-11-09  
 Plan: `C:\Users\devan\.opencode\plan\ui-redesign-v2-draft.md` (approved plan; Design direction, AC-G1..G6, feature map, Task 1)  
-Gate: owner sign-off on accent choice (§4) and open decisions (§12). **T2 is blocked until sign-off.** No source code changes are made by this task.
+Gate: owner sign-off completed 2026-11-09 on accent choice (§4) and open decisions (§12). **T2 (token swap) is unblocked.** No source code changes are made by this task.
 
 This file is the source of truth for the Hairline identity on this branch. `docs/design/mockup.html` is superseded by this file on `ops/ui-redesign-v2` (retained for history; see its legacy banner). Nothing in this file copies or restates the legacy mockup token values.
 
@@ -100,7 +100,7 @@ Candidates are per-theme derived values (dark value and light value separately; 
 
 Each candidate is evaluated on: accent on bg, accent on surface, on_accent on accent (text), plus focus (== accent) non-text. Dark `on_accent` = `#101214`; light `on_accent` = `#FFFFFF`, matching §3.
 
-### Candidate A — lime/signal
+### Candidate A — lime/signal — **SELECTED (2026-11-09)**
 
 | Pair | Dark: #B8E356 (on #101214) | Light: #3F6212 (on #F7F7F5/#FFFFFF) |
 |---|---|---|
@@ -112,8 +112,9 @@ Each candidate is evaluated on: accent on bg, accent on surface, on_accent on ac
 - AC-G1 in each theme: PASS on all measured pairs.
 - Inversions fail and prove per-theme derivation: white on dark lime = 1.48 (FAIL); dark on light olive = 2.65 (FAIL).
 - Collision note: lime family is adjacent to the ok green (`ok` #8FD1A0 dark / #2F6B45 light). Status is still word + square, never color-alone, but A is the closest candidate to `ok`. Owner to weigh.
+- **SELECTED** — owner picked A on 2026-11-09.
 
-### Candidate B — oxide red
+### Candidate B — oxide red — **REJECTED**
 
 | Pair | Dark: #E8735A (on #101214) | Light: #9B2C1E (on #F7F7F5/#FFFFFF) |
 |---|---|---|
@@ -125,8 +126,9 @@ Each candidate is evaluated on: accent on bg, accent on surface, on_accent on ac
 - AC-G1 in each theme: PASS on all measured pairs.
 - Inversions fail: white on dark oxide = 2.99 (FAIL); dark on light oxide = 2.48 (FAIL).
 - Collision note (strongest of the three): oxide red is nearly indistinguishable from `err` (#F08A8F dark / #A61E28 light). B would put the one accent on the same hue as the error color. Owner must explicitly accept that adjacency or reject B.
+- **REJECTED** — collides with err hue (see collision note above); not chosen by owner (2026-11-09).
 
-### Candidate C — steel blue
+### Candidate C — steel blue — **REJECTED**
 
 | Pair | Dark: #7AB3E8 (on #101214) | Light: #2F5D9E (on #F7F7F5/#FFFFFF) |
 |---|---|---|
@@ -138,8 +140,9 @@ Each candidate is evaluated on: accent on bg, accent on surface, on_accent on ac
 - AC-G1 in each theme: PASS on all measured pairs (light value is the darker derivative; the naive `#5B8FD9` fails text at 3.07/3.29 as shown above).
 - Inversions fail: white on dark steel = 2.22 (FAIL); dark on light steel = 2.84 (FAIL).
 - Collision note: steel blue is the most distinct from `ok`/`warn`/`err` of the three candidates.
+- **REJECTED** — valid on AC-G1 but not chosen by owner (2026-11-09).
 
-Owner pick: PENDING — T2 blocked until sign-off.
+Owner pick: DECIDED — A lime/signal (2026-11-09). T2 is unblocked.
 
 ## 5. Contrast — non-accent pairs (computed)
 
@@ -276,7 +279,8 @@ Export writes to the data directory and auto-opens the file (default, adopted). 
 
 ## 12. Open decisions (defaults stand unless owner overrides at sign-off)
 
-- Accent: PENDING (A / B / C in §4). T2 blocked until sign-off.
+- Accent: DECIDED — A lime/signal (dark #B8E356 / light #3F6212), signed off 2026-11-09. T2 (token swap) is unblocked.
+- T1 signed off 2026-11-09 (accent A); T2 (token swap) is unblocked.
 - OQ-A3 — profiles depth: viewer + category assign (default) vs full editor → T12.
 - OQ-A4 — fonts: default font only (default) vs approve a TTF.
 - OQ-A6 — deferred cuts confirmed: D7 work-area refresh, dot-drag rework, Mini right-click parity → R3.
