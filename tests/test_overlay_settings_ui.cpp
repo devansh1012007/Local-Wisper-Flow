@@ -1205,6 +1205,19 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
                                        std::istreambuf_iterator<char>());
     CHECK(insights_content.find("HeatPack") == std::string::npos);
     CHECK(insights_content.find("HeatColor(level)") != std::string::npos);
+    // T10d: Insights threads the live palette (no Paper read), keeps the
+    // HeatColor data-viz fills, and carries no stub or card helper.
+    CHECK(insights_content.find("kLightPalette") == std::string::npos);
+    CHECK(insights_content.find("Color(palette.bg)") != std::string::npos);
+    CHECK(insights_content.find("Pack(palette.border)") != std::string::npos);
+    CHECK(insights_content.find("Color(palette.muted)") != std::string::npos);
+    CHECK(insights_content.find("Pack(palette.text)") != std::string::npos);
+    CHECK(insights_content.find("Pack(palette.accent)") != std::string::npos);
+    CHECK(insights_content.find("BeginCard(") == std::string::npos);
+    CHECK(insights_content.find("kComingSoon") == std::string::npos);
+    CHECK(insights_content.find("kTabVoice") == std::string::npos);
+    CHECK(insights_content.find("TabRow") == std::string::npos);
+    CHECK(insights_content.find("DrawShareDialog") == std::string::npos);
 }
 
 TEST_CASE("Phase 5 pages carry cursor Dummy compensation") {

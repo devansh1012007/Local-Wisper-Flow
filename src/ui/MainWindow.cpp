@@ -2705,7 +2705,7 @@ void MainWindow::DrawAboutPage(float scale) {
 
 void MainWindow::DrawInsightsPage(float scale) {
     if (insights_page_) {
-        insights_page_->Draw(scale);
+        insights_page_->Draw(scale, *current_palette_);
         return;
     }
     DrawPageChrome("Insights", "Your dictation at a glance.", scale);

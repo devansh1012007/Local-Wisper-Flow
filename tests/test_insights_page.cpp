@@ -211,9 +211,6 @@ TEST_CASE("insights page empty snapshot shows zero dash and empty calendar") {
     CHECK(ShareSumOf(rows) == 0);
     auto grid = lwf::ui::insights::MonthValuesFor(snapshot, 2026, 11);
     CHECK(grid.month_max == 0);
-    auto lines = lwf::ui::insights::ShareHighlightLines(summary);
-    REQUIRE(lines.size() == 4);
-    CHECK(lines[2] == "0 words");
 }
 
 TEST_CASE("insights page generation counter drives refresh without polling") {
@@ -274,11 +271,9 @@ TEST_CASE("insights page calendar helpers cover leap months and sunday start") {
     CHECK(lwf::ui::insights::MonthLabelFor("not-a-month").empty());
 }
 
-TEST_CASE("insights page copy constants pin share and card strings") {
+TEST_CASE("insights page copy constants pin card strings") {
     CHECK(std::string(lwf::ui::insights::kPageTitle) == "Insights");
     CHECK(std::string(lwf::ui::insights::kTabUsage) == "Your usage");
-    CHECK(std::string(lwf::ui::insights::kTabVoice) == "Your voice");
-    CHECK(std::string(lwf::ui::insights::kVoiceEmpty) == "Not available yet.");
     CHECK(std::string(lwf::ui::insights::kWpmTooltip) ==
           "Your average speaking speed while dictating.");
     CHECK(std::string(lwf::ui::insights::kGaugeFootnote) ==
@@ -287,22 +282,7 @@ TEST_CASE("insights page copy constants pin share and card strings") {
           "Mobile is not available in this app.");
     CHECK(std::string(lwf::ui::insights::kDesktopEmpty) ==
           "No dictations yet. Hold Ctrl + Win to start.");
-    CHECK(std::string(lwf::ui::insights::kShareHighlightsTitle) == "Flow Highlights");
-    CHECK(std::string(lwf::ui::insights::kShareStreakTitle) == "Flow Streak");
-    CHECK(std::string(lwf::ui::insights::kShareCopy) == "Copy image");
-    CHECK(std::string(lwf::ui::insights::kShareDownload) == "Download image");
-    CHECK(std::string(lwf::ui::insights::kComingSoon) == "Coming soon");
     CHECK(lwf::ui::insights::kWpmGaugeCap == doctest::Approx(200.0));
-    std::map<std::string, DayStats> snapshot;
-    snapshot["2026-11-07"] = MakeDay(974, 372000, 3, 2);
-    snapshot["2026-11-07"].apps["chrome"] = 974;
-    auto summary = lwf::ui::insights::SummarizeSnapshot(snapshot, "2026-11-07");
-    auto lines = lwf::ui::insights::ShareHighlightLines(summary);
-    REQUIRE(lines.size() == 4);
-    CHECK(lines[0] == "1 day streak");
-    CHECK(lines[1] == "157 wpm");
-    CHECK(lines[2] == "974 words");
-    CHECK(lines[3] == "1 apps");
 }
 
 TEST_CASE("insights page source scan keeps spec copy and bans") {
@@ -319,8 +299,12 @@ TEST_CASE("insights page source scan keeps spec copy and bans") {
     CHECK_FALSE(impl.empty());
     CHECK(both.find("Insights") != std::string::npos);
     CHECK(both.find("Your usage") != std::string::npos);
-    CHECK(both.find("Your voice") != std::string::npos);
-    CHECK(both.find("Not available yet.") != std::string::npos);
+    // T10d: voice tab + share dialog removed honestly (no stub remains).
+    CHECK(both.find("Your voice") == std::string::npos);
+    CHECK(both.find("Not available yet.") == std::string::npos);
+    CHECK(both.find("kTabVoice") == std::string::npos);
+    CHECK(both.find("kVoiceEmpty") == std::string::npos);
+    CHECK(both.find("IsVoice") == std::string::npos);
     CHECK(both.find("WORDS PER MINUTE") != std::string::npos);
     CHECK(both.find("Your average speaking speed while dictating.") != std::string::npos);
     CHECK(both.find("Average") != std::string::npos);
@@ -343,14 +327,21 @@ TEST_CASE("insights page source scan keeps spec copy and bans") {
     CHECK(both.find("OTHER TASKS") != std::string::npos);
     CHECK(both.find("LONGEST STREAK | ") != std::string::npos);
     CHECK(both.find("No dictations yet. Hold Ctrl + Win to start.") != std::string::npos);
-    CHECK(both.find("Flow Highlights") != std::string::npos);
-    CHECK(both.find("Flow Streak") != std::string::npos);
-    CHECK(both.find("Copy image") != std::string::npos);
-    CHECK(both.find("Download image") != std::string::npos);
-    CHECK(both.find("Coming soon") != std::string::npos);
-    CHECK(both.find("SHARE") != std::string::npos);
+    // T10d: share stubs stay gone (honest removal, no replacement copy).
+    CHECK(both.find("Flow Highlights") == std::string::npos);
+    CHECK(both.find("Flow Streak") == std::string::npos);
+    CHECK(both.find("Copy image") == std::string::npos);
+    CHECK(both.find("Download image") == std::string::npos);
+    CHECK(both.find("Coming soon") == std::string::npos);
+    CHECK(both.find("kComingSoon") == std::string::npos);
+    CHECK(both.find("SHARE") == std::string::npos);
+    CHECK(both.find("ShareHighlightLines") == std::string::npos);
+    CHECK(both.find("DrawShareDialog") == std::string::npos);
+    CHECK(both.find("OpenShare") == std::string::npos);
+    CHECK(both.find("share_open_") == std::string::npos);
     CHECK(both.find("Generation()") != std::string::npos);
-    CHECK(both.find("TabRow") != std::string::npos);
+    // T10d: single Usage view carries no tab row (tab state removed).
+    CHECK(both.find("TabRow") == std::string::npos);
     CHECK(both.find("RadialGauge") != std::string::npos);
     CHECK(both.find("ProgressPill") != std::string::npos);
     CHECK(both.find("ActivityGrid") != std::string::npos);
@@ -362,4 +353,16 @@ TEST_CASE("insights page source scan keeps spec copy and bans") {
     CHECK(both.find("FIXME") == std::string::npos);
     CHECK(both.find("XXX") == std::string::npos);
     CHECK(header.find("imgui.h") == std::string::npos);
+    // T10d: live palette threaded explicitly (T10a/b pattern); no Paper read
+    // remains and card chrome is hairlines with zero BeginCard calls.
+    CHECK(header.find("Draw(float scale, const lwf::ui::Palette") != std::string::npos);
+    CHECK(header.find("kLightPalette") == std::string::npos);
+    CHECK(impl.find("kLightPalette") == std::string::npos);
+    CHECK(impl.find("Color(palette.bg)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.border)") != std::string::npos);
+    CHECK(impl.find("Color(palette.muted)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.text)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.accent)") != std::string::npos);
+    CHECK(impl.find("BeginCard(") == std::string::npos);
+    CHECK(impl.find("BeginChild") != std::string::npos);
 }
