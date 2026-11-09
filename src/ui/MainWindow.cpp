@@ -525,10 +525,14 @@ void MainWindow::RenderPages(float scale) {
 
 void MainWindow::DrawTopStrip(float scale) {
     // Hairline top strip (DESIGN.md section 7): wordmark at left, the seven
-    // destinations in rail order, a blank status reserve at the right end
-    // (owned by T4b, not drawn here), and the Hide ghost at the strip end.
-    // History/Profiles entries arrive in T11/T12 by appending to the same
-    // items array; the strip must work with 7 and accept 9 unchanged.
+    // destinations in rail order, the status line (square + word + locality
+    // phrase, T4b) at the right-end reserve, and the Hide ghost at the strip
+    // end. Ctrl+digits activate the same destinations positionally (see the
+    // shortcut block inside ##strip_items).
+    // History/Profiles entries arrive in T11/T12 inserted at their DESIGN
+    // section 7 positions (mid-array), which shifts the positional Ctrl
+    // mapping when they land (e.g. Snippets Ctrl+4->Ctrl+5); current 1..7
+    // behaviour is unchanged. The strip must work with 7 and accept 9.
     const float strip_h = metrics::topstrip_height * scale;
     const float strip_w = ImGui::GetIO().DisplaySize.x;
     // No filled panel: window background with a 1 px hairline at the bottom.
@@ -547,7 +551,7 @@ void MainWindow::DrawTopStrip(float scale) {
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         ImGui::PushFont(nullptr, metrics::font_wordmark_px);
         draw.AddText(ImVec2(strip_origin.x, strip_origin.y + (strip_h - wordmark_size.y) * 0.5f),
-                     Pack(kLightPalette.text), "Local Wisper Flow");
+                     Pack(current_palette_->text), "Local Wisper Flow");
         ImGui::PopFont();
     }
 
@@ -567,11 +571,13 @@ void MainWindow::DrawTopStrip(float scale) {
         {"##strip_settings", "Settings", Page::Settings},
     };
 
-    // Right-end reserve: blank status space for T4b plus the Hide ghost
-    // (LightButton padding is metrics::space_m per side). The reserve is
-    // left empty on purpose; T4b draws the status line into it.
+    // Right-end reserve: the T4b status line (square + word + phrase) plus
+    // the Hide ghost (LightButton padding is metrics::space_m per side).
+    // The reserve is 128 design px so square + word + short phrase fit
+    // without spilling into Hide; growing it reflows truncation/scroll
+    // below automatically (status_reserve feeds the avail budget).
     const float gap = metrics::space_s * scale;
-    const float status_reserve = metrics::space_xl * 3.0f * scale;
+    const float status_reserve = metrics::space_xl * 4.0f * scale;
     float hide_w = 0.0f;
     {
         ImGui::PushFont(nullptr, metrics::font_body_px);
@@ -647,6 +653,36 @@ void MainWindow::DrawTopStrip(float scale) {
     ImGui::BeginChild("##strip_items", ImVec2(avail, strip_h), ImGuiChildFlags_None,
                       ImGuiWindowFlags_HorizontalScrollbar);
     ImGui::PopStyleVar();
+    // Ctrl+digits (T4b): positional shortcuts mapped to the CURRENT items
+    // array (Home is Ctrl+1 through Settings is Ctrl+7 today). Mapping
+    // follows the array positionally, so inserting History/Profiles at
+    // their DESIGN.md section 7 positions shifts later destinations
+    // (e.g. Snippets Ctrl+4 becomes Ctrl+5) when T11/T12 land; current
+    // 1..7 behaviour is unchanged. Guarded so typing digits inside
+    // one of the InputText fields is never hijacked. The Full window is
+    // the only surface here (RunOnce early-outs while hidden, so a hidden
+    // window cannot receive these), and Welcome stays shortcut-active:
+    // navigating away is a user choice; first_run stays true so Welcome
+    // returns next launch (recorded in the T4b PROGRESS row).
+    if (!ImGui::GetIO().WantTextInput &&
+        (ImGui::GetIO().KeyMods & ImGuiMod_Ctrl) != 0) {
+        static constexpr ImGuiKey kShortcutKeys[] = {
+            ImGuiKey_1, ImGuiKey_2, ImGuiKey_3, ImGuiKey_4, ImGuiKey_5,
+            ImGuiKey_6, ImGuiKey_7, ImGuiKey_8, ImGuiKey_9,
+        };
+        constexpr std::size_t item_count = sizeof(items) / sizeof(items[0]);
+        constexpr std::size_t key_count = sizeof(kShortcutKeys) / sizeof(kShortcutKeys[0]);
+        const std::size_t bound = item_count < key_count ? item_count : key_count;
+        for (std::size_t shortcut = 0; shortcut < bound; ++shortcut) {
+            // Shortcuts fire once per physical press: without the false
+            // repeat flag a held Ctrl+digit re-fires every repeat tick and
+            // would re-PersistPage/ClearApiKeyInputs while held.
+            if (ImGui::IsKeyPressed(kShortcutKeys[shortcut], false)) {
+                ActivateStripPage(items[shortcut].page);
+                break;
+            }
+        }
+    }
     // Restore keyboard focus after a page switch or re-show, only when the
     // user is actually driving with the keyboard (NavActive) so a mouse
     // click or tray pop never steals focus. Runs immediately before the
@@ -667,16 +703,13 @@ void MainWindow::DrawTopStrip(float scale) {
         // pressed=true for both mouse and keyboard (nav) activation, so one
         // check covers Tab+Enter/Space alike (R-W2-001).
         const bool pressed = lwf::ui::widgets::TopStripItem(item.id, labels[index].c_str(),
-                                                            page_ == item.page, scale);
+                                                            page_ == item.page, scale,
+                                                            *current_palette_);
         if (pressed) {
-            page_ = item.page;
-            PersistPage();
-            validation_error_.clear();  // errors belong to the page that set them
-            ClearApiKeyInputs();
-            // Focus is already on the pressed item; never arm the restore
-            // here (mouse or keyboard). A stale arm would yank focus to
-            // the first strip item on a later Tab (R-W2-003).
-            page_focus_pending_ = false;
+            // Single shared press path: Ctrl+digit shortcuts land in the
+            // same ActivateStripPage so persistence and focus match the
+            // strip exactly (one function, not copy-pasted logic).
+            ActivateStripPage(item.page);
         }
         ++index;
         if (index < sizeof(items) / sizeof(items[0])) {
@@ -685,16 +718,130 @@ void MainWindow::DrawTopStrip(float scale) {
     }
     ImGui::EndChild();
 
-    // Blank status reserve (T4b owns the status line drawn here).
+    // Status line (T4b, DESIGN.md section 6 amendment (f)): 8 px square +
+    // word + muted locality phrase, vertically centred in the 48 px strip
+    // inside the reserve above. StatusKind is a palette-role enum, not the
+    // FSM names, so the table below is the as-built mapping. Precedence is
+    // top to bottom: validation error, paused, capturing, thinking, ready.
+    // The phrase follows the speech fact first: cloud wins over cleanup
+    // because the destination of the spoken audio is the bigger privacy
+    // fact; OpenRouter only shows when cleanup is actually on and cloud is
+    // off; otherwise the phrase is Local. Reads follow the Home pattern
+    // (direct fsm_ + settings_ reads, no snapshot) by design.
     ImGui::SameLine();
-    ImGui::Dummy(ImVec2(status_reserve, 0.0f));
+    {
+        lwf::ui::widgets::StatusKind status_kind = lwf::ui::widgets::StatusKind::Ok;
+        const char* status_word = "Ready";
+        if (!validation_error_.empty()) {
+            status_kind = lwf::ui::widgets::StatusKind::Err;
+            status_word = "Attention";
+        } else if (!settings_.GetBool("dictation_enabled")) {
+            status_kind = lwf::ui::widgets::StatusKind::Muted;
+            status_word = "Paused";
+        } else if (fsm_.CurrentState() == State::CAPTURING) {
+            status_kind = lwf::ui::widgets::StatusKind::Accent;
+            status_word = "Listening";
+        } else if (fsm_.CurrentState() == State::TRANSCRIBING ||
+                   fsm_.CurrentState() == State::POSTPROCESSING ||
+                   fsm_.CurrentState() == State::EMITTING) {
+            status_kind = lwf::ui::widgets::StatusKind::Accent;
+            status_word = "Thinking";
+        } else {
+            status_kind = lwf::ui::widgets::StatusKind::Ok;
+            status_word = "Ready";
+        }
+
+        const std::string provider = settings_.GetString("stt_provider");
+        const bool cloud_active =
+            provider != "local" && settings_.GetBool("stt_consent_accepted");
+        std::string phrase;
+        if (cloud_active) {
+            if (provider == "gnani") {
+                phrase = "Cloud: Gnani";
+            } else if (provider == "elevenlabs") {
+                phrase = "Cloud: ElevenLabs";
+            } else if (provider == "muse") {
+                phrase = "Cloud: Muse";
+            } else {
+                phrase = "Cloud";
+            }
+        } else if (settings_.GetBool("cleanup_enabled") &&
+                   settings_.GetString("llm_provider") == "openrouter") {
+            phrase = "OpenRouter";
+        } else {
+            phrase = "Local";
+        }
+
+        // Fit the phrase to the reserve at the same font StatusSquare uses
+        // (body 13). The square + word are never truncated; if the phrase
+        // would spill into Hide it is ellipsis-truncated to what fits, or
+        // dropped entirely when even an ellipsis does not fit. INVARIANT:
+        // status_reserve is measured in the same scaled px as the text
+        // (FontScaleMain applies DPI once), so the fit holds at 100%,
+        // 150% and 200% alike with no DPI-specific branch.
+        ImGui::PushFont(nullptr, metrics::font_body_px);
+        const ImVec2 word_size = ImGui::CalcTextSize(status_word);
+        const float square_size = metrics::status_square * scale;
+        const float inline_gap = lwf::ui::studio_metrics::gap_inline * scale;
+        const float status_w = square_size + inline_gap + word_size.x;
+        const float phrase_gap = metrics::space_s * scale;
+        std::string fitted_phrase = phrase;
+        if (!fitted_phrase.empty() &&
+            status_w + phrase_gap + ImGui::CalcTextSize(fitted_phrase.c_str()).x >
+                status_reserve) {
+            while (!fitted_phrase.empty() &&
+                   status_w + phrase_gap +
+                           ImGui::CalcTextSize((fitted_phrase + "...").c_str()).x >
+                       status_reserve) {
+                fitted_phrase.pop_back();
+            }
+            if (fitted_phrase.empty()) {
+                fitted_phrase.clear();
+            } else {
+                fitted_phrase += "...";
+            }
+        }
+        const float phrase_w =
+            fitted_phrase.empty() ? 0.0f : ImGui::CalcTextSize(fitted_phrase.c_str()).x;
+        const float line_h = std::max(square_size, word_size.y);
+        ImGui::PopFont();
+
+        ImGui::SetCursorPosY((strip_h - line_h) * 0.5f);
+        // DECISION: the palette is passed explicitly (*current_palette_).
+        // The widget default is kLightPalette (Paper), which would render
+        // the square in the wrong theme under Graphite.
+        // NOTE: the phrase is placed with SetCursorScreenPos, not SameLine.
+        // After the preceding SameLine the line baseline still belongs to
+        // the strip top, so SameLine would put the phrase on the line
+        // above the square (observed in capture) instead of beside it.
+        const ImVec2 status_origin = ImGui::GetCursorScreenPos();
+        lwf::ui::widgets::StatusSquare("##strip_status", status_kind, status_word, scale,
+                                       *current_palette_);
+        if (!fitted_phrase.empty()) {
+            ImGui::SetCursorScreenPos(
+                ImVec2(status_origin.x + status_w + phrase_gap, status_origin.y));
+            ImGui::TextDisabled("%s", fitted_phrase.c_str());
+        }
+        // Pad the consumed width back out to the full reserve so the Hide
+        // ghost keeps its fixed right-end position whatever the phrase fit.
+        // INVARIANT: the padding SameLine carries 0 spacing so the strip
+        // keeps its exact 3-gap width budget (wordmark->items, items->
+        // status, padding->Hide); a default gap here would push Hide 8 px
+        // past the right edge.
+        const float drawn_w = status_w + (fitted_phrase.empty() ? 0.0f : phrase_gap + phrase_w);
+        const float remaining_w = status_reserve - drawn_w;
+        if (remaining_w > 0.0f) {
+            ImGui::SameLine(0.0f, 0.0f);
+            ImGui::Dummy(ImVec2(remaining_w, 0.0f));
+        }
+    }
     // Hide affordance, relocated from the rail bottom: a ghost item at the
     // strip's right end. DECISION: reuse widgets::LightButton (the Hairline
     // ghost) instead of a hand-drawn InvisibleButton, so the strip end
     // keeps a focus ring and keyboard activation with no new chrome.
     ImGui::SameLine();
     ImGui::SetCursorPosY((strip_h - (metrics::space_xl + metrics::space_s) * scale) * 0.5f);
-    if (lwf::ui::widgets::LightButton("##strip_hide", "Hide", scale)) {
+    if (lwf::ui::widgets::LightButton("##strip_hide", "Hide", scale, *current_palette_)) {
         SetVisible(false);
     }
 
@@ -704,7 +851,7 @@ void MainWindow::DrawTopStrip(float scale) {
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         draw.AddLine(ImVec2(strip_pos.x, strip_pos.y + strip_h - 1.0f * scale),
                      ImVec2(strip_pos.x + strip_w, strip_pos.y + strip_h - 1.0f * scale),
-                     Pack(kLightPalette.border), 1.0f * scale);
+                     Pack(current_palette_->border), 1.0f * scale);
     }
     ImGui::EndChild();
 }
@@ -1058,6 +1205,18 @@ void MainWindow::PersistPage() {
     }
     settings_.SetString("last_page", RouteName(page_));
     settings_.Save();
+}
+
+void MainWindow::ActivateStripPage(Page page) {
+    page_ = page;
+    PersistPage();
+    validation_error_.clear();  // errors belong to the page that set them
+    ClearApiKeyInputs();
+    // Focus is already on the pressed item (strip press) or must not be
+    // yanked to the first strip item on a later Tab (Ctrl+digit); never
+    // arm the restore here (R-W2-003). Bindings live only in SetVisible
+    // and Welcome-Finish.
+    page_focus_pending_ = false;
 }
 
 #ifdef _WIN32

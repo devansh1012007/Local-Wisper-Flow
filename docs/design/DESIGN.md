@@ -188,7 +188,30 @@ No card/filled-panel primitive remains. Every surface is a ruled ledger over `bg
 | API-key row | masked key entry per service | masked input + status dot/word + save/remove | not set / environment / saved, error | input ≥32 | Tab; Enter saves; buffers never seeded, cleared on commit/switch, never logged |
 | Hotkey record row | capture a chord | chip + "Record" / "Clear"; conflict disables save | idle, recording, conflict | ≥32 high | Space records; Esc cancels; modifier required |
 
-**Amendments (T3 as-built).** The table above is pre-T3 intent; T3's shipped widgets record these as-built truths: (a) the active underline is 2 px accent (`TopStripItem`, selected `Chip`) — §6's "1 px underline" is amended and §3.3's "no 2 px strokes except focus ring" exception now also covers the active nav underline; (b) `ToggleSwitch` is a hairline track + 8 px square knob (on = filled accent square, off = hairline square), so state still never carries on color alone — filled square vs hairline square carries it; (c) the ghost/`LightButton` is a border-token outline (1 px `palette.border`), not §6's "text border"; (d) `StatusKind` is a palette-role enum (`Ok`/`Warn`/`Err`/`Accent`/`Muted`), NOT the FSM names listed in the table above (`ready`/`listening`/`thinking`/`paused`/`attention`) — the word carries the identity and the FSM-state-to-role mapping table is deferred to the T4b status line; (e) `Row` draws top AND bottom 1 px hairlines (the table's "top hairline" was shorthand; ledger-correct is ruled on both sides).
+**Amendments (T3 as-built).** The table above is pre-T3 intent; T3's shipped widgets record these as-built truths: (a) the active underline is 2 px accent (`TopStripItem`, selected `Chip`) — §6's "1 px underline" is amended and §3.3's "no 2 px strokes except focus ring" exception now also covers the active nav underline; (b) `ToggleSwitch` is a hairline track + 8 px square knob (on = filled accent square, off = hairline square), so state still never carries on color alone — filled square vs hairline square carries it; (c) the ghost/`LightButton` is a border-token outline (1 px `palette.border`), not §6's "text border"; (d) `StatusKind` is a palette-role enum (`Ok`/`Warn`/`Err`/`Accent`/`Muted`), NOT the FSM names listed in the table above (`ready`/`listening`/`thinking`/`paused`/`attention`) — the word carries the identity and the FSM-state-to-role mapping table is deferred to the T4b status line; (e) `Row` draws top AND bottom 1 px hairlines (the table's "top hairline" was shorthand; ledger-correct is ruled on both sides); (f) T4b status line + shortcuts as-built: (d)'s deferred mapping is now shipped — precedence top to bottom is validation error → paused → capturing → thinking → ready, with the locality phrase below. The reserve is `space_xl` × 4 (128 design px) at the strip's right end, vertically centred, square + word + phrase on one line; the phrase is ellipsis-truncated to the reserve at the body font and never spills into Hide. Shortcuts are `Ctrl+1`..`Ctrl+7` mapped positionally to the strip items array (guarded by `WantTextInput`; Full window only; active on Welcome — `first_run` stays true so Welcome returns next launch).
+
+T4b FSM-to-`StatusKind` mapping (as-built, top row wins):
+
+| Condition (top match wins) | `StatusKind` | Word | Locality phrase |
+|---|---|---|---|
+| `validation_error_` non-empty | `Err` | Attention | locality (below) |
+| `dictation_enabled` is false | `Muted` | Paused | locality (below) |
+| `CAPTURING` | `Accent` | Listening | locality (below) |
+| `TRANSCRIBING` / `POSTPROCESSING` / `EMITTING` | `Accent` | Thinking | locality (below) |
+| `ARMED` / `IDLE` | `Ok` | Ready | locality (below) |
+
+Locality phrase (cloud wins over cleanup — the destination of spoken audio is the bigger privacy fact):
+
+| Condition | Phrase |
+|---|---|
+| `stt_consent_accepted` and `stt_provider` is `gnani` | Cloud: Gnani |
+| `stt_consent_accepted` and `stt_provider` is `elevenlabs` | Cloud: ElevenLabs |
+| `stt_consent_accepted` and `stt_provider` is `muse` | Cloud: Muse |
+| `stt_consent_accepted` and any other/unknown value | Cloud |
+| otherwise, `cleanup_enabled` and `llm_provider` is `openrouter` | OpenRouter |
+| otherwise | Local |
+
+Reads are direct `fsm_.CurrentState()` + `settings_` (Home pattern, no snapshot — by design, since `MainWindow` reads zero snapshots today). `StatusSquare` is called with `*current_palette_` explicitly: its default is `kLightPalette` (Paper) and would break Graphite. Error state comes only from `validation_error_` (FSM-only error source — no snapshot read, by design).
 
 **Hover/active wash exception (T3).** Interactive hover/active washes are the sanctioned exception to "no fill": `LightButton` uses a border-token wash at 15% alpha on hover / 25% on active (never a surface fill); `OutlinePill`'s active border is opaque (pre-existing, kept).
 

@@ -764,6 +764,86 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(main_content.find("case UiCommandType::OpenScratchpad") != std::string::npos);
 }
 
+TEST_CASE("top strip status line and Ctrl-digit shortcuts source-scan") {
+    // T4b-owned pins only (status/shortcut presence + mapping values); the
+    // nav/route/persistence/grid/widget pins above keep their own cases.
+    // lwf_tests does not link ImGui, so the wiring is guarded lexically,
+    // scoped to the DrawTopStrip section so a Home-page lookalike string
+    // cannot satisfy the pins by accident.
+    std::ifstream main_window("src/ui/MainWindow.cpp");
+    REQUIRE(static_cast<bool>(main_window));
+    const std::string content((std::istreambuf_iterator<char>(main_window)),
+                              std::istreambuf_iterator<char>());
+    const std::size_t strip_fn = content.find("void MainWindow::DrawTopStrip");
+    REQUIRE(strip_fn != std::string::npos);
+    const std::size_t strip_end = content.find("void MainWindow::DrawPageChrome", strip_fn);
+    REQUIRE(strip_end != std::string::npos);
+    const std::string status_section = content.substr(strip_fn, strip_end - strip_fn);
+    // StatusSquare call site with the live palette (never the Paper
+    // default, which would break Graphite). Scoped to the call itself:
+    // a bare `*current_palette_` search over the whole section is
+    // satisfied by the DECISION comment alone (reviewer mutation-proved).
+    CHECK(status_section.find("lwf::ui::widgets::StatusSquare") != std::string::npos);
+    {
+        const std::size_t call = status_section.find("StatusSquare(\"##strip_status\"");
+        REQUIRE(call != std::string::npos);
+        const std::string window = status_section.substr(call, 200);
+        CHECK(window.find("*current_palette_") != std::string::npos);
+    }
+    // Reserve growth: space_xl*4 (128 design px).
+    CHECK(status_section.find("space_xl * 4.0f") != std::string::npos);
+    // Mapping words.
+    CHECK(status_section.find("\"Ready\"") != std::string::npos);
+    CHECK(status_section.find("\"Listening\"") != std::string::npos);
+    CHECK(status_section.find("\"Thinking\"") != std::string::npos);
+    CHECK(status_section.find("\"Paused\"") != std::string::npos);
+    CHECK(status_section.find("\"Attention\"") != std::string::npos);
+    // Locality phrases.
+    CHECK(status_section.find("\"Local\"") != std::string::npos);
+    CHECK(status_section.find("\"Cloud: Gnani\"") != std::string::npos);
+    CHECK(status_section.find("\"Cloud: ElevenLabs\"") != std::string::npos);
+    CHECK(status_section.find("\"Cloud: Muse\"") != std::string::npos);
+    CHECK(status_section.find("phrase = \"Cloud\"") != std::string::npos);
+    CHECK(status_section.find("\"OpenRouter\"") != std::string::npos);
+    // Mapping-table values (palette-role vocabulary, never FSM names).
+    CHECK(status_section.find("StatusKind::Ok") != std::string::npos);
+    CHECK(status_section.find("StatusKind::Accent") != std::string::npos);
+    CHECK(status_section.find("StatusKind::Muted") != std::string::npos);
+    CHECK(status_section.find("StatusKind::Err") != std::string::npos);
+    // Source conditions behind the table.
+    CHECK(status_section.find("validation_error_") != std::string::npos);
+    CHECK(status_section.find("dictation_enabled") != std::string::npos);
+    CHECK(status_section.find("State::CAPTURING") != std::string::npos);
+    CHECK(status_section.find("State::TRANSCRIBING") != std::string::npos);
+    CHECK(status_section.find("State::POSTPROCESSING") != std::string::npos);
+    CHECK(status_section.find("State::EMITTING") != std::string::npos);
+    CHECK(status_section.find("stt_consent_accepted") != std::string::npos);
+    // Ctrl+digit handling with the text-input guard.
+    CHECK(status_section.find("ImGuiKey_1") != std::string::npos);
+    CHECK(status_section.find("ImGuiKey_7") != std::string::npos);
+    // Full GetIO() spelling: a bare `WantTextInput` search is satisfied by
+    // the guard comment alone (reviewer mutation-proved).
+    CHECK(status_section.find("GetIO().WantTextInput") != std::string::npos);
+    CHECK(status_section.find("ImGuiMod_Ctrl") != std::string::npos);
+    // Shared press path: definition + strip press + shortcut press all
+    // land in ActivateStripPage (one function, not copy-pasted logic).
+    const auto count_occurrences = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    CHECK(count_occurrences(content, "ActivateStripPage") >= 3);
+    std::ifstream main_header("src/ui/MainWindow.h");
+    REQUIRE(static_cast<bool>(main_header));
+    const std::string header_content((std::istreambuf_iterator<char>(main_header)),
+                                     std::istreambuf_iterator<char>());
+    CHECK(header_content.find("ActivateStripPage") != std::string::npos);
+}
+
 TEST_CASE("hairline palette keeps the primary token values") {
     // Hairline: the deprecated shim struct is deleted; pin the
     // Paper kLightPalette values directly (DESIGN.md §3.2). The

@@ -203,6 +203,9 @@ private:
     void DrawGeneralHotkeyRow(const std::string& config_key, const char* label,
                               const char* helper, float scale);
     void PersistPage();
+    // Shared strip-activation path (T4b): strip press and Ctrl+digit both
+    // land here so persistence, error-clear and focus semantics match exactly.
+    void ActivateStripPage(Page page);
     bool PickAndApplyModelPath(char* buffer, std::size_t buffer_size, const char* setting_key,
                                std::string& error);
     void DeleteLocalData();
