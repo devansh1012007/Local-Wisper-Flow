@@ -21,9 +21,12 @@ namespace {
 
 using lwf::ui::Color;
 using lwf::ui::Pack;
-// Ivory primary (Ph6): studio style -> ApplyImGuiStyle mapping; field maps 1:1
-// (card_bg_white/card_bg -> surface, teal_700 -> accent, ink -> text, page_bg -> bg).
-// Padding/rounding/ChildBg drift noted in audit (32 -> 16, 8 -> 6, white -> transparent);
+// T2b: the ImGui style follows PaletteForTheme (Graphite default, Paper via
+// the `theme` key); direct Pack(kLightPalette...) custom draws stay Paper
+// until T10e re-skins them. Historical mapping note retained: studio style
+// -> ApplyImGuiStyle mapping was 1:1 (card_bg_white/card_bg -> surface,
+// teal_700 -> accent, ink -> text, page_bg -> bg); Padding/rounding/ChildBg
+// drift noted in audit (32 -> 16, 8 -> 6, white -> transparent);
 // studio_metrics fonts/radii kept as-is.
 using lwf::ui::kLightPalette;
 namespace studio_metrics = lwf::ui::studio_metrics;
@@ -91,7 +94,14 @@ bool ScratchpadWindow::Init() {
         Shutdown();
         return false;
     }
-    lwf::ui::ApplyImGuiStyle(lwf::ui::kLightPalette, static_cast<float>(dpi_scale_));
+    // T2b theme selection: read the store so a stored "paper" starts in
+    // Paper and the default starts in Graphite. current_palette_ is the
+    // last-applied palette. Any pending ApplyTheme queued before Init is
+    // stale — Init re-reads the store.
+    current_palette_ = &lwf::ui::PaletteForTheme(settings_.GetString("theme"));
+    pending_theme_palette_ = nullptr;
+    theme_pending_ = false;
+    lwf::ui::ApplyImGuiStyle(*current_palette_, static_cast<float>(dpi_scale_));
     return true;
 }
 
@@ -137,6 +147,22 @@ bool ScratchpadWindow::TakeCloseRequest() {
     const bool result = close_requested_;
     close_requested_ = false;
     return result;
+}
+
+void ScratchpadWindow::ApplyTheme(const lwf::ui::Palette& palette) {
+    // CRITICAL: never call ApplyImGuiStyle here. The ApplySettings drain in
+    // main.cpp may run while another window's ImGui context is current, and
+    // ApplyImGuiStyle colors the current context. Queue the palette; the
+    // hidden-window early-out in RenderFrame (below) already defers the
+    // application until the editor is visible, same as a pending DPI move.
+    if (&palette == current_palette_ && !theme_pending_) {
+        return;
+    }
+    if (theme_pending_ && &palette == pending_theme_palette_) {
+        return;
+    }
+    pending_theme_palette_ = &palette;
+    theme_pending_ = true;
 }
 
 void ScratchpadWindow::OpenNote(const std::string& id) {
@@ -588,16 +614,23 @@ void ScratchpadWindow::RenderFrame(float delta_seconds) {
     RefreshDictationActive();
     ImGui::SetCurrentContext(imgui_context_);
     glfwMakeContextCurrent(window_);
-    if (pending_dpi_scale_ > 0.0f) {
-        dpi_scale_ = pending_dpi_scale_;
-        pending_dpi_scale_ = 0.0f;
-        lwf::ui::ApplyImGuiStyle(lwf::ui::kLightPalette, static_cast<float>(dpi_scale_));
+    if (pending_dpi_scale_ > 0.0f || theme_pending_) {
+        if (pending_dpi_scale_ > 0.0f) {
+            dpi_scale_ = pending_dpi_scale_;
+            pending_dpi_scale_ = 0.0f;
+        }
+        if (theme_pending_) {
+            current_palette_ = pending_theme_palette_;
+            pending_theme_palette_ = nullptr;
+            theme_pending_ = false;
+        }
+        lwf::ui::ApplyImGuiStyle(*current_palette_, static_cast<float>(dpi_scale_));
     }
     int fb_width = 0;
     int fb_height = 0;
     glfwGetFramebufferSize(window_, &fb_width, &fb_height);
     glViewport(0, 0, fb_width, fb_height);
-    const ImVec4 clear = Color(kLightPalette.bg);
+    const ImVec4 clear = Color(current_palette_->bg);
     glClearColor(clear.x, clear.y, clear.z, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     glfwMakeContextCurrent(window_);

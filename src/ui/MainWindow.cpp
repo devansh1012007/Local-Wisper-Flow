@@ -53,10 +53,11 @@ extern "C" void* glfwGetWin32Window(GLFWwindow* window);
 
 namespace {
 
-// Full window shell is Ivory primary (Phase 4, AC2 single accent): this file
-// applies kLightPalette everywhere. The dark variant is test-only + the Mini
-// badge in Overlay.cpp, which intentionally stays dark for desktop legibility
-// (Ph6 scope; do not switch Overlay here).
+// Full window shell (T2b): the ImGui style is selected via PaletteForTheme
+// (Graphite default, Paper via the `theme` key); the ~100 direct
+// Pack(kLightPalette...) custom draws stay Paper until T3+ re-skins them.
+// The Mini badge in Overlay.cpp follows the same selection (T15 re-skins
+// its badge chrome).
 namespace metrics = lwf::ui::metrics;
 using lwf::ui::Color;
 using lwf::ui::kLightPalette;
@@ -231,7 +232,14 @@ bool MainWindow::Init() {
         Shutdown();
         return false;
     }
-    lwf::ui::ApplyImGuiStyle(kLightPalette, static_cast<float>(dpi_scale_));
+    // T2b theme selection (T5 owns the switcher row; this is the init-time
+    // read so a stored "paper" starts in Paper and the default starts in
+    // Graphite). current_palette_ is the last-applied palette. Any pending
+    // ApplyTheme queued before Init is stale — Init re-reads the store.
+    current_palette_ = &lwf::ui::PaletteForTheme(settings_.GetString("theme"));
+    pending_theme_palette_ = nullptr;
+    theme_pending_ = false;
+    lwf::ui::ApplyImGuiStyle(*current_palette_, static_cast<float>(dpi_scale_));
 
     if (FirstRunNeeded()) {
         page_ = Page::Welcome;
@@ -278,6 +286,22 @@ bool MainWindow::TakeCloseRequest() {
     const bool result = close_requested_;
     close_requested_ = false;
     return result;
+}
+
+void MainWindow::ApplyTheme(const lwf::ui::Palette& palette) {
+    // CRITICAL: never call ApplyImGuiStyle here. The ApplySettings drain in
+    // main.cpp may run while another window's ImGui context is current, and
+    // ApplyImGuiStyle colors the current context. Queue the palette; RunOnce
+    // re-applies it where this window's context is current (same deferred
+    // pattern as pending_dpi_scale_). No-op when the selection is unchanged.
+    if (&palette == current_palette_ && !theme_pending_) {
+        return;
+    }
+    if (theme_pending_ && &palette == pending_theme_palette_) {
+        return;
+    }
+    pending_theme_palette_ = &palette;
+    theme_pending_ = true;
 }
 
 void MainWindow::SetLastTranscript(const std::string& text) {
@@ -388,21 +412,29 @@ void MainWindow::RunOnce(float) {
     ImGui::SetCurrentContext(imgui_context_);
     glfwMakeContextCurrent(window_);
 
-    // A monitor scale change lands here, where this window's ImGui context
-    // is current. The style (and, through FontScaleMain, the dynamic font)
-    // re-apply so text and controls keep filling the window instead of
-    // rendering at the old scale.
-    if (pending_dpi_scale_ > 0.0f) {
-        dpi_scale_ = pending_dpi_scale_;
-        pending_dpi_scale_ = 0.0f;
-        lwf::ui::ApplyImGuiStyle(kLightPalette, static_cast<float>(dpi_scale_));
+    // A monitor scale change and a live theme swap land here, where this
+    // window's ImGui context is current. The style (and, through
+    // FontScaleMain, the dynamic font) re-apply so text and controls keep
+    // filling the window instead of rendering at the old scale; a queued
+    // theme promotes only on an actual palette change (pointer identity).
+    if (pending_dpi_scale_ > 0.0f || theme_pending_) {
+        if (pending_dpi_scale_ > 0.0f) {
+            dpi_scale_ = pending_dpi_scale_;
+            pending_dpi_scale_ = 0.0f;
+        }
+        if (theme_pending_) {
+            current_palette_ = pending_theme_palette_;
+            pending_theme_palette_ = nullptr;
+            theme_pending_ = false;
+        }
+        lwf::ui::ApplyImGuiStyle(*current_palette_, static_cast<float>(dpi_scale_));
     }
 
     int fb_width = 0;
     int fb_height = 0;
     glfwGetFramebufferSize(window_, &fb_width, &fb_height);
     glViewport(0, 0, fb_width, fb_height);
-    const ImVec4 clear = Color(kLightPalette.bg);
+    const ImVec4 clear = Color(current_palette_->bg);
     glClearColor(clear.x, clear.y, clear.z, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 

@@ -38,13 +38,13 @@ class InsightsPage;
 }
 namespace lwf::ui {
 class TransformsPage;
+struct Palette;
 }
 
 // The Full window: rail navigation plus pages (Home, Insights, Dictionary,
 // Snippets, Transforms, Scratchpad, Settings, and the first-run Welcome).
-// Phase 4 Ivory primary: the shell applies kLightPalette everywhere; the dark
-// variant is test-only + the Mini badge in Overlay.cpp, which intentionally
-// stays dark for desktop legibility (Ph6 scope; do not switch Overlay here).
+// T2b: the shell applies the selected palette (PaletteForTheme, Graphite
+// default); custom-drawn chrome converts per-surface in T3+.
 // Owns its GLFW window and its Dear ImGui context (one context per OS window, docs/UI_AUDIT.md section 1).
 //
 // Closing the window hides it - the tray owns Quit. Settings changes apply
@@ -115,6 +115,12 @@ public:
     bool IsVisible() const;
     // True exactly once after the user closed the window via the title bar.
     bool TakeCloseRequest();
+
+    // Live theme swap (T2b, fed from main.cpp's ApplySettings drain). Does
+    // NOT call ApplyImGuiStyle directly: the drain may run while another
+    // window's ImGui context is current. Stores the selection and re-applies
+    // inside RunOnce where this window's context is current.
+    void ApplyTheme(const lwf::ui::Palette& palette);
 
     // Fed from the main loop.
     void SetLastTranscript(const std::string& text);
@@ -251,6 +257,14 @@ private:
     bool page_focus_pending_ = false;  // restore keyboard focus after switch/re-show
     double dpi_scale_ = 1.0;
     float pending_dpi_scale_ = 0.0f;  // deferred content-scale callback value
+    // T2b theme selection. INVARIANT: current_palette_ is the last-applied
+    // palette (Init promotes the store selection into it); pending slots hold
+    // a live-swap selection until RunOnce applies it with this window's
+    // context current. Pointer identity (PaletteForTheme returns references
+    // to constexpr palettes) detects an actual change.
+    const lwf::ui::Palette* current_palette_ = nullptr;
+    const lwf::ui::Palette* pending_theme_palette_ = nullptr;
+    bool theme_pending_ = false;
 
     std::string last_transcript_;
     std::string detected_hotkey_;

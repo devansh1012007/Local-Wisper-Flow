@@ -68,6 +68,7 @@ const std::vector<SettingsStore::SchemaEntry>& BuildSchema() {
         {"quiet_speech_boost", SettingsStore::Type::Bool, 0, "", 0, 0, true},
         {"llm_provider", SettingsStore::Type::String, 0, "local", 0, 0, false},
         {"openrouter_model", SettingsStore::Type::String, 0, "", 0, 0, false},
+        {"theme", SettingsStore::Type::String, 0, "graphite", 0, 0, true},
     };
     return schema;
 }

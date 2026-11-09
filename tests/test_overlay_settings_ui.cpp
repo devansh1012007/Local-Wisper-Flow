@@ -200,6 +200,21 @@ TEST_CASE("theme palettes keep the hairline token values") {
     CHECK(kLightPalette.brass == kLightPalette.focus);
 }
 
+TEST_CASE("theme selection maps key values to palettes with graphite fallback") {
+    // T2b: "paper" opts into kLightPalette; the default key value, empty
+    // and any unknown string all fall back to kDarkPalette (Graphite),
+    // matching the schema default "graphite".
+    using lwf::ui::PaletteForTheme;
+    using lwf::ui::kDarkPalette;
+    using lwf::ui::kLightPalette;
+    CHECK(&PaletteForTheme(lwf::ui::kThemeGraphite) == &kDarkPalette);
+    CHECK(&PaletteForTheme("graphite") == &kDarkPalette);
+    CHECK(&PaletteForTheme(lwf::ui::kThemePaper) == &kLightPalette);
+    CHECK(&PaletteForTheme("paper") == &kLightPalette);
+    CHECK(&PaletteForTheme("") == &kDarkPalette);
+    CHECK(&PaletteForTheme("bogus") == &kDarkPalette);
+}
+
 TEST_CASE("theme palettes satisfy the contrast policy except the two hairline pairs") {
     using lwf::ui::ContrastRatio;
     for (const lwf::ui::Palette& palette : {lwf::ui::kDarkPalette, lwf::ui::kLightPalette}) {
@@ -314,18 +329,25 @@ TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete s
                                    std::istreambuf_iterator<char>());
     CHECK(main_content.find("PushFont(nullptr, metrics::font_") != std::string::npos);
 
-    // Gate markers (R-W1-003-001): ApplyImGuiStyle gates on the last-applied
-    // (ImGuiContext*, scale) pair so ScaleAllSizes (cumulative / lossy) runs
-    // only on an actual change, at every scale including 1.0.
+    // Gate markers (R-W1-003-001, T2b per-context fix): ApplyImGuiStyle gates
+    // ScaleAllSizes (cumulative / lossy) once per actual change per ImGui
+    // context via g_last_scale_by_ctx. A single global (context, scale) pair
+    // cannot gate three contexts: at >100% DPI each cross-window theme toggle
+    // re-ran ScaleAllSizes and drifted _MainScale-derived fields (100% drifted
+    // zero, hiding it). The old globals must stay absent so a revert fails.
     std::ifstream palette_cpp("src/ui/theme/ThemePalette.cpp");
     REQUIRE(static_cast<bool>(palette_cpp));
     const std::string palette_content((std::istreambuf_iterator<char>(palette_cpp)),
                                       std::istreambuf_iterator<char>());
-    CHECK(palette_content.find("g_last_applied_context") != std::string::npos);
-    CHECK(palette_content.find("g_last_applied_scale") != std::string::npos);
+    CHECK(palette_content.find("g_last_scale_by_ctx") != std::string::npos);
+    CHECK(palette_content.find("g_last_scale_by_ctx.find") != std::string::npos);
+    CHECK(palette_content.find("g_last_scale_by_ctx.end()") != std::string::npos);
+    CHECK(palette_content.find("g_last_scale_by_ctx[") != std::string::npos);
+    CHECK(palette_content.find("!= scale") != std::string::npos);
+    CHECK(palette_content.find("g_last_applied_context") == std::string::npos);
+    CHECK(palette_content.find("g_last_applied_scale") == std::string::npos);
     CHECK(palette_content.find("const bool applies =") != std::string::npos);
     CHECK(palette_content.find("if (applies)") != std::string::npos);
-    CHECK(palette_content.find("g_last_applied_scale = scale;") != std::string::npos);
     CHECK(palette_content.find("style.ScaleAllSizes(scale);") != std::string::npos);
     // The pre-delta `if (scale != 1.0f)` guard skipped the apply when moving
     // back to 100% (metrics stuck scaled). It must not return.
@@ -934,12 +956,14 @@ TEST_CASE("studio widgets respect the font mechanism and stay opt in") {
     REQUIRE(static_cast<bool>(main_window));
     const std::string main_content((std::istreambuf_iterator<char>(main_window)),
                                    std::istreambuf_iterator<char>());
-    CHECK(main_content.find("ApplyImGuiStyle(kLightPalette") != std::string::npos);
+    // T2b: the style is chosen via PaletteForTheme (graphite default); the
+    // direct Pack(kLightPalette...) custom draws are T3-owned and unchanged.
+    CHECK(main_content.find("PaletteForTheme") != std::string::npos);
     std::ifstream overlay("src/ui/Overlay.cpp");
     REQUIRE(static_cast<bool>(overlay));
     const std::string overlay_content((std::istreambuf_iterator<char>(overlay)),
                                       std::istreambuf_iterator<char>());
-    CHECK(overlay_content.find("ApplyImGuiStyle(kLightPalette") != std::string::npos);
+    CHECK(overlay_content.find("PaletteForTheme") != std::string::npos);
 }
 
 TEST_CASE("every schema key has a control or a documented carve-out") {
@@ -975,6 +999,10 @@ TEST_CASE("new A4 schema keys default and clamp through the store") {
     CHECK(store.GetBool("quiet_speech_boost") == false);
     CHECK(store.HasKey("llm_provider"));
     CHECK(store.GetString("llm_provider") == "local");
+    // T2b additive schema key: default Graphite, live-applied.
+    CHECK(store.HasKey("theme"));
+    CHECK(store.GetString("theme") == "graphite");
+    CHECK(store.IsHotApply("theme"));
     CHECK(store.IsHotApply("quiet_speech_boost"));
     CHECK_FALSE(store.IsHotApply("llm_provider"));
     store.SetBool("quiet_speech_boost", false);

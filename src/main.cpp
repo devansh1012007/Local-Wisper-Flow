@@ -61,6 +61,7 @@
 #include "ui/MainWindow.h"
 #include "ui/ScratchpadWindow.h"
 #include "ui/Overlay.h"
+#include "ui/theme/ThemePalette.h"
 #include "ui/pages/DictionaryPage.h"
 #include "ui/pages/InsightsPage.h"
 #include "ui/pages/ScratchpadPage.h"
@@ -642,6 +643,10 @@ int main() {
         // (negative sentinel = never moved: default anchor above the tray).
         overlay.SetSavedPosition(config.Store().GetInt("mini_x"),
                                  config.Store().GetInt("mini_y"));
+        // T2b: Overlay has no SettingsStore ref, so the startup theme is
+        // fed here (before Init, which promotes the pending selection). The
+        // Full/Scratchpad windows read the store in their own Init.
+        overlay.SetTheme(lwf::ui::PaletteForTheme(config.Store().GetString("theme")));
         overlay.SetPositionPersistHandler([&config](int x, int y) {
             config.Store().SetInt("mini_x", x);
             config.Store().SetInt("mini_y", y);
@@ -712,6 +717,18 @@ int main() {
                         overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
                         usage_stats.SetUsageStatsEnabled(config.Store().GetBool("keep_usage_stats"));
                         overlay.SetScratchpadVisible(config.Store().GetBool("scratchpad_flow_bar"));
+                        // T2b live theme swap (hot_apply=true, no restart).
+                        // The ApplyTheme/SetTheme calls only queue the
+                        // palette; each window re-styles inside its own
+                        // frame where its ImGui context is current, so this
+                        // drain never colors another window's context.
+                        {
+                            const lwf::ui::Palette& theme_palette =
+                                lwf::ui::PaletteForTheme(config.Store().GetString("theme"));
+                            full.ApplyTheme(theme_palette);
+                            overlay.SetTheme(theme_palette);
+                            scratchpad_editor.ApplyTheme(theme_palette);
+                        }
                         break;
                     case UiCommandType::ToggleAutostart:
                         Autostart::SetEnabled(!Autostart::IsEnabled());

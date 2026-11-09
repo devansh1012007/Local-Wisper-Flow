@@ -21,7 +21,9 @@
 namespace {
 
 namespace metrics = lwf::ui::metrics;
-// Ivory primary for Mini (Ph6); dark variant remains test-only; real-hardware light-wallpaper check owed Ph7.
+// Mini badge (T2b): the ImGui style follows PaletteForTheme with the other
+// windows; the badge's custom Pack(kLightPalette...) draws stay Paper until
+// T15 re-skins them.
 using lwf::ui::kLightPalette;
 using lwf::ui::Pack;
 
@@ -123,7 +125,22 @@ bool Overlay::Init() {
     glfwSwapInterval(1);
     ImGui_ImplGlfw_InitForOpenGL(window_, true);
     ImGui_ImplOpenGL3_Init("#version 130");
-    lwf::ui::ApplyImGuiStyle(kLightPalette, static_cast<float>(dpi_scale_));
+    // T2b theme selection. This window has no SettingsStore ref, so main.cpp
+    // feeds the palette via a pre-Init SetTheme; promote any pending
+    // selection (a pre-Init SetTheme queues it) or default to Graphite.
+    if (theme_pending_ && pending_theme_palette_ != nullptr) {
+        current_palette_ = pending_theme_palette_;
+        pending_theme_palette_ = nullptr;
+        theme_pending_ = false;
+    }
+    if (current_palette_ == nullptr) {
+        // DECISION: no pre-Init SetTheme (defaults to Graphite). Route the
+        // fallback through the canonical selector so the default follows the
+        // schema combination kThemeGraphite -> kDarkPalette, never a bare
+        // palette literal.
+        current_palette_ = &lwf::ui::PaletteForTheme(std::string(lwf::ui::kThemeGraphite));
+    }
+    lwf::ui::ApplyImGuiStyle(*current_palette_, static_cast<float>(dpi_scale_));
 
     // Topmost tool window, never activates, click-through until hovered.
     WindowStyles::ApplyOverlayStyles(glfwGetWin32Window(window_));
@@ -165,6 +182,25 @@ void Overlay::PushLevel(float level) {
 
 void Overlay::SetReduceMotion(bool reduce) {
     reduce_motion_ = reduce;
+    dirty_ = true;
+}
+
+void Overlay::SetTheme(const lwf::ui::Palette& palette) {
+    // CRITICAL: never call ApplyImGuiStyle here. The ApplySettings drain in
+    // main.cpp may run while another window's ImGui context is current.
+    // Queue the palette (same deferred pattern as pending_dpi_scale_); a
+    // pre-Init call is promoted by Init, a live call by RenderFrame where
+    // this window's context is current. Mirror SetReduceMotion by setting
+    // dirty_ so the idle early-out cannot skip the re-style. No-op when the
+    // selection is unchanged.
+    if (&palette == current_palette_ && !theme_pending_) {
+        return;
+    }
+    if (theme_pending_ && &palette == pending_theme_palette_) {
+        return;
+    }
+    pending_theme_palette_ = &palette;
+    theme_pending_ = true;
     dirty_ = true;
 }
 
@@ -291,7 +327,10 @@ void Overlay::RenderFrame(float delta_seconds) {
     // self-corrects on the next tick, since the verdict is re-polled every
     // frame while idle (cf. R-W2-005).
     const bool fade_settled = reduce_motion_ || fade_alpha_ >= 1.0f;
-    if (!dirty_ && fade_settled && !dragging_ && pending_dpi_scale_ <= 0.0f &&
+    // A pending theme (SetTheme) also forces a full frame. SetTheme already
+    // sets dirty_, but naming it here keeps the early-out correct even if a
+    // future caller queues a theme without setting dirty_.
+    if (!dirty_ && fade_settled && !dragging_ && pending_dpi_scale_ <= 0.0f && !theme_pending_ &&
         (state_ == OverlayModel::PillState::Ready ||
          state_ == OverlayModel::PillState::Paused)) {
         int poll_win_x = 0;
@@ -332,14 +371,29 @@ void Overlay::RenderFrame(float delta_seconds) {
     ImGui::SetCurrentContext(imgui_context_);
     glfwMakeContextCurrent(window_);
 
-    // A monitor scale change lands here, where this window's ImGui context
-    // is current: re-apply the style and re-anchor the geometry.
-    if (pending_dpi_scale_ > 0.0f) {
-        dpi_scale_ = pending_dpi_scale_;
-        pending_dpi_scale_ = 0.0f;
-        lwf::ui::ApplyImGuiStyle(kLightPalette, static_cast<float>(dpi_scale_));
-        cached_status_valid_ = false;  // font scale changed: remap cache key
-        ApplyWindowGeometry();
+    // A monitor scale change and a live theme swap land here, where this
+    // window's ImGui context is current: re-apply the style and re-anchor
+    // the geometry. The theme promotes only on an actual palette change
+    // (pointer identity); the clear color below stays transparent so the
+    // badge remains see-through (INVARIANT) — the Paper/Graphite chrome
+    // draws inside DrawBadge convert in T15.
+    if (pending_dpi_scale_ > 0.0f || theme_pending_) {
+        bool dpi_changed = false;
+        if (pending_dpi_scale_ > 0.0f) {
+            dpi_scale_ = pending_dpi_scale_;
+            pending_dpi_scale_ = 0.0f;
+            dpi_changed = true;
+        }
+        if (theme_pending_) {
+            current_palette_ = pending_theme_palette_;
+            pending_theme_palette_ = nullptr;
+            theme_pending_ = false;
+        }
+        lwf::ui::ApplyImGuiStyle(*current_palette_, static_cast<float>(dpi_scale_));
+        if (dpi_changed) {
+            cached_status_valid_ = false;  // font scale changed: remap cache key
+            ApplyWindowGeometry();
+        }
     }
 
     int fb_width = 0;

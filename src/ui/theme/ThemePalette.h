@@ -70,6 +70,12 @@ inline constexpr Palette kDarkPalette{
     0.88f,     // surface_alpha
 };
 
+// Canonical theme key values (src/core/SettingsStore.cpp `theme` schema
+// default "graphite", T2b). Single source so no call site hard-codes the
+// strings.
+inline constexpr const char* kThemeGraphite = "graphite";
+inline constexpr const char* kThemePaper = "paper";
+
 // Light theme, "Paper" (DESIGN.md §3.2).
 // Single-accent invariant: accent == brass == focus == 0x3F6212. Hairline
 // accent A is per-theme derived (dark 0xB8E356, light 0x3F6212), so no
@@ -92,6 +98,15 @@ inline constexpr Palette kLightPalette{
     0x3F6212,  // focus
     0.90f,     // surface_alpha
 };
+
+// Selects the runtime palette for a `theme` config value (T2b).
+// INVARIANT: unknown/empty falls back to kDarkPalette (Graphite), matching
+// the schema default "graphite" — only an exact "paper" opts into
+// kLightPalette. Returns a reference to a constexpr object so callers can
+// compare by pointer identity to detect an actual change.
+inline const Palette& PaletteForTheme(const std::string& theme) {
+    return theme == kThemePaper ? kLightPalette : kDarkPalette;
+}
 
 // Layout metrics from DESIGN.md §3.3/§3.4. Values are design pixels at
 // 1.0 scale; callers multiply by the window DPI scale. Style is applied
