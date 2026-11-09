@@ -2210,3 +2210,159 @@ TEST_CASE("T6 settings Cloud and Cleanup ruled rows pin") {
     REQUIRE(backend != std::string::npos);
     CHECK(cleanup_src.find("##openrouter_model", backend) != std::string::npos);
 }
+
+TEST_CASE("T7 settings Privacy and About ruled rows pin") {
+    // T7-owned pins: the two tabs use ruled rows (widgets::Row +
+    // widgets::ToggleSwitch with the live palette), carry their former card
+    // ids, add the session restart banner, keep the retention keys hot-apply
+    // with exact IntRow ranges/formats, upgrade the delete-all confirm to
+    // Esc + focus-on-Cancel, clear the delete arm on tab switch, and add the
+    // (NEW) read-only shortcuts table on About with zero writes.
+    // Span-scoped like the T5/T6 cases so a Home/Cloud Paper read or a
+    // lookalike string cannot satisfy the pins by accident.
+    const std::string content = ReadSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(content.empty());
+    const std::size_t privacy = content.find("void MainWindow::DrawPrivacyPage");
+    REQUIRE(privacy != std::string::npos);
+    const std::size_t about = content.find("void MainWindow::DrawAboutPage", privacy);
+    REQUIRE(about != std::string::npos);
+    const std::size_t insights = content.find("void MainWindow::DrawInsightsPage", about);
+    REQUIRE(insights != std::string::npos);
+    const std::string privacy_src = content.substr(privacy, about - privacy);
+    const std::string about_src = content.substr(about, insights - about);
+    const auto count_occurrences = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    // Function order (name + sequence) preserved: the T6 span delimiter at
+    // the Privacy fn must stay green.
+    CHECK(privacy < about);
+    CHECK(about < insights);
+    // Ruled rows with the live palette (never the Paper default).
+    CHECK(privacy_src.find("widgets::Row(") != std::string::npos);
+    CHECK(privacy_src.find("*current_palette_") != std::string::npos);
+    CHECK(privacy_src.find("widgets::ToggleSwitch(") != std::string::npos);
+    CHECK(about_src.find("widgets::Row(") != std::string::npos);
+    CHECK(about_src.find("*current_palette_") != std::string::npos);
+    // T7 toggles use the widget switch directly (local ToggleRow/BoolRow stay).
+    CHECK(privacy_src.find("ToggleRow(") == std::string::npos);
+    CHECK(privacy_src.find("BoolRow(") == std::string::npos);
+    // These two tabs no longer call BeginCard (the def stays for T8).
+    CHECK(privacy_src.find("BeginCard(") == std::string::npos);
+    CHECK(about_src.find("BeginCard(") == std::string::npos);
+    CHECK(content.find("void MainWindow::BeginCard") != std::string::npos);
+    // Restart banner: added to both pages, not duplicated (banner reflects
+    // the session flag; all Privacy/About keys are hot-apply/read-only).
+    CHECK(count_occurrences(privacy_src, "DrawRestartBanner(scale)") == 1);
+    CHECK(count_occurrences(about_src, "DrawRestartBanner(scale)") == 1);
+    // Former card ids: rows carry them directly; the delete block carries
+    // ##card_delete_data via a real PushID.
+    CHECK(privacy_src.find("\"##card_privacy\"") != std::string::npos);
+    CHECK(privacy_src.find("ImGui::PushID(\"##card_delete_data\")") != std::string::npos);
+    CHECK(about_src.find("\"##card_about\"") != std::string::npos);
+    // Slider/int slots are 248 design px, not 240 (substring pin).
+    CHECK(privacy_src.find("248.0f * scale") != std::string::npos);
+    CHECK(about_src.find("248.0f * scale") != std::string::npos);
+    CHECK(privacy_src.find("240.0f * scale") == std::string::npos);
+    CHECK(about_src.find("240.0f * scale") == std::string::npos);
+    // Hot-apply absence: every key on these tabs is hot-apply or read-only,
+    // so neither span may set the restart flag (mic-pin style absence).
+    CHECK(privacy_src.find("restart_needed_ = true") == std::string::npos);
+    CHECK(about_src.find("restart_needed_ = true") == std::string::npos);
+    // F1 err/warn in the live palette, Paper variant pinned out of both
+    // spans (Privacy err: debug warning + validation error + delete
+    // confirm; Privacy warn: OpenRouter readout; About warn: OpenRouter).
+    CHECK(count_occurrences(privacy_src, "Color(current_palette_->err") >= 2);
+    CHECK(privacy_src.find("Color(current_palette_->warn") != std::string::npos);
+    CHECK(about_src.find("Color(current_palette_->warn") != std::string::npos);
+    CHECK(privacy_src.find("Color(kLightPalette.err") == std::string::npos);
+    CHECK(privacy_src.find("Color(kLightPalette.warn") == std::string::npos);
+    CHECK(about_src.find("Color(kLightPalette.err") == std::string::npos);
+    CHECK(about_src.find("Color(kLightPalette.warn") == std::string::npos);
+    // Debug-log warning gated on the debug key, copy verbatim.
+    CHECK(privacy_src.find("settings_.GetBool(\"debug_log_transcripts\")") != std::string::npos);
+    CHECK(privacy_src.find("WARNING: dictated text will be written to the local log.") !=
+          std::string::npos);
+    // Retention ints keep exact ranges + formats (quoted literals intact).
+    CHECK(privacy_src.find("IntRow(\"history_max_entries\", \"##history_max_entries\", 10, 100000, "
+                           "\"keep %d entries\")") != std::string::npos);
+    CHECK(privacy_src.find("IntRow(\"history_max_age_days\", \"##history_max_age_days\", 1, 3650, "
+                           "\"delete after %d days\")") != std::string::npos);
+    // Schema-key literals preserved on Privacy (schema-key test carve-outs
+    // unchanged; NO schema change).
+    CHECK(privacy_src.find("GetBool(\"history_enabled\")") != std::string::npos);
+    CHECK(privacy_src.find("GetBool(\"keep_raw_in_history\")") != std::string::npos);
+    CHECK(privacy_src.find("GetBool(\"keep_usage_stats\")") != std::string::npos);
+    CHECK(privacy_src.find("GetString(\"llm_provider\")") != std::string::npos);
+    CHECK(privacy_src.find("GetString(\"openrouter_model\")") != std::string::npos);
+    CHECK(privacy_src.find("No telemetry.") != std::string::npos);
+    // OpenRouter readout: warn copy verbatim, model read-only.
+    CHECK(privacy_src.find("Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is "
+                           "on.") != std::string::npos);
+    CHECK(privacy_src.find("settings_.GetString(\"llm_provider\") == \"openrouter\"") !=
+          std::string::npos);
+    CHECK(privacy_src.find("\"not set\"") != std::string::npos);
+    // Delete block: copy verbatim + call site + Esc upgrade (api-key
+    // precedent: Esc cancels, focus lands on Cancel).
+    CHECK(privacy_src.find("\"Delete all local data\"") != std::string::npos);
+    CHECK(privacy_src.find("This cannot be undone. The app keeps running.") != std::string::npos);
+    CHECK(privacy_src.find("\"Confirm delete\"") != std::string::npos);
+    CHECK(privacy_src.find("\"Cancel\"") != std::string::npos);
+    CHECK(privacy_src.find("DeleteLocalData()") != std::string::npos);
+    CHECK(privacy_src.find("ImGui::IsKeyPressed(ImGuiKey_Escape)") != std::string::npos);
+    CHECK(privacy_src.find("ImGui::SetKeyboardFocusHere()") != std::string::npos);
+    // Code needles, not the file-scope comment that names the flag.
+    CHECK(privacy_src.find("static bool focus_cancel_pending_ = false;") != std::string::npos);
+    CHECK(privacy_src.find("focus_cancel_pending_ = true;") != std::string::npos);
+    CHECK(privacy_src.find("BLOCK EXCEPTION") != std::string::npos);
+    // DeleteLocalData body untouched: files-then-stores, config.json never
+    // removed (span-scoped to its own body).
+    const std::size_t del_fn = content.find("void MainWindow::DeleteLocalData");
+    REQUIRE(del_fn != std::string::npos);
+    const std::size_t del_clear = content.find("void MainWindow::ClearApiKeyInputs", del_fn);
+    REQUIRE(del_clear != std::string::npos);
+    const std::string del_src = content.substr(del_fn, del_clear - del_fn);
+    CHECK(del_src.find("remove(base / \"api_keys.json\"") != std::string::npos);
+    CHECK(del_src.find("config.json") == std::string::npos);
+    CHECK(del_src.find("delete_data_armed_ = false;") != std::string::npos);
+    // Tab switch clears the delete arm (safer destructive UX), close to
+    // the ClearApiKeyInputs call it sits next to.
+    const std::size_t settings_page = content.find("void MainWindow::DrawSettingsPage");
+    REQUIRE(settings_page != std::string::npos);
+    const std::size_t tab_switch = content.find("ClearApiKeyInputs();", settings_page);
+    REQUIRE(tab_switch != std::string::npos);
+    const std::size_t tab_arm_clear = content.find("delete_data_armed_ = false;", tab_switch);
+    REQUIRE(tab_arm_clear != std::string::npos);
+    CHECK(tab_arm_clear - tab_switch < 200);
+    // About is read-only: version + config version + OpenRouter warn.
+    CHECK(about_src.find("lwf::AppVersion()") != std::string::npos);
+    CHECK(about_src.find("GetInt(\"schema_version\")") != std::string::npos);
+    CHECK(about_src.find("GetString(\"llm_provider\")") != std::string::npos);
+    CHECK(about_src.find("Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is "
+                         "on.") != std::string::npos);
+    CHECK(about_src.find("Local-first voice dictation.") != std::string::npos);
+    // Shortcuts table (NEW, read-only): the 5 General labels, stored
+    // values via GetString, empty shows "Not set".
+    CHECK(about_src.find("\"Push-to-talk\"") != std::string::npos);
+    CHECK(about_src.find("\"Hands-free\"") != std::string::npos);
+    CHECK(about_src.find("\"Cancel\"") != std::string::npos);
+    CHECK(about_src.find("\"Command mode\"") != std::string::npos);
+    CHECK(about_src.find("\"Paste last\"") != std::string::npos);
+    CHECK(about_src.find("settings_.GetString(shortcut.key)") != std::string::npos);
+    CHECK(about_src.find("\"Not set\"") != std::string::npos);
+    CHECK(about_src.find("\"hotkey_ptt\"") != std::string::npos);
+    CHECK(about_src.find("\"hotkey_handsfree\"") != std::string::npos);
+    CHECK(about_src.find("\"hotkey_cancel\"") != std::string::npos);
+    CHECK(about_src.find("\"hotkey_command\"") != std::string::npos);
+    CHECK(about_src.find("\"hotkey_paste_last\"") != std::string::npos);
+    // Zero writes anywhere on About (span-scoped absence).
+    CHECK(about_src.find("SetString(") == std::string::npos);
+    CHECK(about_src.find("SetBool(") == std::string::npos);
+    CHECK(about_src.find("SetInt(") == std::string::npos);
+    CHECK(about_src.find("ApplyAndSave()") == std::string::npos);
+}

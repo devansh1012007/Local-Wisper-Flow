@@ -2233,91 +2233,217 @@ void MainWindow::DrawCleanupPage(float scale) {
 
 void MainWindow::DrawPrivacyPage(float scale) {
     DrawPageChrome("Privacy", "What stays on this computer, and what gets written down.", scale);
-
-    const float width = std::min(ImGui::GetContentRegionAvail().x, metrics::content_max * scale);
-
-    BeginCard("##card_privacy", width, scale);
+    DrawRestartBanner(scale);
+    // T7 ruled rows (DESIGN §6): same migration note as DrawGeneralPage;
+    // first row reuses the former BeginCard id. The delete block below is
+    // taller than the 52 px ruled row (question + two buttons + helper),
+    // so it stays an uncarded block (block exception, as in T6); the
+    // former BeginCard id is carried by the PushID below so the
+    // page-structure pin keeps passing. INVARIANT: DeleteLocalData removes
+    // data files first, then clears the stores, and never touches
+    // config.json (do not reorder).
+    // File-scope note: focus_cancel_pending_ is a function-static rather
+    // than a member because T7's file scope is MainWindow.cpp only;
+    // set-true-on-arm + consumed-next-frame makes tab-switch staleness
+    // unreachable (the flag is only read while armed, and arming re-sets it).
+    static bool focus_cancel_pending_ = false;
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Privacy");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Privacy");
-        ImGui::PopFont();
-
         bool debug_transcripts = settings_.GetBool("debug_log_transcripts");
-        if (ToggleRow("Log transcript text", debug_transcripts,
-                      "Writes dictated text to the local log file", scale)) {
+        lwf::ui::widgets::Row("##card_privacy", "Log transcript text",
+                              "Writes dictated text to the local log file", 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##debug_log_transcripts", debug_transcripts, scale,
+                                           *current_palette_)) {
             settings_.SetBool("debug_log_transcripts", !debug_transcripts);
             ApplyAndSave();
         }
+        lwf::ui::widgets::RowEnd(scale);
         if (settings_.GetBool("debug_log_transcripts")) {
-            ImGui::TextColored(Color(kLightPalette.err),
+            ImGui::TextColored(Color(current_palette_->err),
                                "WARNING: dictated text will be written to the local log.");
         }
-        ImGui::Separator();
-        BoolRow("history_enabled", "Keep history", "Save a local history of dictations", scale);
-        BoolRow("keep_raw_in_history", "Keep raw text in history", "Store the text before cleanup", scale);
-        IntRow("history_max_entries", "##history_max_entries", 10, 100000, "keep %d entries");
-        IntRow("history_max_age_days", "##history_max_age_days", 1, 3650, "delete after %d days");
-        BoolRow("keep_usage_stats", "Keep usage statistics", "Used by Insights", scale);
-        if (settings_.GetString("llm_provider") == "openrouter") {
-            ImGui::TextColored(Color(kLightPalette.warn),
-                               "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
-            const std::string openrouter_model = settings_.GetString("openrouter_model");
-            ImGui::Text("OpenRouter model: %s",
-                        openrouter_model.empty() ? "not set" : openrouter_model.c_str());
-        }
-        ImGui::Separator();
-        ImGui::TextWrapped("%s", "No telemetry. By default no network calls except explicit model "
-                                 "downloads. Cloud speech transcription and OpenRouter cleanup "
-                                 "are the only opt-in exceptions, both off by default. Each sends "
-                                 "only what its feature needs, and only while you have it enabled.");
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_delete_data", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("History");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Local data");
-        ImGui::PopFont();
-        if (!delete_data_armed_) {
-            if (ImGui::Button("Delete all local data")) {
-                delete_data_armed_ = true;
-            }
-            ImGui::TextDisabled("Removes statistics, dictionary, snippets, transforms, notes, history and saved API keys. Settings are kept.");
+        const bool enabled = settings_.GetBool("history_enabled");
+        lwf::ui::widgets::Row("##row_history_enabled", "Keep history",
+                              "Save a local history of dictations", 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##history_enabled", enabled, scale,
+                                           *current_palette_)) {
+            settings_.SetBool("history_enabled", !enabled);
+            ApplyAndSave();
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        const bool keep_raw = settings_.GetBool("keep_raw_in_history");
+        lwf::ui::widgets::Row("##row_keep_raw_in_history", "Keep raw text in history",
+                              "Store the text before cleanup", 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##keep_raw_in_history", keep_raw, scale,
+                                           *current_palette_)) {
+            settings_.SetBool("keep_raw_in_history", !keep_raw);
+            ApplyAndSave();
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_history_max_entries", "History entries", nullptr,
+                              248.0f * scale, scale, *current_palette_);
+        IntRow("history_max_entries", "##history_max_entries", 10, 100000, "keep %d entries");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_history_max_age_days", "History age", nullptr,
+                              248.0f * scale, scale, *current_palette_);
+        IntRow("history_max_age_days", "##history_max_age_days", 1, 3650, "delete after %d days");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        const bool usage = settings_.GetBool("keep_usage_stats");
+        lwf::ui::widgets::Row("##row_keep_usage_stats", "Keep usage statistics", "Used by Insights",
+                              52.0f * scale, scale, *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##keep_usage_stats", usage, scale,
+                                           *current_palette_)) {
+            settings_.SetBool("keep_usage_stats", !usage);
+            ApplyAndSave();
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    // IntRow writes validation_error_ for the two history rows above;
+    // Privacy drew none before T7. Drawn after the row block in the live
+    // palette (T6-Cloud pattern).
+    if (!validation_error_.empty()) {
+        ImGui::TextColored(Color(current_palette_->err), "%s", validation_error_.c_str());
+    }
+    if (settings_.GetString("llm_provider") == "openrouter") {
+        ImGui::TextColored(
+            Color(current_palette_->warn),
+            "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
+        const std::string openrouter_model = settings_.GetString("openrouter_model");
+        lwf::ui::widgets::Row("##row_openrouter_model", "OpenRouter model", nullptr,
+                              248.0f * scale, scale, *current_palette_);
+        ImGui::Text("%s", openrouter_model.empty() ? "not set" : openrouter_model.c_str());
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+    ImGui::TextWrapped("%s", "No telemetry. By default no network calls except explicit model "
+                             "downloads. Cloud speech transcription and OpenRouter cleanup "
+                             "are the only opt-in exceptions, both off by default. Each sends "
+                             "only what its feature needs, and only while you have it enabled.");
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Local data");
+    ImGui::PopFont();
+    // BLOCK EXCEPTION (DESIGN §6, as-built T7 — see DrawCloudPage note):
+    // the named question, both buttons and the helper are taller than the
+    // 52 px ruled row, so the delete block stays uncarded on the page
+    // background. Esc + focus-on-Cancel (DrawApiKeyRow precedent).
+    ImGui::PushID("##card_delete_data");
+    if (!delete_data_armed_) {
+        if (ImGui::Button("Delete all local data")) {
+            delete_data_armed_ = true;
+            focus_cancel_pending_ = true;
+        }
+        ImGui::TextDisabled("Removes statistics, dictionary, snippets, transforms, notes, history "
+                            "and saved API keys. Settings are kept.");
+    } else {
+        // Esc cancels the named confirmation without touching any data;
+        // focus lands on Cancel the first armed frame (api-key precedent).
+        // No early return: the PushID above must stay balanced this frame.
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            delete_data_armed_ = false;
+            focus_cancel_pending_ = false;
         } else {
-            ImGui::TextColored(Color(kLightPalette.err),
+            ImGui::TextColored(Color(current_palette_->err),
                                "This cannot be undone. The app keeps running.");
             if (ImGui::Button("Confirm delete")) {
                 DeleteLocalData();
             }
             ImGui::SameLine();
+            if (focus_cancel_pending_) {
+                ImGui::SetKeyboardFocusHere();
+                focus_cancel_pending_ = false;
+            }
             if (ImGui::Button("Cancel")) {
                 delete_data_armed_ = false;
+                focus_cancel_pending_ = false;
             }
         }
     }
-    EndCard(scale);
+    ImGui::PopID();
 }
 
 void MainWindow::DrawAboutPage(float scale) {
     DrawPageChrome("About", "The short version.", scale);
-
-    const float width = std::min(ImGui::GetContentRegionAvail().x, metrics::content_max * scale);
-
-    BeginCard("##card_about", width, scale);
+    DrawRestartBanner(scale);
+    // T7 ruled rows (DESIGN §6): same migration note as DrawGeneralPage;
+    // first row reuses the former BeginCard id. The whole tab is read-only
+    // (version, config version and the stored chords below) — no control
+    // here mutates settings. Shortcuts are a NEW read-only table (the plan
+    // assumed one existed; none did): stored values via GetString, empty
+    // shows "Not set" (the DrawHotkeyChips empty-read precedence). The
+    // cancel chord's schema default is "Escape", shown as stored.
     {
-        ImGui::Text("Local Wisper Flow %s", lwf::AppVersion());
-        ImGui::Separator();
-        ImGui::TextWrapped("%s",
-                           "Local-first voice dictation. On-device speech recognition and optional "
-                           "text cleanup, clipboard injection. Processing stays on this machine "
-                           "unless you opt into cloud speech transcription or OpenRouter cleanup.");
-        if (settings_.GetString("llm_provider") == "openrouter") {
-            ImGui::TextColored(Color(kLightPalette.warn),
-                               "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
-        }
-        ImGui::Text("Config version: %d", settings_.GetInt("schema_version"));
+        lwf::ui::widgets::Row("##card_about", "Local Wisper Flow", nullptr, 248.0f * scale, scale,
+                              *current_palette_);
+        ImGui::Text("%s", lwf::AppVersion());
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    ImGui::TextWrapped("%s",
+                       "Local-first voice dictation. On-device speech recognition and optional "
+                       "text cleanup, clipboard injection. Processing stays on this machine "
+                       "unless you opt into cloud speech transcription or OpenRouter cleanup.");
+    if (settings_.GetString("llm_provider") == "openrouter") {
+        ImGui::TextColored(
+            Color(current_palette_->warn),
+            "Cleanup uses OpenRouter: text is sent to OpenRouter when cleanup is on.");
+    }
+    {
+        lwf::ui::widgets::Row("##row_config_version", "Config version", nullptr,
+                              248.0f * scale, scale, *current_palette_);
+        ImGui::Text("%d", settings_.GetInt("schema_version"));
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Shortcuts");
+    ImGui::PopFont();
+    {
+        struct ShortcutRow {
+            const char* key;
+            const char* label;
+        };
+        static const ShortcutRow kShortcuts[] = {
+            {"hotkey_ptt", "Push-to-talk"},
+            {"hotkey_handsfree", "Hands-free"},
+            {"hotkey_cancel", "Cancel"},
+            {"hotkey_command", "Command mode"},
+            {"hotkey_paste_last", "Paste last"},
+        };
+        for (const ShortcutRow& shortcut : kShortcuts) {
+            const std::string value = settings_.GetString(shortcut.key);
+            const std::string row_id = std::string("##row_hotkey_") + shortcut.key;
+            lwf::ui::widgets::Row(row_id.c_str(), shortcut.label, nullptr, 248.0f * scale, scale,
+                                  *current_palette_);
+            ImGui::Text("%s", value.empty() ? "Not set" : value.c_str());
+            lwf::ui::widgets::RowEnd(scale);
+        }
+    }
 }
 
 void MainWindow::DrawInsightsPage(float scale) {
@@ -2562,6 +2688,7 @@ void MainWindow::DrawSettingsPage(float scale) {
             validation_error_.clear();
             llm_model_error_.clear();
             ClearApiKeyInputs();
+            delete_data_armed_ = false;
         }
         const bool active = settings_tab_ == item.tab;
         const bool hovered = ImGui::IsItemHovered();
