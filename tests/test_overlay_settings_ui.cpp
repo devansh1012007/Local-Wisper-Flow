@@ -1766,13 +1766,19 @@ TEST_CASE("speech page microphone picker replaces the dead free-text row") {
     CHECK(content.find("ListCaptureDevices()") != std::string::npos);
     CHECK(content.find("MatchMicDeviceIndex") != std::string::npos);
     CHECK(content.find("mic_devices_loaded_ = true") != std::string::npos);
-    const std::size_t model_card = content.find("BeginCard(\"##card_model\"");
+    // T5 ruled rows: the former BeginCard ids now label the first Row of
+    // each section; order intent is model rows < mic picker row < meter row.
+    const std::size_t model_card = content.find("\"##card_model\"");
     REQUIRE(model_card != std::string::npos);
-    const std::size_t mic_card = content.find("##card_mic_device", model_card);
+    const std::size_t mic_card = content.find("\"##card_mic_device\"", model_card);
     REQUIRE(mic_card != std::string::npos);
-    const std::size_t level_card = content.find("##card_mic_level", mic_card);
+    const std::size_t level_card = content.find("\"##card_mic_level\"", mic_card);
     REQUIRE(level_card != std::string::npos);
+    CHECK(model_card < mic_card);
     CHECK(mic_card < level_card);
+    CHECK(content.find("BeginCard(\"##card_model\"") == std::string::npos);
+    CHECK(content.find("BeginCard(\"##card_mic_device\"") == std::string::npos);
+    CHECK(content.find("BeginCard(\"##card_mic_level\"") == std::string::npos);
     // Persist + restart banner ordering, mirroring the ##llm_provider pin.
     const std::size_t mic_set = content.find("SetString(\"mic_device\"");
     REQUIRE(mic_set != std::string::npos);
@@ -1848,6 +1854,121 @@ TEST_CASE("speech page microphone picker replaces the dead free-text row") {
     const std::string header = ReadSource("src/ui/MainWindow.h");
     REQUIRE_FALSE(header.empty());
     CHECK(header.find("mic_device_field_") == std::string::npos);
+}
+
+TEST_CASE("T5 settings General and Speech ruled rows pin") {
+    // T5-owned pins: theme switcher writes the canonical constants, load-time
+    // normalization lives in Init, both pages use ruled rows (widgets::Row +
+    // widgets::ToggleSwitch with the live palette), and the legacy
+    // hotkey_code row is still present (removal is T14).
+    const std::string content = ReadSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(content.empty());
+    const std::size_t general = content.find("void MainWindow::DrawGeneralPage");
+    REQUIRE(general != std::string::npos);
+    const std::size_t settings_fn = content.find("void MainWindow::DrawSettingsPage", general);
+    REQUIRE(settings_fn != std::string::npos);
+    const std::string general_src = content.substr(general, settings_fn - general);
+    const std::size_t speech = content.find("void MainWindow::DrawSpeechPage");
+    REQUIRE(speech != std::string::npos);
+    const std::size_t cloud_fn = content.find("void MainWindow::DrawCloudPage", speech);
+    REQUIRE(cloud_fn != std::string::npos);
+    const std::string speech_src = content.substr(speech, cloud_fn - speech);
+    // Theme combo: display Graphite/Paper, write the exact constants.
+    CHECK(general_src.find("kThemeGraphite") != std::string::npos);
+    CHECK(general_src.find("kThemePaper") != std::string::npos);
+    CHECK(general_src.find("SetString(\"theme\"") != std::string::npos);
+    CHECK(general_src.find("\"Graphite\"") != std::string::npos);
+    CHECK(general_src.find("\"Paper\"") != std::string::npos);
+    CHECK(general_src.find("\"##theme\"") != std::string::npos);
+    // Load-time normalization in Init: unknown -> graphite + save.
+    const std::size_t init_fn = content.find("bool MainWindow::Init()");
+    REQUIRE(init_fn != std::string::npos);
+    const std::size_t shutdown_fn = content.find("void MainWindow::Shutdown", init_fn);
+    REQUIRE(shutdown_fn != std::string::npos);
+    const std::string init_src = content.substr(init_fn, shutdown_fn - init_fn);
+    CHECK(init_src.find("kThemeGraphite") != std::string::npos);
+    CHECK(init_src.find("kThemePaper") != std::string::npos);
+    CHECK(init_src.find("SetString(\"theme\"") != std::string::npos);
+    CHECK(init_src.find("settings_.Save()") != std::string::npos);
+    // Ruled rows with the live palette (never the Paper default).
+    CHECK(general_src.find("widgets::Row(") != std::string::npos);
+    CHECK(general_src.find("*current_palette_") != std::string::npos);
+    CHECK(speech_src.find("widgets::Row(") != std::string::npos);
+    CHECK(speech_src.find("*current_palette_") != std::string::npos);
+    CHECK(general_src.find("widgets::ToggleSwitch(") != std::string::npos);
+    CHECK(speech_src.find("widgets::ToggleSwitch(") != std::string::npos);
+    // legacy row kept for T14.
+    CHECK(general_src.find("IntRow(\"hotkey_code\"") != std::string::npos);
+    CHECK(general_src.find("##hotkey_code") != std::string::npos);
+    // Restart banner: kept on Speech, added to General.
+    CHECK(general_src.find("DrawRestartBanner(scale)") != std::string::npos);
+    CHECK(speech_src.find("DrawRestartBanner(scale)") != std::string::npos);
+    // These two tabs no longer call BeginCard (the def stays for T6-T8).
+    CHECK(general_src.find("BeginCard(") == std::string::npos);
+    CHECK(speech_src.find("BeginCard(") == std::string::npos);
+    CHECK(content.find("void MainWindow::BeginCard") != std::string::npos);
+    // T5 toggles use the widget switch directly (ToggleRow/BoolRow stay).
+    CHECK(general_src.find("ToggleRow(") == std::string::npos);
+    CHECK(speech_src.find("ToggleRow(") == std::string::npos);
+    CHECK(general_src.find("BoolRow(") == std::string::npos);
+    CHECK(speech_src.find("BoolRow(") == std::string::npos);
+    // T5-fix err/warn palette (live palette, never Paper): the T5 tabs sit
+    // directly on the window bg, so Paper err/warn read at 2.54/2.80:1 there
+    // (T5 reviewer, MAJOR). Scoped to each T5 function span (T4-fix
+    // StatusSquare style) so a Cloud/Cleanup/Privacy/Home Paper lookalike
+    // cannot satisfy the pin; the absence check pins the Paper variant out.
+    const auto count_occurrences_t5 = [](const std::string& haystack, const std::string& needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+    const std::size_t banner_fn = content.find("void MainWindow::DrawRestartBanner");
+    REQUIRE(banner_fn != std::string::npos);
+    const std::size_t chips_fn = content.find("void MainWindow::DrawHotkeyChips", banner_fn);
+    REQUIRE(chips_fn != std::string::npos);
+    const std::string banner_src = content.substr(banner_fn, chips_fn - banner_fn);
+    CHECK(banner_src.find("Color(current_palette_->warn") != std::string::npos);
+    CHECK(banner_src.find("Color(kLightPalette.warn") == std::string::npos);
+    const std::size_t hotkey_row_fn = content.find("void MainWindow::DrawGeneralHotkeyRow");
+    REQUIRE(hotkey_row_fn != std::string::npos);
+    const std::size_t home_fn = content.find("void MainWindow::DrawHomePage", hotkey_row_fn);
+    REQUIRE(home_fn != std::string::npos);
+    const std::string hotkey_row_src = content.substr(hotkey_row_fn, home_fn - hotkey_row_fn);
+    CHECK(count_occurrences_t5(hotkey_row_src, "Color(current_palette_->err") >= 2);
+    CHECK(hotkey_row_src.find("Color(kLightPalette.err") == std::string::npos);
+    CHECK(count_occurrences_t5(speech_src, "Color(current_palette_->err") >= 2);
+    CHECK(speech_src.find("Color(kLightPalette.err") == std::string::npos);
+    CHECK(general_src.find("Color(current_palette_->err") != std::string::npos);
+    CHECK(general_src.find("Color(kLightPalette.err") == std::string::npos);
+    // Strengthened (T5-fix): needle the ACTUAL SetString call sites, not
+    // bare constant names. The combo comment ("must be exactly
+    // kThemeGraphite/kThemePaper") and the `theme == kThemePaper` display
+    // read would otherwise satisfy a bare find even if the writes became
+    // string literals. Scope after `##theme` so the pre-combo comment
+    // cannot satisfy the write pins, and pin the Init normalize target
+    // exactly (a graphite->paper swap must fail, not hide behind the
+    // guard comparison).
+    const std::size_t theme_combo = general_src.find("\"##theme\"");
+    REQUIRE(theme_combo != std::string::npos);
+    const std::string theme_writes = general_src.substr(theme_combo);
+    CHECK(theme_writes.find("SetString(\"theme\", lwf::ui::kThemeGraphite") !=
+          std::string::npos);
+    CHECK(theme_writes.find("SetString(\"theme\", lwf::ui::kThemePaper") != std::string::npos);
+    CHECK(init_src.find("SetString(\"theme\", lwf::ui::kThemeGraphite") != std::string::npos);
+    CHECK(init_src.find("SetString(\"theme\", lwf::ui::kThemePaper") == std::string::npos);
+    // Hot-apply: the theme row is hot_apply, so no restart flag may be set
+    // between its Row (`##card_general_window`) and its RowEnd (span-scoped
+    // absence, mic-pin style).
+    const std::size_t theme_row = general_src.find("\"##card_general_window\"");
+    REQUIRE(theme_row != std::string::npos);
+    const std::size_t theme_row_end = general_src.find("RowEnd(scale)", theme_row);
+    REQUIRE(theme_row_end != std::string::npos);
+    const std::string theme_span = general_src.substr(theme_row, theme_row_end - theme_row);
+    CHECK(theme_span.find("restart_needed_ = true") == std::string::npos);
 }
 
 TEST_CASE("cleanup model index maps stored value to the fetched list") {

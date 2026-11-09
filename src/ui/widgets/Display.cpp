@@ -233,9 +233,11 @@ void Row(const char* id, const char* label, const char* helper, float control_w,
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     ImDrawList& draw = *ImGui::GetWindowDrawList();
     // Ruled ledger row (DESIGN §6): 1 px hairlines top/bottom, label left,
-    // helper below in muted, no child, no fill. The caller draws exactly
-    // one control at the right slot (control_w wide, vertically centered);
-    // RowEnd restores the cursor below the row.
+    // helper below in muted, no child, no fill. The caller draws its
+    // control(s) at the right slot (control_w wide, vertically centered) —
+    // a compound control (chips + buttons, InputText + Browse) shares one
+    // slot; RowEnd uses the last item's rect. RowEnd restores the cursor
+    // below the row.
     draw.AddLine(pos, ImVec2(pos.x + w, pos.y), Pack(palette.border), 1.0f * scale);
     draw.AddLine(ImVec2(pos.x, pos.y + row_h), ImVec2(pos.x + w, pos.y + row_h),
                  Pack(palette.border), 1.0f * scale);

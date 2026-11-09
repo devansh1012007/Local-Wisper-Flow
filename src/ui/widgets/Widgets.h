@@ -54,8 +54,11 @@ void StatusSquare(const char* id, StatusKind state, const char* word, float scal
 // muted, 1 px hairlines top/bottom, studio_metrics::row_height tall. Row
 // draws the chrome (both hairlines, label, helper), reserves the row, and
 // leaves the cursor at the right control slot (control_w wide, vertically
-// centered); the caller draws exactly one control, then calls RowEnd to
-// restore the cursor below the row. Mirrors the Modal/Sheet Begin/End idiom.
+// centered); the caller draws exactly one control — or, by exception, a
+// compound slot of two inline items on the slot line (hotkey chips + Record/
+// Clear buttons; model InputText + Browse) — then calls RowEnd to restore
+// the cursor below the row (RowEnd uses the last item's rect). Mirrors the
+// Modal/Sheet Begin/End idiom.
 // control_w must be the control's actual width: an under-width value
 // overflows left into the label, which is never truncated. Controls taller
 // than 52 px overflow the hairline. Calling RowEnd twice or without Row

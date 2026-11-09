@@ -232,6 +232,15 @@ bool MainWindow::Init() {
     // read so a stored "paper" starts in Paper and the default starts in
     // Graphite). current_palette_ is the last-applied palette. Any pending
     // ApplyTheme queued before Init is stale — Init re-reads the store.
+    // Load-time normalization (T5): an unknown stored value falls back to
+    // Graphite and is persisted, so PaletteForTheme can stay exact-match.
+    {
+        const std::string stored_theme = settings_.GetString("theme");
+        if (stored_theme != lwf::ui::kThemeGraphite && stored_theme != lwf::ui::kThemePaper) {
+            settings_.SetString("theme", lwf::ui::kThemeGraphite);
+            settings_.Save();
+        }
+    }
     current_palette_ = &lwf::ui::PaletteForTheme(settings_.GetString("theme"));
     pending_theme_palette_ = nullptr;
     theme_pending_ = false;
@@ -1257,7 +1266,7 @@ void MainWindow::DrawRestartBanner(float scale) {
     if (!restart_needed_) {
         return;
     }
-    ImGui::TextColored(Color(kLightPalette.warn), "Applies after restart.");
+    ImGui::TextColored(Color(current_palette_->warn), "Applies after restart.");
     ImGui::Dummy(ImVec2(0.0f, metrics::space_xs * scale));
 }
 
@@ -1296,13 +1305,24 @@ void MainWindow::DrawGeneralHotkeyRow(const std::string& config_key, const char*
                                       const char* helper, float scale) {
     const auto role = HotkeyBinding::RoleForConfigKey(config_key);
     const std::string current = settings_.GetString(config_key);
-    ImGui::TextUnformatted(label);
-    ImGui::TextDisabled("%s", helper);
+    // T5 ruled row (DESIGN §6): Row draws label + helper; the control slot
+    // holds the chips and the Record/Clear buttons on one line. Conflict and
+    // learn error strings are drawn after RowEnd so they never overflow the
+    // 52 px row. The first row keeps the former BeginCard id so the
+    // page-structure pin survives the card-to-ruled migration.
+    const std::string row_id = config_key == "hotkey_ptt"
+                                   ? "##card_general_hotkey"
+                                   : ("##row_hotkey_" + config_key);
+    lwf::ui::widgets::Row(row_id.c_str(), label, helper, 360.0f * scale, scale, *current_palette_);
     DrawHotkeyChips(current, scale);
+    // DrawHotkeyChips reserves via Dummy (cursor drops to a new line); keep
+    // the Record/Clear buttons on that same line inside the 52 px slot.
+    ImGui::SameLine();
+    bool has_conflict = false;
     if (!current.empty() && role.has_value()) {
         const std::vector<Binding> registry = LoadBindings(settings_);
         if (HotkeyBinding::FindConflict(current, registry, role).has_value()) {
-            ImGui::TextColored(Color(kLightPalette.err), "That shortcut is already in use");
+            has_conflict = true;
         }
     }
     const bool armed = learn_target_ == config_key;
@@ -1343,8 +1363,12 @@ void MainWindow::DrawGeneralHotkeyRow(const std::string& config_key, const char*
             ImGui::EndDisabled();
         }
     }
+    lwf::ui::widgets::RowEnd(scale);
+    if (has_conflict) {
+        ImGui::TextColored(Color(current_palette_->err), "That shortcut is already in use");
+    }
     if (learn_error_target_ == config_key && !learn_error_.empty()) {
-        ImGui::TextColored(Color(kLightPalette.err), "%s", learn_error_.c_str());
+        ImGui::TextColored(Color(current_palette_->err), "%s", learn_error_.c_str());
     }
 }
 
@@ -1481,22 +1505,24 @@ void MainWindow::DrawHomePage(float scale) {
 void MainWindow::DrawSpeechPage(float scale) {
     DrawPageChrome("Speech", "The speech model and how it listens.", scale);
     DrawRestartBanner(scale);
-
-    const float width = std::min(ImGui::GetContentRegionAvail().x, metrics::content_max * scale);
-
-    BeginCard("##card_model", width, scale);
+    // T5 ruled rows (DESIGN §6): same migration note as DrawGeneralPage;
+    // first rows reuse the former BeginCard ids (mic order is pinned).
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Model");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Model");
-        ImGui::PopFont();
-
         if (model_path_buffer_[0] == '\0') {
             const std::string current = settings_.GetString("whisper_model_path");
             std::snprintf(model_path_buffer_, sizeof(model_path_buffer_), "%s", current.c_str());
         }
+        const float model_control_w = 380.0f * scale;
         const float browse_width = ImGui::CalcTextSize("Browse...").x +
                                    ImGui::GetStyle().FramePadding.x * 2.0f;
-        ImGui::SetNextItemWidth(-(browse_width + ImGui::GetStyle().ItemSpacing.x));
+        lwf::ui::widgets::Row("##card_model", "Speech model",
+                              "Restart is needed after changing the model path.", model_control_w,
+                              scale, *current_palette_);
+        ImGui::SetNextItemWidth(model_control_w - browse_width - ImGui::GetStyle().ItemSpacing.x);
         ImGui::InputText("##model_path", model_path_buffer_, sizeof(model_path_buffer_));
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             validation_error_ = SettingsUiModel::ValidateModelPath(model_path_buffer_);
@@ -1511,18 +1537,24 @@ void MainWindow::DrawSpeechPage(float scale) {
             PickAndApplyModelPath(model_path_buffer_, sizeof(model_path_buffer_),
                                  "whisper_model_path", validation_error_);
         }
+        lwf::ui::widgets::RowEnd(scale);
         if (!validation_error_.empty()) {
-            ImGui::TextColored(Color(kLightPalette.err), "%s", validation_error_.c_str());
+            ImGui::TextColored(Color(current_palette_->err), "%s", validation_error_.c_str());
         }
-        ImGui::TextDisabled("Restart is needed after changing the model path.");
-        ImGui::Separator();
-        ImGui::TextUnformatted("Cleanup model");
+    }
+    {
         if (llm_model_path_buffer_[0] == '\0') {
             const std::string current = settings_.GetString("llm_model_path");
             std::snprintf(llm_model_path_buffer_, sizeof(llm_model_path_buffer_), "%s",
                           current.c_str());
         }
-        ImGui::SetNextItemWidth(-(browse_width + ImGui::GetStyle().ItemSpacing.x));
+        const float model_control_w = 380.0f * scale;
+        const float browse_width = ImGui::CalcTextSize("Browse...").x +
+                                   ImGui::GetStyle().FramePadding.x * 2.0f;
+        lwf::ui::widgets::Row("##row_model_cleanup", "Cleanup model",
+                              "Leave empty to turn off cleanup.", model_control_w, scale,
+                              *current_palette_);
+        ImGui::SetNextItemWidth(model_control_w - browse_width - ImGui::GetStyle().ItemSpacing.x);
         ImGui::InputText("##llm_model_path", llm_model_path_buffer_,
                          sizeof(llm_model_path_buffer_));
         if (ImGui::IsItemDeactivatedAfterEdit()) {
@@ -1538,18 +1570,18 @@ void MainWindow::DrawSpeechPage(float scale) {
             PickAndApplyModelPath(llm_model_path_buffer_, sizeof(llm_model_path_buffer_),
                                  "llm_model_path", llm_model_error_);
         }
+        lwf::ui::widgets::RowEnd(scale);
         if (!llm_model_error_.empty()) {
-            ImGui::TextColored(Color(kLightPalette.err), "%s", llm_model_error_.c_str());
+            ImGui::TextColored(Color(current_palette_->err), "%s", llm_model_error_.c_str());
         }
-        ImGui::TextDisabled("Leave empty to turn off cleanup.");
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_mic_device", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Microphone");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Microphone");
-        ImGui::PopFont();
         if (!mic_devices_loaded_) {
             // DECISION: enumeration inits a ma_context, so it runs once per
             // app run on this first pass and is cached; never per frame.
@@ -1562,6 +1594,9 @@ void MainWindow::DrawSpeechPage(float scale) {
             SettingsUiModel::MatchMicDeviceIndex(mic_devices_, settings_.GetString("mic_device"));
         const char* preview = selected_index == 0 ? "System default"
                                                   : mic_devices_[selected_index - 1].c_str();
+        lwf::ui::widgets::Row("##card_mic_device", "Microphone",
+                              "Changes take effect after you restart the app.", 248.0f * scale,
+                              scale, *current_palette_);
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::BeginCombo("##mic_pick", preview)) {
             if (ImGui::Selectable("System default##mic_0", selected_index == 0)) {
@@ -1580,16 +1615,20 @@ void MainWindow::DrawSpeechPage(float scale) {
             }
             ImGui::EndCombo();
         }
-        ImGui::TextDisabled("Changes take effect after you restart the app.");
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_mic_level", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Microphone level");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Microphone level");
-        ImGui::PopFont();
-        ImGui::TextDisabled("Speak while holding the hotkey. The bar moves only while recording.");
+        // Read-only meter in a ruled row: no schema key, meter draw kept.
+        lwf::ui::widgets::Row(
+            "##card_mic_level", "Microphone level",
+            "Speak while holding the hotkey. The bar moves only while recording.",
+            320.0f * scale, scale, *current_palette_);
         const float level = audio_.AudioLevel();
         const float clamped = level < 0.0f ? 0.0f : (level > 1.0f ? 1.0f : level);
         const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -1597,24 +1636,28 @@ void MainWindow::DrawSpeechPage(float scale) {
         const float meter_h = metrics::control_min_height * scale;
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         draw.AddRectFilled(origin, ImVec2(origin.x + meter_w, origin.y + meter_h),
-                           Pack(kLightPalette.surface), metrics::radius_control * scale);
+                           Pack(current_palette_->surface), metrics::radius_control * scale);
         if (clamped > 0.0f) {
             draw.AddRectFilled(origin,
                                ImVec2(origin.x + meter_w * clamped, origin.y + meter_h),
-                               Pack(kLightPalette.text), metrics::radius_control * scale);
+                               Pack(current_palette_->text), metrics::radius_control * scale);
         }
         draw.AddRect(origin, ImVec2(origin.x + meter_w, origin.y + meter_h),
-                     Pack(kLightPalette.border), metrics::radius_control * scale);
+                     Pack(current_palette_->border), metrics::radius_control * scale);
         ImGui::Dummy(ImVec2(meter_w, meter_h));
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_lang", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Language");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Language");
-        ImGui::PopFont();
         const std::string current = settings_.GetString("whisper_language");
+        lwf::ui::widgets::Row("##card_lang", "Language", nullptr, 248.0f * scale, scale,
+                              *current_palette_);
+        ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::BeginCombo("##language", current.c_str())) {
             if (ImGui::Selectable("auto", current == "auto")) {
                 settings_.SetString("whisper_language", "auto");
@@ -1628,39 +1671,99 @@ void MainWindow::DrawSpeechPage(float scale) {
             }
             ImGui::EndCombo();
         }
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_listen", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Listening");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Listening");
-        ImGui::PopFont();
-        bool boost = settings_.GetBool("quiet_speech_boost");
-        if (ToggleRow("Boost quiet speech", boost, "Lifts a soft voice without clipping", scale)) {
+        const bool boost = settings_.GetBool("quiet_speech_boost");
+        lwf::ui::widgets::Row("##card_listen", "Boost quiet speech",
+                              "Lifts a soft voice without clipping", 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##quiet_speech_boost", boost, scale,
+                                           *current_palette_)) {
             settings_.SetBool("quiet_speech_boost", !boost);
             ApplyAndSave();
         }
-        ImGui::Separator();
-        DoubleRow("vad_threshold", "##vad_threshold", 0.0f, 1.0f, "sensitivity %.2f");
-        IntRow("min_hold_ms", "##min_hold_ms", 50, 5000, "hold at least %d ms");
-        IntRow("max_recording_ms", "##max_recording_ms", 1000, 120000, "record at most %d ms");
-        IntRow("hands_free_silence_ms", "##hands_free_silence_ms", 0, 10000, "stop after %d ms silence");
-        IntRow("double_tap_window_ms", "##double_tap_window_ms", 100, 2000, "double-tap %d ms");
-        BoolRow("avoid_altgr_conflict", "Avoid AltGr conflict", "Skip AltGr chords that conflict with Windows", scale);
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
-
-    BeginCard("##card_streaming", width, scale);
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Streaming");
-        ImGui::PopFont();
-        BoolRow("streaming_stt", "Stream speech", "Transcribe while you talk", scale);
-        IntRow("streaming_min_segment_ms", "##streaming_min_segment_ms", 1000, 30000, "segment %d ms");
-        IntRow("streaming_pause_ms", "##streaming_pause_ms", 300, 5000, "pause %d ms");
+        lwf::ui::widgets::Row("##row_vad_threshold", "Sensitivity", nullptr, 248.0f * scale, scale,
+                              *current_palette_);
+        DoubleRow("vad_threshold", "##vad_threshold", 0.0f, 1.0f, "sensitivity %.2f");
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    {
+        lwf::ui::widgets::Row("##row_min_hold", "Minimum hold", nullptr, 248.0f * scale, scale,
+                              *current_palette_);
+        IntRow("min_hold_ms", "##min_hold_ms", 50, 5000, "hold at least %d ms");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_max_recording", "Maximum recording", nullptr, 248.0f * scale,
+                              scale, *current_palette_);
+        IntRow("max_recording_ms", "##max_recording_ms", 1000, 120000, "record at most %d ms");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_hands_free_silence", "Hands-free silence", nullptr,
+                              248.0f * scale, scale, *current_palette_);
+        IntRow("hands_free_silence_ms", "##hands_free_silence_ms", 0, 10000,
+               "stop after %d ms silence");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_double_tap_window", "Double-tap window", nullptr,
+                              248.0f * scale, scale, *current_palette_);
+        IntRow("double_tap_window_ms", "##double_tap_window_ms", 100, 2000, "double-tap %d ms");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        const bool avoid_altgr = settings_.GetBool("avoid_altgr_conflict");
+        lwf::ui::widgets::Row("##row_avoid_altgr", "Avoid AltGr conflict",
+                              "Skip AltGr chords that conflict with Windows", 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##avoid_altgr_conflict", avoid_altgr, scale,
+                                           *current_palette_)) {
+            settings_.SetBool("avoid_altgr_conflict", !avoid_altgr);
+            ApplyAndSave();
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Streaming");
+    ImGui::PopFont();
+    {
+        const bool streaming = settings_.GetBool("streaming_stt");
+        lwf::ui::widgets::Row("##card_streaming", "Stream speech", "Transcribe while you talk",
+                              52.0f * scale, scale, *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##streaming_stt", streaming, scale,
+                                           *current_palette_)) {
+            settings_.SetBool("streaming_stt", !streaming);
+            ApplyAndSave();
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_streaming_min_segment", "Segment size", nullptr,
+                              248.0f * scale, scale, *current_palette_);
+        IntRow("streaming_min_segment_ms", "##streaming_min_segment_ms", 1000, 30000,
+               "segment %d ms");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_streaming_pause", "Pause", nullptr, 248.0f * scale, scale,
+                              *current_palette_);
+        IntRow("streaming_pause_ms", "##streaming_pause_ms", 300, 5000, "pause %d ms");
+        lwf::ui::widgets::RowEnd(scale);
+    }
 }
 
 void MainWindow::DrawCloudPage(float scale) {
@@ -2157,102 +2260,166 @@ void MainWindow::DrawScratchpadPage(float scale) {
 
 void MainWindow::DrawGeneralPage(float scale) {
     DrawPageChrome("General", "Everyday controls in one place.", scale);
+    DrawRestartBanner(scale);
+    // T5 ruled rows (DESIGN §6): each section keeps its heading, rows are
+    // lwf::ui::widgets::Row with *current_palette_ (never the Paper
+    // default). Section ids below reuse the former BeginCard ids on the
+    // section's first row so structural pins survive the migration.
+    // Headings indent to the row-label inset so wide glyphs never clip.
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Hotkey");
+    ImGui::PopFont();
+    DrawGeneralHotkeyRow("hotkey_ptt", "Push-to-talk", "Hold to speak, release to type.",
+                         scale);
+    DrawGeneralHotkeyRow("hotkey_handsfree", "Hands-free",
+                         "Double-tap to talk without holding.", scale);
+    DrawGeneralHotkeyRow("hotkey_cancel", "Cancel", "Stop dictation immediately.", scale);
+    DrawGeneralHotkeyRow("hotkey_command", "Command mode", "Hold to dictate a command.",
+                         scale);
+    DrawGeneralHotkeyRow("hotkey_paste_last", "Paste last",
+                         "Paste your last dictation.", scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    const float width = std::min(ImGui::GetContentRegionAvail().x, metrics::content_max * scale);
-
-    BeginCard("##card_general_hotkey", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Sound");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Hotkey");
-        ImGui::PopFont();
-        DrawGeneralHotkeyRow("hotkey_ptt", "Push-to-talk", "Hold to speak, release to type.",
-                             scale);
-        ImGui::Separator();
-        DrawGeneralHotkeyRow("hotkey_handsfree", "Hands-free",
-                             "Double-tap to talk without holding.", scale);
-        ImGui::Separator();
-        DrawGeneralHotkeyRow("hotkey_cancel", "Cancel", "Stop dictation immediately.", scale);
-        ImGui::Separator();
-        DrawGeneralHotkeyRow("hotkey_command", "Command mode", "Hold to dictate a command.",
-                             scale);
-        ImGui::Separator();
-        DrawGeneralHotkeyRow("hotkey_paste_last", "Paste last",
-                             "Paste your last dictation.", scale);
-    }
-    EndCard(scale);
-
-    BeginCard("##card_general_sound", width, scale);
-    {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Sound");
-        ImGui::PopFont();
         bool sound = settings_.GetBool("sound_enabled");
-        if (ToggleRow("Sound", sound, "Play short sounds while dictating", scale)) {
+        lwf::ui::widgets::Row("##card_general_sound", "Sound",
+                              "Play short sounds while dictating", 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##sound_enabled", sound, scale, *current_palette_)) {
             settings_.SetBool("sound_enabled", !sound);
             ApplyAndSave();
         }
-        DoubleRow("sound_volume", "##sound_volume", 0.0f, 1.0f, "volume %.2f");
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
-
-    BeginCard("##card_general_motion", width, scale);
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Motion");
-        ImGui::PopFont();
+        lwf::ui::widgets::Row("##row_sound_volume", "Volume", nullptr, 248.0f * scale, scale,
+                              *current_palette_);
+        DoubleRow("sound_volume", "##sound_volume", 0.0f, 1.0f, "volume %.2f");
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Motion");
+    ImGui::PopFont();
+    {
         bool reduced = settings_.GetBool("reduce_motion");
-        if (ToggleRow("Reduce motion", reduced, "Stop animations", scale)) {
+        lwf::ui::widgets::Row("##card_general_motion", "Reduce motion", "Stop animations",
+                              52.0f * scale, scale, *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##reduce_motion", reduced, scale, *current_palette_)) {
             settings_.SetBool("reduce_motion", !reduced);
             ApplyAndSave();
         }
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_general_window", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Window");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Window");
-        ImGui::PopFont();
+        // Theme switcher (OQ-A1): display is Graphite/Paper but the write
+        // must be exactly kThemeGraphite/kThemePaper (PaletteForTheme is
+        // exact-match). hot_apply=true, so no restart flag; ApplyAndSave
+        // posts ApplySettings and main.cpp swaps all three window styles.
+        const std::string theme = settings_.GetString("theme");
+        const bool paper = theme == lwf::ui::kThemePaper;
+        lwf::ui::widgets::Row("##card_general_window", "Theme", "Applies immediately.",
+                              248.0f * scale, scale, *current_palette_);
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::BeginCombo("##theme", paper ? "Paper" : "Graphite")) {
+            if (ImGui::Selectable("Graphite", !paper)) {
+                settings_.SetString("theme", lwf::ui::kThemeGraphite);
+                ApplyAndSave();
+            }
+            if (ImGui::Selectable("Paper", paper)) {
+                settings_.SetString("theme", lwf::ui::kThemePaper);
+                ApplyAndSave();
+            }
+            ImGui::EndCombo();
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        const bool flow_bar = settings_.GetBool("scratchpad_flow_bar");
+        lwf::ui::widgets::Row("##row_scratchpad_flow_bar", "Scratchpad bar",
+                              "Show the scratchpad bar on the mini window", 52.0f * scale, scale,
+                              *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##scratchpad_flow_bar", flow_bar, scale,
+                                           *current_palette_)) {
+            settings_.SetBool("scratchpad_flow_bar", !flow_bar);
+            ApplyAndSave();
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
         const int mini_x = settings_.GetInt("mini_x");
         const int mini_y = settings_.GetInt("mini_y");
+        lwf::ui::widgets::Row("##row_mini_position", "Mini window position",
+                              "Set by dragging the mini window.", 300.0f * scale, scale,
+                              *current_palette_);
         if (mini_x < 0 && mini_y < 0) {
-            ImGui::TextDisabled("Mini window: default position (bottom center).");
+            ImGui::TextDisabled("Default (bottom center)");
         } else {
-            ImGui::Text("Mini window position: %d, %d", mini_x, mini_y);
+            ImGui::Text("%d, %d", mini_x, mini_y);
         }
-        ImGui::TextDisabled("Set by dragging the mini window.");
-        BoolRow("scratchpad_flow_bar", "Scratchpad bar", "Show the scratchpad bar on the mini window", scale);
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    BeginCard("##card_general_other_hotkeys", width, scale);
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Other hotkeys");
+    ImGui::PopFont();
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Other hotkeys");
-        ImGui::PopFont();
-        ImGui::TextUnformatted("Hands-free");
+        lwf::ui::widgets::Row("##card_general_other_hotkeys", "Hands-free", nullptr,
+                              248.0f * scale, scale, *current_palette_);
         StringFieldRow("hotkey_handsfree", hotkey_handsfree_field_, "##hotkey_handsfree", false);
-        ImGui::TextUnformatted("Cancel");
-        StringFieldRow("hotkey_cancel", hotkey_cancel_field_, "##hotkey_cancel", false);
-        ImGui::TextUnformatted("Command mode");
-        StringFieldRow("hotkey_command", hotkey_command_field_, "##hotkey_command", false);
-        ImGui::TextUnformatted("Paste last");
-        StringFieldRow("hotkey_paste_last", hotkey_paste_last_field_, "##hotkey_paste_last", false);
-        ImGui::TextDisabled("Chords as text, e.g. Ctrl+Shift+T.");
-        if (!validation_error_.empty()) {
-            ImGui::TextColored(Color(kLightPalette.err), "%s", validation_error_.c_str());
-        }
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
-
-    BeginCard("##card_general_legacy", width, scale);
     {
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextUnformatted("Legacy");
-        ImGui::PopFont();
-        IntRow("hotkey_code", "##hotkey_code", 0, 255, "legacy key code %d");
+        lwf::ui::widgets::Row("##row_other_hotkey_cancel", "Cancel", nullptr, 248.0f * scale,
+                              scale, *current_palette_);
+        StringFieldRow("hotkey_cancel", hotkey_cancel_field_, "##hotkey_cancel", false);
+        lwf::ui::widgets::RowEnd(scale);
     }
-    EndCard(scale);
+    {
+        lwf::ui::widgets::Row("##row_other_hotkey_command", "Command mode", nullptr,
+                              248.0f * scale, scale, *current_palette_);
+        StringFieldRow("hotkey_command", hotkey_command_field_, "##hotkey_command", false);
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_other_hotkey_paste_last", "Paste last", nullptr,
+                              248.0f * scale, scale, *current_palette_);
+        StringFieldRow("hotkey_paste_last", hotkey_paste_last_field_, "##hotkey_paste_last",
+                       false);
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    ImGui::TextDisabled("Chords as text, e.g. Ctrl+Shift+T.");
+    if (!validation_error_.empty()) {
+        ImGui::TextColored(Color(current_palette_->err), "%s", validation_error_.c_str());
+    }
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
+
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Legacy");
+    ImGui::PopFont();
+    {
+        // Kept for T14 (schema key stays; only the UI row goes then).
+        lwf::ui::widgets::Row("##card_general_legacy", "Legacy key code", nullptr,
+                              248.0f * scale, scale, *current_palette_);
+        IntRow("hotkey_code", "##hotkey_code", 0, 255, "legacy key code %d");
+        lwf::ui::widgets::RowEnd(scale);
+    }
 }
 
 void MainWindow::DrawSettingsPage(float scale) {
