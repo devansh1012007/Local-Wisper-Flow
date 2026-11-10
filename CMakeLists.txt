@@ -162,6 +162,7 @@ add_executable(lwf_tests
     tests/test_gain.cpp
     tests/test_history.cpp
     tests/test_history_page.cpp
+    tests/test_profiles_page.cpp
     tests/test_hotkey.cpp
     tests/test_insights.cpp
     tests/test_dictionary_page.cpp
@@ -376,6 +377,7 @@ if(LWF_BUILD_FULL)
             src/ui/pages/TransformsPage.cpp
             src/ui/pages/SnippetsPage.cpp
             src/ui/pages/HistoryPage.cpp
+            src/ui/pages/ProfilesPage.cpp
             src/ui/theme/ThemePalette.cpp
             src/ui/widgets/Buttons.cpp
             src/ui/widgets/Display.cpp

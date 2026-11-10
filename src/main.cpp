@@ -67,6 +67,7 @@
 #include "ui/pages/ScratchpadPage.h"
 #include "ui/pages/SnippetsPage.h"
 #include "ui/pages/HistoryPage.h"
+#include "ui/pages/ProfilesPage.h"
 #include "ui/pages/TransformsPage.h"
 
 #include <atomic>
@@ -625,6 +626,8 @@ int main() {
             history, config.Store(),
             [&full](const std::string& p) { ShellExecuteA(nullptr, "open", p.c_str(), nullptr, nullptr, 1); },
             [&full]() { full.OpenSettingsPrivacy(); }));
+        full.SetProfilesPage(std::make_unique<lwf::ui::pages::ProfilesPage>(
+            app_context, config.Store(), data_dir));
         {
             MainWindow::DataResetStores reset_stores;
             reset_stores.dictionary = &dictionary_store;

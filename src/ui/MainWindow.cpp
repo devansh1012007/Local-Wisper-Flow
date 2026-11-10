@@ -27,6 +27,7 @@
 #include "ui/pages/ScratchpadPage.h"
 #include "ui/pages/SnippetsPage.h"
 #include "ui/pages/HistoryPage.h"
+#include "ui/pages/ProfilesPage.h"
 #include "ui/pages/TransformsPage.h"
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
@@ -382,6 +383,10 @@ void MainWindow::SetHistoryPage(std::unique_ptr<lwf::ui::pages::HistoryPage> pag
     history_page_ = std::move(page);
 }
 
+void MainWindow::SetProfilesPage(std::unique_ptr<lwf::ui::pages::ProfilesPage> page) {
+    profiles_page_ = std::move(page);
+}
+
 void MainWindow::SetInsightsPage(std::unique_ptr<lwf::ui::insights::InsightsPage> page) {
     insights_page_ = std::move(page);
 }
@@ -588,6 +593,9 @@ void MainWindow::RenderPages(float scale) {
         case Page::Scratchpad:
             DrawScratchpadPage(scale);
             break;
+        case Page::Profiles:
+            DrawProfilesPage(scale);
+            break;
         case Page::Settings:
             DrawSettingsPage(scale);
             break;
@@ -640,6 +648,7 @@ void MainWindow::DrawTopStrip(float scale) {
         {"##strip_snippets", "Snippets", Page::Snippets},
         {"##strip_transforms", "Transforms", Page::Transforms},
         {"##strip_scratchpad", "Scratchpad", Page::Scratchpad},
+        {"##strip_profiles", "Profiles", Page::Profiles},
         {"##strip_settings", "Settings", Page::Settings},
     };
 
@@ -1295,6 +1304,10 @@ void MainWindow::ActivateStripPage(Page page) {
 
 void MainWindow::OpenHistoryPage() {
     ActivateStripPage(Page::History);
+}
+
+void MainWindow::OpenProfilesPage() {
+    ActivateStripPage(Page::Profiles);
 }
 
 void MainWindow::OpenSettingsPrivacy() {
@@ -2745,6 +2758,15 @@ void MainWindow::DrawHistoryPage(float scale) {
         return;
     }
     DrawPageChrome("History", "What you dictated, kept on this computer.", scale);
+    ImGui::TextDisabled("Not available yet.");
+}
+
+void MainWindow::DrawProfilesPage(float scale) {
+    if (profiles_page_) {
+        profiles_page_->Draw(scale, *current_palette_);
+        return;
+    }
+    DrawPageChrome("Profiles", "How dictation adapts to each app.", scale);
     ImGui::TextDisabled("Not available yet.");
 }
 

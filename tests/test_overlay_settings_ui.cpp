@@ -610,7 +610,7 @@ TEST_CASE("main window keyboard nav and commit-on-deactivate wiring") {
 TEST_CASE("studio navigation routes round-trip with Home fallback") {
     using Page = MainWindow::Page;
     const Page pages[] = {Page::Home, Page::History, Page::Insights, Page::Dictionary, Page::Snippets,
-                          Page::Transforms, Page::Scratchpad, Page::Settings};
+                          Page::Transforms, Page::Scratchpad, Page::Profiles, Page::Settings};
     for (Page page : pages) {
         const std::string route = MainWindow::RouteName(page);
         CHECK(MainWindow::PageForRoute(route) == page);
@@ -622,6 +622,7 @@ TEST_CASE("studio navigation routes round-trip with Home fallback") {
     CHECK(MainWindow::PageForRoute("Snippets") == Page::Snippets);
     CHECK(MainWindow::PageForRoute("Transforms") == Page::Transforms);
     CHECK(MainWindow::PageForRoute("Scratchpad") == Page::Scratchpad);
+    CHECK(MainWindow::PageForRoute("Profiles") == Page::Profiles);
     CHECK(MainWindow::PageForRoute("Settings") == Page::Settings);
     CHECK(MainWindow::PageForRoute("Welcome") == Page::Home);
     CHECK(MainWindow::PageForRoute("Speech") == Page::Home);
@@ -685,7 +686,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     const std::string header_content((std::istreambuf_iterator<char>(header)),
                                      std::istreambuf_iterator<char>());
     CHECK(header_content.find("enum class Page") != std::string::npos);
-    CHECK(header_content.find("Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Scratchpad, Settings") != std::string::npos);
+    CHECK(header_content.find("Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Scratchpad, Profiles, Settings") != std::string::npos);
     CHECK(header_content.find("Welcome, Home, Speech, Cloud, Cleanup, Privacy, About") == std::string::npos);
     CHECK(header_content.find("void DrawSettingsPage(float scale)") != std::string::npos);
     CHECK(header_content.find("void DrawGeneralPage(float scale)") != std::string::npos);
@@ -694,6 +695,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(header_content.find("void DrawSnippetsPage(float scale)") != std::string::npos);
     CHECK(header_content.find("void DrawTransformsPage(float scale)") != std::string::npos);
     CHECK(header_content.find("void DrawScratchpadPage(float scale)") != std::string::npos);
+    CHECK(header_content.find("void DrawProfilesPage(float scale)") != std::string::npos);
     CHECK(header_content.find("RouteName") != std::string::npos);
     CHECK(header_content.find("PageForRoute") != std::string::npos);
 
@@ -708,6 +710,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("##strip_snippets") != std::string::npos);
     CHECK(content.find("##strip_transforms") != std::string::npos);
     CHECK(content.find("##strip_scratchpad") != std::string::npos);
+    CHECK(content.find("##strip_profiles") != std::string::npos);
     CHECK(content.find("##strip_settings") != std::string::npos);
     CHECK(content.find("##nav_home") == std::string::npos);
     CHECK(content.find("##nav_insights") == std::string::npos);
@@ -731,7 +734,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("##tab_cleanup") != std::string::npos);
     CHECK(content.find("##tab_privacy") != std::string::npos);
     CHECK(content.find("##tab_about") != std::string::npos);
-    CHECK(count_occurrences(content, "Not available yet.") == 6);
+    CHECK(count_occurrences(content, "Not available yet.") == 7);
     CHECK(content.find("kRailWidth") == std::string::npos);
     CHECK(content.find("40.0f * scale") == std::string::npos);
     CHECK(content.find("font_card_title_px") != std::string::npos);
@@ -745,6 +748,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("void MainWindow::DrawSnippetsPage") != std::string::npos);
     CHECK(content.find("void MainWindow::DrawTransformsPage") != std::string::npos);
     CHECK(content.find("void MainWindow::DrawScratchpadPage") != std::string::npos);
+    CHECK(content.find("void MainWindow::DrawProfilesPage") != std::string::npos);
     CHECK(content.find("##card_general_hotkey") != std::string::npos);
     CHECK(content.find("StartLearnHotkey") != std::string::npos);
     CHECK(content.find("sound_enabled") != std::string::npos);
@@ -1597,6 +1601,7 @@ TEST_CASE(
         "src/ui/MainWindow.cpp",
         "src/ui/pages/DictionaryPage.cpp",
         "src/ui/pages/HistoryPage.cpp",
+        "src/ui/pages/ProfilesPage.cpp",
         "src/ui/pages/InsightsPage.cpp",
         "src/ui/pages/SnippetsPage.cpp",
         "src/ui/pages/TransformsPage.cpp",
