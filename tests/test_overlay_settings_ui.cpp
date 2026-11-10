@@ -609,13 +609,14 @@ TEST_CASE("main window keyboard nav and commit-on-deactivate wiring") {
 
 TEST_CASE("studio navigation routes round-trip with Home fallback") {
     using Page = MainWindow::Page;
-    const Page pages[] = {Page::Home, Page::Insights, Page::Dictionary, Page::Snippets,
+    const Page pages[] = {Page::Home, Page::History, Page::Insights, Page::Dictionary, Page::Snippets,
                           Page::Transforms, Page::Scratchpad, Page::Settings};
     for (Page page : pages) {
         const std::string route = MainWindow::RouteName(page);
         CHECK(MainWindow::PageForRoute(route) == page);
     }
     CHECK(MainWindow::PageForRoute("Home") == Page::Home);
+    CHECK(MainWindow::PageForRoute("History") == Page::History);
     CHECK(MainWindow::PageForRoute("Insights") == Page::Insights);
     CHECK(MainWindow::PageForRoute("Dictionary") == Page::Dictionary);
     CHECK(MainWindow::PageForRoute("Snippets") == Page::Snippets);
@@ -684,7 +685,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     const std::string header_content((std::istreambuf_iterator<char>(header)),
                                      std::istreambuf_iterator<char>());
     CHECK(header_content.find("enum class Page") != std::string::npos);
-    CHECK(header_content.find("Welcome, Home, Insights, Dictionary, Snippets, Transforms, Scratchpad, Settings") != std::string::npos);
+    CHECK(header_content.find("Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Scratchpad, Settings") != std::string::npos);
     CHECK(header_content.find("Welcome, Home, Speech, Cloud, Cleanup, Privacy, About") == std::string::npos);
     CHECK(header_content.find("void DrawSettingsPage(float scale)") != std::string::npos);
     CHECK(header_content.find("void DrawGeneralPage(float scale)") != std::string::npos);
@@ -701,6 +702,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     const std::string content((std::istreambuf_iterator<char>(main_window)),
                               std::istreambuf_iterator<char>());
     CHECK(content.find("##strip_home") != std::string::npos);
+    CHECK(content.find("##strip_history") != std::string::npos);
     CHECK(content.find("##strip_insights") != std::string::npos);
     CHECK(content.find("##strip_dictionary") != std::string::npos);
     CHECK(content.find("##strip_snippets") != std::string::npos);
@@ -729,7 +731,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("##tab_cleanup") != std::string::npos);
     CHECK(content.find("##tab_privacy") != std::string::npos);
     CHECK(content.find("##tab_about") != std::string::npos);
-    CHECK(count_occurrences(content, "Not available yet.") == 5);
+    CHECK(count_occurrences(content, "Not available yet.") == 6);
     CHECK(content.find("kRailWidth") == std::string::npos);
     CHECK(content.find("40.0f * scale") == std::string::npos);
     CHECK(content.find("font_card_title_px") != std::string::npos);
@@ -1594,6 +1596,7 @@ TEST_CASE(
     const std::vector<std::string> layout_sources = {
         "src/ui/MainWindow.cpp",
         "src/ui/pages/DictionaryPage.cpp",
+        "src/ui/pages/HistoryPage.cpp",
         "src/ui/pages/InsightsPage.cpp",
         "src/ui/pages/SnippetsPage.cpp",
         "src/ui/pages/TransformsPage.cpp",

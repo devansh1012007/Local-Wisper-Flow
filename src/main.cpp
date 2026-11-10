@@ -66,6 +66,7 @@
 #include "ui/pages/InsightsPage.h"
 #include "ui/pages/ScratchpadPage.h"
 #include "ui/pages/SnippetsPage.h"
+#include "ui/pages/HistoryPage.h"
 #include "ui/pages/TransformsPage.h"
 
 #include <atomic>
@@ -564,6 +565,7 @@ int main() {
         engine.SetStatsStore(&usage_stats);
         engine.SetActiveWindow(CreateActiveWindow());
         engine.SetAppContextResolver(&app_context);
+        engine.SetHistoryStore(&history);
         engine.SetScratchpadTarget(false);
         engine.SetTransformStore(&transforms);
         engine.SetTransformLlm(llm);
@@ -619,6 +621,10 @@ int main() {
         full.SetScratchpadPage(
             std::make_unique<ScratchpadPage>(notes, config.Store(), ui_bus));
         full.SetSnippetsPage(std::make_unique<lwf::ui::pages::SnippetsPage>(snippets));
+        full.SetHistoryPage(std::make_unique<lwf::ui::pages::HistoryPage>(
+            history, config.Store(),
+            [&full](const std::string& p) { ShellExecuteA(nullptr, "open", p.c_str(), nullptr, nullptr, 1); },
+            [&full]() { full.OpenSettingsPrivacy(); }));
         {
             MainWindow::DataResetStores reset_stores;
             reset_stores.dictionary = &dictionary_store;
@@ -682,6 +688,9 @@ int main() {
                         full.SetVisible(true);
                         break;
                     case UiCommandType::OpenHistory:
+                        full.SetVisible(true);
+                        full.OpenHistoryPage();
+                        break;
                     case UiCommandType::OpenLogsFolder:
                         ShellExecuteA(nullptr, "open", (data_dir + "\\logs").c_str(), nullptr,
                                       nullptr, 1);

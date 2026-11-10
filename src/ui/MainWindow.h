@@ -33,6 +33,7 @@ class IHttpTransport;
 namespace lwf::ui::pages {
 class DictionaryPage;
 class SnippetsPage;
+class HistoryPage;
 }
 namespace lwf::ui::insights {
 class InsightsPage;
@@ -54,12 +55,14 @@ struct Palette;
 // docs/design/mockup.html sections 3 and 5.
 class MainWindow {
 public:
-    enum class Page { Welcome, Home, Insights, Dictionary, Snippets, Transforms, Scratchpad, Settings };
+    enum class Page { Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Scratchpad, Settings };
 
     static const char* RouteName(Page page) {
         switch (page) {
             case Page::Home:
                 return "Home";
+            case Page::History:
+                return "History";
             case Page::Insights:
                 return "Insights";
             case Page::Dictionary:
@@ -78,6 +81,9 @@ public:
     }
 
     static Page PageForRoute(const std::string& route) {
+        if (route == "History") {
+            return Page::History;
+        }
         if (route == "Insights") {
             return Page::Insights;
         }
@@ -129,6 +135,7 @@ public:
     void SetLearnedHotkey(const std::string& target_key, const std::string& chord);
     void SetRecorderError(const std::string& target_key, const std::string& message);
     void SetDictionaryPage(std::unique_ptr<lwf::ui::pages::DictionaryPage> page);
+    void SetHistoryPage(std::unique_ptr<lwf::ui::pages::HistoryPage> page);
     void SetInsightsPage(std::unique_ptr<lwf::ui::insights::InsightsPage> page);
     void SetTransformsPage(std::unique_ptr<lwf::ui::TransformsPage> page);
     void SetScratchpadPage(std::unique_ptr<ScratchpadPage> page);
@@ -168,6 +175,8 @@ public:
         std::function<ModelListResult(IHttpTransport&, const std::string&)>;
     void SetModelsFetcher(ModelListFetcher fetcher);
 
+    void OpenHistoryPage();
+    void OpenSettingsPrivacy();
     bool FirstRunNeeded() const;
 
 private:
@@ -182,6 +191,7 @@ private:
     void DrawHomePage(float scale);
     void DrawInsightsPage(float scale);
     void DrawDictionaryPage(float scale);
+    void DrawHistoryPage(float scale);
     void DrawSnippetsPage(float scale);
     void DrawTransformsPage(float scale);
     void DrawScratchpadPage(float scale);
@@ -273,6 +283,7 @@ private:
     std::string last_transcript_;
     std::string detected_hotkey_;
     std::unique_ptr<lwf::ui::pages::DictionaryPage> dictionary_page_;
+    std::unique_ptr<lwf::ui::pages::HistoryPage> history_page_;
     std::unique_ptr<lwf::ui::pages::SnippetsPage> snippets_page_;
     std::unique_ptr<lwf::ui::insights::InsightsPage> insights_page_;
     std::unique_ptr<lwf::ui::TransformsPage> transforms_page_;

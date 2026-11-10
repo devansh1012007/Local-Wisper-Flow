@@ -9,6 +9,7 @@
 #include "core/CommandModeController.h"
 #include "core/ILlmProvider.h"
 #include "core/StatsStore.h"
+#include "core/HistoryStore.h"
 #include "core/StreamingDictation.h"
 #include "core/TextPipeline.h"
 #include "core/TransformStore.h"
@@ -258,6 +259,10 @@ void DictationEngine::SetToneFeedback(IToneFeedback* tones) {
 
 void DictationEngine::SetStatsStore(StatsStore* stats) {
     stats_ = stats;
+}
+
+void DictationEngine::SetHistoryStore(HistoryStore* store) {
+    history_ = store;
 }
 
 void DictationEngine::SetActiveWindow(IActiveWindow* active_window) {
@@ -682,6 +687,20 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
         record.words_corrected = result.words_corrected;
         record.dictionary_fixes = result.dictionary_fixes;
         stats_->Record(record);
+    }
+
+    if (history_ != nullptr && !scratchpad_target_.load()) {
+        HistoryEntry entry;
+        entry.timestamp = HistoryStore::NowSeconds();
+        entry.raw = raw;
+        entry.text = final_text;
+        entry.app_profile = app_context_ != nullptr
+                                ? app_context_->Resolve(capture_app_.process_name,
+                                                        capture_app_.window_title)
+                                      .name
+                                : std::string();
+        entry.duration_ms = duration_ms;
+        history_->Append(entry);
     }
 
     {

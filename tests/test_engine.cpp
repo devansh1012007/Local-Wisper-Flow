@@ -6,6 +6,7 @@
 #include "core/CommandModeController.h"
 #include "core/PersonalDictionary.h"
 #include "core/StatsStore.h"
+#include "core/HistoryStore.h"
 
 #include <doctest/doctest.h>
 #include <chrono>
@@ -353,6 +354,27 @@ TEST_CASE("stats store records successful injection") {
     CHECK(snap.begin()->second.speaking_ms == 120);
     REQUIRE(snap.begin()->second.apps.find("unknown") != snap.begin()->second.apps.end());
     CHECK(snap.begin()->second.apps.at("unknown") == 2);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("history store records successful injection") {
+    const std::string path = (std::filesystem::temp_directory_path() /
+                              std::string("lwf_hist_wiring_success.jsonl")).string();
+    std::filesystem::remove(path);
+    HistoryStore store(path, true, true, 50, 90);
+    Harness h;
+    auto engine = MakeEngine(h);
+    engine->SetHistoryStore(&store);
+
+    PressAndSpeak(h, *engine);
+
+    REQUIRE(h.injector.InjectionCount() == 1);
+    CHECK(store.Size() == 1);
+    const auto last = store.Last();
+    REQUIRE(last.has_value());
+    CHECK(last->text == "hello world");
+    CHECK_FALSE(last->raw.empty());
+    CHECK(last->duration_ms > 0);
     std::filesystem::remove(path);
 }
 

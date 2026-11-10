@@ -26,6 +26,7 @@
 #include "ui/pages/InsightsPage.h"
 #include "ui/pages/ScratchpadPage.h"
 #include "ui/pages/SnippetsPage.h"
+#include "ui/pages/HistoryPage.h"
 #include "ui/pages/TransformsPage.h"
 #include "ui/theme/ThemePalette.h"
 #include "ui/theme/ThemeStyle.h"
@@ -377,6 +378,10 @@ void MainWindow::SetDictionaryPage(std::unique_ptr<lwf::ui::pages::DictionaryPag
     dictionary_page_ = std::move(page);
 }
 
+void MainWindow::SetHistoryPage(std::unique_ptr<lwf::ui::pages::HistoryPage> page) {
+    history_page_ = std::move(page);
+}
+
 void MainWindow::SetInsightsPage(std::unique_ptr<lwf::ui::insights::InsightsPage> page) {
     insights_page_ = std::move(page);
 }
@@ -565,6 +570,9 @@ void MainWindow::RenderPages(float scale) {
         case Page::Home:
             DrawHomePage(scale);
             break;
+        case Page::History:
+            DrawHistoryPage(scale);
+            break;
         case Page::Insights:
             DrawInsightsPage(scale);
             break;
@@ -626,6 +634,7 @@ void MainWindow::DrawTopStrip(float scale) {
     // Same order as the retired rail. Welcome is not a strip destination.
     const NavItem items[] = {
         {"##strip_home", "Home", Page::Home},
+        {"##strip_history", "History", Page::History},
         {"##strip_insights", "Insights", Page::Insights},
         {"##strip_dictionary", "Dictionary", Page::Dictionary},
         {"##strip_snippets", "Snippets", Page::Snippets},
@@ -1282,6 +1291,15 @@ void MainWindow::ActivateStripPage(Page page) {
     // arm the restore here (R-W2-003). Bindings live only in SetVisible
     // and Welcome-Finish.
     page_focus_pending_ = false;
+}
+
+void MainWindow::OpenHistoryPage() {
+    ActivateStripPage(Page::History);
+}
+
+void MainWindow::OpenSettingsPrivacy() {
+    settings_tab_ = SettingsTab::Privacy;
+    ActivateStripPage(Page::Settings);
 }
 
 #ifdef _WIN32
@@ -2718,6 +2736,15 @@ void MainWindow::DrawDictionaryPage(float scale) {
         return;
     }
     DrawPageChrome("Dictionary", "Words the app corrects.", scale);
+    ImGui::TextDisabled("Not available yet.");
+}
+
+void MainWindow::DrawHistoryPage(float scale) {
+    if (history_page_) {
+        history_page_->Draw(scale, *current_palette_);
+        return;
+    }
+    DrawPageChrome("History", "What you dictated, kept on this computer.", scale);
     ImGui::TextDisabled("Not available yet.");
 }
 
