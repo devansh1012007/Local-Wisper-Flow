@@ -133,6 +133,7 @@ td.exempt { color: #8A7A52; font-weight: 600; }
 <main>
 <header class='doc-head'>
 <h1>Local Wisper Flow — Full UI redesign reference</h1>
+<div style='border:2px solid #7A5C25;background:#FFFDF7;padding:12px 16px;margin:16px 0;font-size:13px;color:#1C2B26'><strong>Legacy — superseded.</strong> This mockup is superseded by <code>docs/design/DESIGN.md</code> on branch <code>ops/ui-redesign-v2</code> and is retained for history only. Do not use its values for new work.</div>
 <p class='cap'>Phase 1 (Full Unify + Ivory Light primary). This file is the visual source of truth for Phase 2 token work. Single Palette struct, Ivory Light primary, dark as named variant.</p>
 <p class='cap'>Fonts shown are system stand-ins. EB Garamond (serif display) and Inter (sans body) remain a proposal pending bundling — no font files added in this phase; the app keeps the scaled default font. Type sizes below are design px at 1.0 scale and map to metrics::font_* tokens.</p>
 <p class='cap'>Contrast is computed with the WCAG relative-luminance formula: L = 0.2126R + 0.7152G + 0.0722B over linearized sRGB channels (c/12.92 if c&lt;=0.03928 else ((c+0.055)/1.055)^2.4), ratio = (Lhi+0.05)/(Llo+0.05). Policy: all text pairs &gt;=4.5:1, meaningful non-text &gt;=3:1, only the two declared hairlines (border/bg, border/surface) exempt below 3:1.</p>
@@ -152,8 +153,6 @@ td.exempt { color: #8A7A52; font-weight: 600; }
 <div class='notice'><strong>What changed in Phase 1 (summary).</strong>
 Single accent per view: brass only. Light accent unified from navy #1F3A5F to brass #7A5C25 (accent/brass/focus all brass on light); navy eliminated. Dark Hunter/Brass values retained as the named variant so the struct shape is unchanged. Studio teal deprecated and absorbed into the same Palette. Radius reconciled to one radius_card = 10px. Rail canonicalized to 220px (token 208 retired). Mini fade-in standardized to 150&nbsp;ms to meet the 150–240&nbsp;ms functional-motion band.</div>
 </header>
-
-<div style='border:2px solid #7A5C25;background:#FFFDF7;padding:12px 16px;margin:16px 0;font-size:13px;color:#1C2B26'><strong>Legacy — superseded.</strong> This mockup is superseded by <code>docs/design/DESIGN.md</code> on branch <code>ops/ui-redesign-v2</code> and is retained for history only. Do not use its values for new work.</div>
 
 <section id='palette'>
 <h2>1. Single Palette — token table</h2>

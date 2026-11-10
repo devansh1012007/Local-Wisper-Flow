@@ -359,3 +359,30 @@ with `studio_metrics` and `HeatColor` (brass ramp) moved verbatim into the
 same header (`lwf::ui` namespace, ImGui-free). The deprecated `StudioPalette`
 shim was deleted in `1e5651a`. Redesign guardrails R5-R9 are unchanged by
 this retirement.
+
+## 8. Status update — Hairline supersedes Ivory (ui-redesign-v2, 2026-11-10)
+
+Recorded by the T16 docs sweep; §5.1 and §7 above stay as the point-in-time
+records they were written as.
+
+- §7's "Ivory is the one primary identity" is historical now. The Hairline
+  identity (docs/design/DESIGN.md, signed off 2026-11-09) replaced Ivory on
+  `ops/ui-redesign-v2`: two themes — Graphite (dark, runtime default) and
+  Paper (light, config `theme` switch, live swap) — single accent A (lime
+  0xB8E356 dark / 0x3F6212 light), heat ramp re-derived lime-over-Paper. Ivory
+  and brass hex values survive only as history in the superseded mockup and
+  plan documents.
+- `docs/design/mockup.html` is superseded by DESIGN.md on this branch (legacy
+  banner at the top of that file). The mockup.html section references in the
+  audit text above describe the pre-Hairline direction and are kept verbatim
+  as history.
+- D5 (tray "History..." misroute, no History UI): CLOSED by T11 — the History
+  page landed and the tray's OpenHistory routing was fixed.
+- D8 (no hover/drag policy): hover, click-resume and dot drag are present on
+  this branch (Overlay drag state + hit-test work); real-hardware verification
+  is still owed.
+- D6 (fonts) and D7 (DPI / work-area refresh) remain partial: content scales
+  via FontScaleMain + design-px tokens, real fonts are still owed, and
+  nothing calls `Overlay::SetWorkArea` after init (no display-change
+  re-enumeration). Owed manual checks are consolidated in
+  docs/MANUAL_TEST_WINDOWS.md section V2.

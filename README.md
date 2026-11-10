@@ -6,7 +6,7 @@ optional local LLM run on this machine; a cloud STT provider is available
 behind an explicit consent gate (see "Cloud speech-to-text" below).
 
 - **Press-to-talk dictation** with VAD-gated capture, a mini overlay badge and
-  a full settings window (Dear ImGui).
+  a full window with top-strip navigation (Dear ImGui).
 - **Text pipeline**: spoken commands, personal dictionary, snippets, optional
   LLM cleanup, paste-chord handling per app.
 - **Streaming mode**: long dictations commit in segments at pauses with a
@@ -60,9 +60,10 @@ known hash (unverified entries warn in the UI).
 ## First run
 
 The wizard walks through the hotkey, the whisper model and the cleanup LLM.
-Everything can be changed later in Settings (rail: Home, Speech, Cloud,
-Cleanup, Privacy, About). Dictation starts immediately with local Whisper;
-cloud STT stays off until you opt in.
+Everything can be changed later in the Full window (top strip: Home, History,
+Insights, Dictionary, Snippets, Transforms, Scratchpad, Profiles, plus the
+Settings tabs General, Speech, Cloud, Cleanup, Privacy, About). Dictation
+starts immediately with local Whisper; cloud STT stays off until you opt in.
 
 ## Hotkeys (config keys)
 
@@ -121,8 +122,9 @@ the data dir; dictionary and snippets in `dictionary.json` / `snippets.json`; hi
 ## Cloud speech-to-text (opt-in)
 
 Dictation stays on-device by default. Three opt-in cloud providers are available behind
-Settings > Cloud, each gated by an explicit consent flag plus an API key that only ever
-comes from the environment - never from config.json, and never written to logs:
+Settings > Cloud, each gated by an explicit consent flag plus an API key that is entered
+masked in Settings > Cloud (stored in `api_keys.json` next to `config.json`) or provided
+via the provider's environment variable - never in config.json, and never written to logs:
 
 | Provider | `stt_provider` | Key environment variable | Contract |
 |---|---|---|---|

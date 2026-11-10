@@ -71,8 +71,9 @@ ctest --test-dir build
 
 ## Config and data
 
-- Config keys (`config.json`): `hotkey_code`, `whisper_model_path`, `vad_threshold` are
-  required; `llm_model_path`, `use_remote` (default false) and `remote_endpoint`
+- Config keys (`config.json`): `hotkey_code` (schema key + LoadBindings fallback
+  retained; its Settings UI row was removed in T14 — do not re-add a row),
+  `whisper_model_path`, `vad_threshold` are required; `llm_model_path`, `use_remote` (default false) and `remote_endpoint`
   (default `localhost:50051`) optional. The full schema with defaults lives in
   `SettingsStore::BuildSchema()` (src/core/SettingsStore.cpp); keys are additive-only
   across releases and unknown keys are preserved on save. Cloud STT is opt-in:
@@ -135,8 +136,11 @@ vendor docs on 2026-11-04, NOT yet against the live APIs.
 ## UI (GLFW + Dear ImGui, two windows)
 
 - Two OS windows, each with its own Dear ImGui context AND its own GL context:
-  `MainWindow` (Full window: rail + pages) and `Overlay` (Mini badge, draggable,
-  click-through unless hovered). Never share a context between windows.
+  `MainWindow` (Full window: Hairline top-strip navigation + pages — Welcome,
+  Home, History, Insights, Dictionary, Snippets, Transforms, Scratchpad,
+  Profiles, Settings; the left rail was replaced by the top strip in T4a) and
+  `Overlay` (Mini badge, draggable, click-through unless hovered). Never share
+  a context between windows.
 - **`ImGui::CreateContext()` restores the PREVIOUS context after initializing the new
   one** (vendored v1.92.9b behaviour). Do NOT do
   `imgui_context_ = ImGui::GetCurrentContext()` after `CreateContext()` — it returns
@@ -148,11 +152,15 @@ vendor docs on 2026-11-04, NOT yet against the live APIs.
 - The main loop (src/main.cpp) calls `full.RunOnce()` then `overlay.RenderFrame()`
   every tick; both re-assert `glfwMakeContextCurrent()` and `ImGui::SetCurrentContext()`
   before their backend NewFrame calls because they run back-to-back on one thread.
-- Theme tokens are exact mockup values in src/ui/theme/ThemePalette.h and
-  tests/test_overlay_settings_ui.cpp enforces them (and the 3:1/4.5:1 contrast policy
-  off those exact tokens). Do NOT lighten colors to "fix" perceived contrast —
-  the dark-screen bug was a viewport/context bug, not a color bug; the earlier
-  lightened-palette change was reverted.
+- Theme tokens are the Hairline spec values from docs/design/DESIGN.md (the
+  design source of truth; docs/design/mockup.html is superseded legacy) in
+  src/ui/theme/ThemePalette.h, and tests/test_overlay_settings_ui.cpp enforces
+  them (and the 3:1/4.5:1 contrast policy off those exact tokens). Two
+  palettes, one accent per theme: Graphite (kDarkPalette, runtime default) and
+  Paper (kLightPalette, config `theme` = "graphite"/"paper", live swap, T2b).
+  Do NOT lighten colors to "fix" perceived contrast — the dark-screen bug was
+  a viewport/context bug, not a color bug; the earlier lightened-palette
+  change was reverted.
 - The Full window is the only visible main window; it hides on close (the tray owns
   Quit) and opens from the tray (Open Settings…). `first_run` (schema default true)
   and an empty `whisper_model_path` control whether it appears at startup.

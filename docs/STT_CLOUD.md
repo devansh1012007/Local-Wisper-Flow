@@ -123,17 +123,21 @@ bounded by `stt_timeout_ms`.
 
 The consent gate lives in `src/core/ConsentGate.{h,cpp}`: one function decides
 whether cloud is allowed (known provider + `stt_consent_accepted` + a
-non-empty key from the provider's environment variable) and returns a
-log-safe reason when it is not. The router, `main`, and the settings UI all
+non-empty key from the provider's key source — an `api_keys.json` entry next
+to `config.json` first, then the provider's environment variable) and returns
+a log-safe reason when it is not. The router, `main`, and the settings UI all
 read the same verdict, so the config boolean, the wiring, and the UI cannot
 drift apart.
 
 Settings > Cloud tab (S5) turns consent into an explicit in-app action: a
-provider combo (local/gnani today) and an "I understand; enable cloud
+provider combo (local/gnani/elevenlabs/muse) and an "I understand; enable cloud
 transcription" checkbox that explains what leaving the device means. Changing
-either needs a restart. The API key is never entered in the UI - it stays in
-the environment. Onboarding keeps pushing local-first; cloud consent is a
-deliberate Settings action.
+either needs a restart. Provider API keys are entered in the same tab behind
+masked rows (T6, 2026-11-09): a saved key is stored in `api_keys.json` next to
+`config.json` and takes precedence over the provider's environment variable
+(`GNANI_API_KEY` / `ELEVENLABS_API_KEY` / `META_MODEL_API_KEY`); the key is
+never written to `config.json`, logs, or history. Onboarding keeps pushing
+local-first; cloud consent is a deliberate Settings action.
 
 Failed cloud attempts keep a redacted error `detail` in their attempt stats
 (server text with the API key masked, auth header values masked by

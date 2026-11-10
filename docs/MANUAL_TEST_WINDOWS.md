@@ -301,6 +301,12 @@ Expected: v0 keys unchanged, new keys added with defaults, `config.json.bak` cre
 > cwd fallbacks, ba46cbf/db4e40a). Both windows render (verified by window capture).
 > Every item below is still UNVERIFIED until ticked on this machine.
 
+> 2026-11-10 sweep note (T16): the UI nouns below were updated to the Hairline
+> reality (top strip instead of the left rail, Graphite/Paper instead of
+> Hunter/Brass/Ivory); the step structure and the page content they describe
+> are the R1-era shapes — for the CURRENT ui-redesign-v2 checks run section
+> V2 at the bottom of this file.
+
 
 Build first, then run through these in order. Mark PASS only on real Windows
 hardware. All of R replaces the old dashboard/settings/wizard windows.
@@ -316,8 +322,8 @@ hardware. All of R replaces the old dashboard/settings/wizard windows.
 ### R-b: mini badge states
 1. Ready: outline mic at reduced opacity. Hover it: it should come to full
    opacity and the desktop under it should not be blocked once you move away.
-2. Hold the PTT hotkey and speak: filled brass mic, breathing ring, five
-   level bars moving with your voice.
+2. Hold the PTT hotkey and speak: filled mic in the accent color, breathing
+   ring, five level bars moving with your voice.
 3. Release: three thinking dots, then a brief check, then back to Ready.
 4. Tray: disable dictation. Badge shows the paused mic (muted, slash). Click
    it: dictation re-enables (verify the tray checkmark follows).
@@ -328,8 +334,8 @@ hardware. All of R replaces the old dashboard/settings/wizard windows.
 
 ### R-c: full window
 1. Tray > Settings...: the full window opens (960x640 default, native title
-   bar, rail with Home/Speech/Cleanup/Privacy/About, dark Hunter-and-Brass
-   theme).
+   bar, top-strip navigation, dark Graphite theme — Paper is selectable in
+   Settings > General and swaps live).
 2. Home: Right now line, hotkey chips, Trust card, Quick settings toggles,
    Last dictation (dictate something first, then Copy it back from the
    clipboard).
@@ -362,10 +368,10 @@ These landed in the 20261106-gui wave run and are NOT claimed as verified.
 Do them on a Windows machine at 100%, 125% and 150% DPI.
 
 ### R2-a: keyboard navigation (GUI-A1)
-1. Focus the Full window; verify Tab / Shift+Tab reaches rail items and toggles
-   in a sane order, and Arrow keys move within the rail.
-2. Focused rail item / toggle shows a 2 px focus ring (kDarkPalette.focus).
-3. Pressing Enter or Space on a focused rail item switches page.
+1. Focus the Full window; verify Tab / Shift+Tab reaches top-strip items and
+   toggles in a sane order, and Arrow keys move within the top strip.
+2. Focused top-strip item / toggle shows a 2 px focus ring (kDarkPalette.focus).
+3. Pressing Enter or Space on a focused top-strip item switches page.
 4. Mouse click still works, and clicking does not steal focus from keyboard
    navigation mid-edit (NavActive gating).
 
@@ -446,6 +452,47 @@ d. Manual id: in the `Type a model id` field (below the Refresh button) type a
    and pressing `Use this model` sets the model to empty (same as selecting
    the `No model set` placeholder); after restart the combo previews
    `No model set` and Settings > Privacy shows `OpenRouter model: not set`.
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+
+## V2: ui-redesign-v2 manual checks (Hairline, 2026-11-10)
+
+Checks for the Hairline redesign landed on `ops/ui-redesign-v2` (T2b-T15).
+Steps 1-4 are the new-UI basics; steps 5-9 are the owed items recorded
+during the tasks. Not claimed as verified until PASS boxes are filled on real
+Windows hardware; the dev sandbox has no window runtime.
+
+1. Top-strip navigation (T4a/T4b): the strip shows the current page; strip
+   press and Ctrl+<digit> land on the same page with identical persistence,
+   error-clear and focus semantics (shared ActivateStripPage path).
+2. Theme switcher (Settings > General, T5 + T2b): Graphite <-> Paper swaps
+   live on all three windows (Full, Scratchpad window, Mini badge) without a
+   restart; after an app restart the selected theme persists; a hand-edited
+   bogus `theme` value in config.json falls back to Graphite.
+3. Settings tabs click-through eyeball at 100%, 150% and 200% DPI: no clipped
+   rows, banners or error copy; focus rings visible on strip items and
+   controls; the ruled rows keep their slot heights.
+4. Mini badge on the live palette (T15): Ready/Listening/Thinking/Done/Paused
+   colors follow the selected theme; hover rises from the idle 0.55 alpha to
+   full opacity; dragging works and never fights the click-through hit-test;
+   the attention message clears after ~6 s.
+
+Owed items recorded during T0-T15 (blocked on hardware/synthetic input):
+
+5. Real Mini Attention state: unreachable in captures - main.cpp overrides it
+   to Ready; needs a synthetic failure (mic loss) on hardware while capturing.
+6. Dead second-instance OpenSettings event: launching a second instance posts
+   SignalOpenSettings; verify the first instance raises the Full window.
+7. HotkeyCopy and Insights stubs: the TryItOut polish slot "1" and the
+   Insights "Download on mobile" pill are documented stubs kept deliberately
+   (T14 disposition); decide keep, implement or remove.
+8. T13a live model download: real catalog download with progress, cancel
+   mid-transfer, and quit mid-download (worker join without crash, partial
+   file handled on the next start).
+9. Capture reruns owed from T0.5: 150% and 200% DPI captures, and the
+   Listening and Thinking states.
 
 ```
 [ ] PASS   [ ] FAIL   notes:

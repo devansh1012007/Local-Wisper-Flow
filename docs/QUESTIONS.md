@@ -15,6 +15,9 @@ evidence gathered so far.
    `src/core/Onboarding.{h,cpp}` with `os/WindowsDownloader.h` from the
    UI TU (`zig c++ -fsyntax-only -target x86_64-windows-gnu -Isrc
    src/ui/MainWindow.cpp` owed).
+   T16/T17 (2026-11-10, `ops/ui-redesign-v2`): docs-only sweep + external
+   skill rewrite — no Windows sources touched, so nothing new for zig; the
+   T13a owed syntax-only run above still stands.
 
 2. D8 model hashes: model URLs and SHA-256 values in `models.json` must be copied
    from the real model pages, never invented. Unverified entries ship with
