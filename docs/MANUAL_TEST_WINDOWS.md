@@ -362,6 +362,10 @@ hardware. All of R replaces the old dashboard/settings/wizard windows.
 2. Cancel one dictation with the cancel hotkey: badge returns to Ready, no
    attention dot.
 3. Second instance: launching the exe again just opens the full window.
+   (OWED/BLOCKED, pre-PR review: `SingleInstance::SignalOpenSettings` only
+   opens the `Local\LwfOpenSettingsEvent` event — nothing in src/ creates or
+   waits on it, so the second-instance notification is dead end-to-end and
+   this step cannot pass until the event watcher is added; see V2 step 6.)
 
 ## R2: 2026-11 wave-run UI changes (branch fix/gui-typography-dpi)
 These landed in the 20261106-gui wave run and are NOT claimed as verified.
@@ -485,6 +489,8 @@ Owed items recorded during T0-T15 (blocked on hardware/synthetic input):
    to Ready; needs a synthetic failure (mic loss) on hardware while capturing.
 6. Dead second-instance OpenSettings event: launching a second instance posts
    SignalOpenSettings; verify the first instance raises the Full window.
+   (BLOCKED until the event watcher is added: nothing in src/ currently
+   creates or waits on `Local\LwfOpenSettingsEvent` — see the R-e-3 note.)
 7. HotkeyCopy and Insights stubs: the TryItOut polish slot "1" and the
    Insights "Download on mobile" pill are documented stubs kept deliberately
    (T14 disposition); decide keep, implement or remove.

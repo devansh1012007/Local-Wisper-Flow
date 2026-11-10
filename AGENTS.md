@@ -87,7 +87,9 @@ ctest --test-dir build
   Cloud (S5); failed attempts keep a redacted error `detail` (lwf::RedactSecret/
   RedactAuthValues, src/core/Redact.h) in the attempt stats. Data files live under
   `%APPDATA%\LocalWisperFlow` (LWF_HOME overrides): config.json, dictionary.json,
-  snippets.json, app_profiles.json, history.jsonl, models.json, logs/, models/.
+  snippets.json, app_profiles.json, history.jsonl, logs/, models/. The model
+  catalog `models.json` is NOT a data-dir file: it is read from the exe
+  directory (the T13a/T9 GetExeDir() sites), so keep it next to the exe.
 - `whisper_model_path` (same for `llm_model_path`) is resolved by `ResolveModelPath`
   (src/os/DataDir.cpp → `ResolveDataPath`, src/core/PathResolver.cpp): an absolute path
   is used as-is; otherwise it is probed in order: `%APPDATA%\LocalWisperFlow\<path>`,
@@ -133,13 +135,15 @@ vendor docs on 2026-11-04, NOT yet against the live APIs.
   stopCallback (only while capturing) -> `IAudioCapture::DeviceLost()` -> engine discards
   with MicLost.
 
-## UI (GLFW + Dear ImGui, two windows)
+## UI (GLFW + Dear ImGui, three windows)
 
-- Two OS windows, each with its own Dear ImGui context AND its own GL context:
-  `MainWindow` (Full window: Hairline top-strip navigation + pages — Welcome,
-  Home, History, Insights, Dictionary, Snippets, Transforms, Scratchpad,
-  Profiles, Settings; the left rail was replaced by the top strip in T4a) and
-  `Overlay` (Mini badge, draggable, click-through unless hovered). Never share
+- Three OS windows, each with its own Dear ImGui context AND its own GL
+  context: `MainWindow` (Full window: Hairline top-strip navigation + pages —
+  Welcome, Home, History, Insights, Dictionary, Snippets, Transforms,
+  Scratchpad, Profiles, Settings; the left rail was replaced by the top strip
+  in T4a), `Overlay` (Mini badge, draggable, click-through unless hovered) and
+  `ScratchpadWindow` (the floating scratchpad editor, T10e — owns its own
+  window/context while the Scratchpad page renders inside Full). Never share
   a context between windows.
 - **`ImGui::CreateContext()` restores the PREVIOUS context after initializing the new
   one** (vendored v1.92.9b behaviour). Do NOT do
@@ -149,8 +153,9 @@ vendor docs on 2026-11-04, NOT yet against the live APIs.
   rendered with `DisplaySize = 140x70` (the Mini badge's size), its GL viewport
   anchored at the bottom-left (GL origin) and the GUI appeared as a tiny pill on a
   black background (the long-standing "black screen"). Fixed in 1a8304f.
-- The main loop (src/main.cpp) calls `full.RunOnce()` then `overlay.RenderFrame()`
-  every tick; both re-assert `glfwMakeContextCurrent()` and `ImGui::SetCurrentContext()`
+- The main loop (src/main.cpp) calls `full.RunOnce()`, then
+  `overlay.RenderFrame()` and `scratchpad_editor.RenderFrame()` every tick;
+  all three re-assert `glfwMakeContextCurrent()` and `ImGui::SetCurrentContext()`
   before their backend NewFrame calls because they run back-to-back on one thread.
 - Theme tokens are the Hairline spec values from docs/design/DESIGN.md (the
   design source of truth; docs/design/mockup.html is superseded legacy) in

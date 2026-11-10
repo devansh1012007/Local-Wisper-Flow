@@ -60,10 +60,12 @@ extern "C" void* glfwGetWin32Window(GLFWwindow* window);
 namespace {
 
 // Full window shell (T2b): the ImGui style is selected via PaletteForTheme
-// (Graphite default, Paper via the `theme` key); the ~100 direct
-// Pack(kLightPalette...) custom draws stay Paper until T3+ re-skins them.
-// The Mini badge in Overlay.cpp follows the same selection (T15 re-skins
-// its badge chrome).
+// (Graphite default, Paper via the `theme` key). T3+ re-skinned the custom
+// draws to the live palette; the remaining kLightPalette uses in this file
+// are the dead chrome helpers (BeginCard/ToggleRow/BoolRow and the
+// file-local ToggleSwitch — zero callers; pre-PR review follow-up) and
+// comments. The Mini badge in Overlay.cpp follows the same selection (T15
+// re-skins its badge chrome).
 namespace metrics = lwf::ui::metrics;
 using lwf::ui::Color;
 using lwf::ui::kLightPalette;
@@ -556,7 +558,7 @@ void MainWindow::RunOnce(float) {
         const ImVec2 text_size = ImGui::CalcTextSize("Saved");
         const float right = content_pos.x + content_size.x - metrics::space_m * scale;
         draw.AddText(ImVec2(right - text_size.x, content_pos.y + 10.0f * scale),
-                     Pack(kLightPalette.muted), "Saved");
+                     Pack(current_palette_->muted), "Saved");
     }
 
     ImGui::End();
@@ -608,10 +610,11 @@ void MainWindow::DrawTopStrip(float scale) {
     // phrase, T4b) at the right-end reserve, and the Hide ghost at the strip
     // end. Ctrl+digits activate the same destinations positionally (see the
     // shortcut block inside ##strip_items).
-    // History/Profiles entries arrive in T11/T12 inserted at their DESIGN
-    // section 7 positions (mid-array), which shifts the positional Ctrl
-    // mapping when they land (e.g. Snippets Ctrl+4->Ctrl+5); current 1..7
-    // behaviour is unchanged. The strip must work with 7 and accept 9.
+    // T11/T12 landed: History and Profiles sit mid-array at their DESIGN
+    // section 7 positions, so the strip carries nine destinations and the
+    // positional Ctrl mapping is Ctrl+1 (Home) .. Ctrl+9 (Settings) —
+    // Snippets moved from Ctrl+4 to Ctrl+5 in that mapping. The strip must
+    // keep working positionally if destinations are added or removed.
     const float strip_h = metrics::topstrip_height * scale;
     const float strip_w = ImGui::GetIO().DisplaySize.x;
     // No filled panel: window background with a 1 px hairline at the bottom.
@@ -735,11 +738,10 @@ void MainWindow::DrawTopStrip(float scale) {
                       ImGuiWindowFlags_HorizontalScrollbar);
     ImGui::PopStyleVar();
     // Ctrl+digits (T4b): positional shortcuts mapped to the CURRENT items
-    // array (Home is Ctrl+1 through Settings is Ctrl+7 today). Mapping
-    // follows the array positionally, so inserting History/Profiles at
-    // their DESIGN.md section 7 positions shifts later destinations
-    // (e.g. Snippets Ctrl+4 becomes Ctrl+5) when T11/T12 land; current
-    // 1..7 behaviour is unchanged. Guarded so typing digits inside
+    // array (nine destinations since T11/T12: Home is Ctrl+1 through
+    // Settings is Ctrl+9; Snippets is Ctrl+5). Mapping follows the array
+    // positionally, so adding or removing destinations shifts later
+    // shortcuts accordingly. Guarded so typing digits inside
     // one of the InputText fields is never hijacked. The Full window is
     // the only surface here (RunOnce early-outs while hidden, so a hidden
     // window cannot receive these), and Welcome stays shortcut-active:
@@ -2991,14 +2993,17 @@ void MainWindow::DrawSettingsPage(float scale) {
         if (ImGui::IsItemFocused()) {
             draw.AddRect(ImVec2(p.x - 2.0f * scale, p.y - 2.0f * scale),
                          ImVec2(p.x + w + 2.0f * scale, p.y + tab_h + 2.0f * scale),
-                         Pack(kLightPalette.focus), 8.0f * scale, 0, 2.0f * scale);
+                         Pack(current_palette_->focus), 8.0f * scale, 0, 2.0f * scale);
         }
         if (active) {
             draw.AddRectFilled(p, ImVec2(p.x + w, p.y + tab_h),
-                               Pack(kLightPalette.text, 0.10f), 8.0f * scale);
+                               Pack(current_palette_->text, 0.10f), 8.0f * scale);
         }
+        // Pre-PR review fix: the Settings tab strip reads the live palette —
+        // the kLightPalette reads left the active tab at 1.08:1 on Graphite
+        // (the runtime default theme).
         const std::uint32_t color =
-            active ? kLightPalette.text : (hovered ? kLightPalette.text : kLightPalette.muted);
+            (active || hovered) ? current_palette_->text : current_palette_->muted;
         draw.AddText(ImVec2(p.x + tab_pad, p.y + (tab_h - text_size.y) * 0.5f), Pack(color),
                      item.label);
     }

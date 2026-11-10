@@ -366,7 +366,11 @@ TEST_CASE("scratchpad page source wires shell widgets and notes store") {
           std::string::npos);
     CHECK(page_cpp.find("LightButton(\"##start_new_note\", \"Start new note\", scale, palette)") !=
           std::string::npos);
-    CHECK(page_cpp.find("IconButton(\"##scratch_search\", \"?\", scale, palette)") !=
+    // Pre-PR review fix: the "?" button id must NOT reuse ##scratch_search
+    // (the input's id) — shared ids in one scope collide in ImGui.
+    CHECK(page_cpp.find("IconButton(\"##scratch_search_focus\", \"?\", scale, palette)") !=
+          std::string::npos);
+    CHECK(page_cpp.find("IconButton(\"##scratch_search\", \"?\", scale, palette)") ==
           std::string::npos);
     CHECK(page_cpp.find("HeatColor(3)") != std::string::npos);
     // T-004 pin flip (P-005): PushFont must go through design-px tokens, not

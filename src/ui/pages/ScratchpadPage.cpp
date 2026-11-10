@@ -196,7 +196,7 @@ void ScratchpadPage::DrawRecents(float scale, const lwf::ui::Palette& palette) {
     ImGui::SetNextItemWidth(kSearchWidth * scale);
     ImGui::InputTextWithHint("##scratch_search", "Search", search_buffer_, sizeof(search_buffer_));
     ImGui::SameLine();
-    if (lwf::ui::widgets::IconButton("##scratch_search", "?", scale, palette)) {
+    if (lwf::ui::widgets::IconButton("##scratch_search_focus", "?", scale, palette)) {
         search_focus_pending_ = true;
     }
     ImGui::SameLine();
