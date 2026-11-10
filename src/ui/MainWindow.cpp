@@ -2948,17 +2948,7 @@ void MainWindow::DrawGeneralPage(float scale) {
     }
     ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
-    ImGui::SetCursorPosX(16.0f * scale);
-    ImGui::PushFont(nullptr, metrics::font_card_title_px);
-    ImGui::TextUnformatted("Legacy");
-    ImGui::PopFont();
-    {
-        // Kept for T14 (schema key stays; only the UI row goes then).
-        lwf::ui::widgets::Row("##card_general_legacy", "Legacy key code", nullptr,
-                              248.0f * scale, scale, *current_palette_);
-        IntRow("hotkey_code", "##hotkey_code", 0, 255, "legacy key code %d");
-        lwf::ui::widgets::RowEnd(scale);
-    }
+
 }
 
 void MainWindow::DrawSettingsPage(float scale) {

@@ -742,9 +742,6 @@ int main() {
                             scratchpad_editor.ApplyTheme(theme_palette);
                         }
                         break;
-                    case UiCommandType::ToggleAutostart:
-                        Autostart::SetEnabled(!Autostart::IsEnabled());
-                        break;
                     case UiCommandType::Quit:
                         quit.store(true);
                         break;

@@ -1084,7 +1084,7 @@ TEST_CASE("studio widgets respect the font mechanism and stay opt in") {
 }
 
 TEST_CASE("every schema key has a control or a documented carve-out") {
-    const std::vector<std::string> carve_outs = {"mini_x", "mini_y", "schema_version", "first_run"};
+    const std::vector<std::string> carve_outs = {"mini_x", "mini_y", "schema_version", "first_run", "hotkey_code"};
     std::ifstream main_window("src/ui/MainWindow.cpp");
     REQUIRE(static_cast<bool>(main_window));
     const std::string content((std::istreambuf_iterator<char>(main_window)),
@@ -1922,7 +1922,7 @@ TEST_CASE("T5 settings General and Speech ruled rows pin") {
     // T5-owned pins: theme switcher writes the canonical constants, load-time
     // normalization lives in Init, both pages use ruled rows (widgets::Row +
     // widgets::ToggleSwitch with the live palette), and the legacy
-    // hotkey_code row is still present (removal is T14).
+    // hotkey_code row removed at T14 (schema key stays).
     const std::string content = ReadSource("src/ui/MainWindow.cpp");
     REQUIRE_FALSE(content.empty());
     const std::size_t general = content.find("void MainWindow::DrawGeneralPage");
@@ -1959,9 +1959,9 @@ TEST_CASE("T5 settings General and Speech ruled rows pin") {
     CHECK(speech_src.find("*current_palette_") != std::string::npos);
     CHECK(general_src.find("widgets::ToggleSwitch(") != std::string::npos);
     CHECK(speech_src.find("widgets::ToggleSwitch(") != std::string::npos);
-    // legacy row kept for T14.
-    CHECK(general_src.find("IntRow(\"hotkey_code\"") != std::string::npos);
-    CHECK(general_src.find("##hotkey_code") != std::string::npos);
+    // legacy row removed at T14 (schema key stays).
+    CHECK(general_src.find("IntRow(\"hotkey_code\"") == std::string::npos);
+    CHECK(general_src.find("##hotkey_code") == std::string::npos);
     // Restart banner: kept on Speech, added to General.
     CHECK(general_src.find("DrawRestartBanner(scale)") != std::string::npos);
     CHECK(speech_src.find("DrawRestartBanner(scale)") != std::string::npos);
