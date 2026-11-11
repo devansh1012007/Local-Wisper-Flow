@@ -1,5 +1,11 @@
 # Studio checklist (spec §9) — F9 sweep result
 
+> SUPERSEDED (visual system) 2026-11-09 by the Hairline identity on
+> `ops/ui-redesign-v2` — see `docs/design/DESIGN.md`. The studio visual system
+> this checklist pins (teal / StudioPalette / rail / studio cards) was
+> re-skinned to Hairline in T3-T10; this document is retained for history only
+> (T16 docs sweep).
+
 Status of every §8 checkpoint item (I/D/S/T/Sn/P1). PASS-able automatable items are pinned by
 doctest; Devansh-manual items require a Windows run with the real binary (this box has no zig
 and no window runtime — G3 "pending on Windows" per AGENTS.md).

@@ -299,3 +299,15 @@ Honest limits and really-left residuals (see `docs/STUDIO_PLAN.md` §15 and `doc
 - Migrations one-way via `.bak` (do not delete `.bak`); branch-internal rollback dual-reads v1+v2, pre-branch `0e655ec` rollback silently empties dictionary/snippets and throws on `transforms.json` (verified from the `0e655ec` loaders) — restore `.bak` for that rollback.
 - Follow-ups F-1 (dead `AtomicFile` + divergent `.bak`), F-2 (detached transform worker), F-3 (silent hotkey drop), F-4 (plaintext `api_keys.json`) remain tracked; F-5 (`HeatLevel`/`CalendarLevel`) is CLOSED by T-FINAL.
 - `docs/STUDIO_PLAN.md` header/§3 drifts corrected to shipped shapes in T-FINAL; AGENTS.md endpoint sentence + `check_no_network.sh` header OpenRouter prose is a small docs follow-up outside this commit.
+
+## ImGui `Dummy()` fix (2026-11-08)
+
+| id | title | status | commit | gates | manual-check | notes |
+|----|-------|--------|--------|-------|--------------|-------|
+| IMG-001 | Trailing cursor restore in dict/snippets/insights rows | DONE | `8773d94` + `d78fc42` on `fix/dict-rows-imgui-error` | ctest `lwf-tests` 1/1 (520 cases), hygiene OK, no-network OK; G3 zig pending | yes (hover last row, Windows) | R1 plain-Dummy REJECTED for +8px geometry drift; final compensated form (restore − ItemSpacing.y, then `Dummy`) delta-review APPROVE. Scratchpad parent-window restore pattern left as follow-up (unconfirmed) |
+
+## `[BLANK_AUDIO]` token-aware filter — mic-fix (2026-11-08)
+
+| id | title | status | commit | gates | manual-check | notes |
+|----|-------|--------|--------|-------|--------------|-------|
+| IMG-003 | Token-aware Whisper hallucination filter + injector guards | DONE | `a610d0a` + `083d3a2` on `fix/mic-blank-audio` | lwf_tests 533/533 cases, 27840 assertions; hygiene OK, no-network OK; fail-before stash proven; G3 zig pending | yes (say hello near mic on Windows from new tip; audio-level meter judgment for capture silence) | PR #4's whole-string filter missed multi-segment `[BLANK_AUDIO] [BLANK_AUDIO]` (StreamingDictation JoinTexts) and `hello [BLANK_AUDIO]`. Square markers now stripped anywhere incl. glued substrings; parenthetical/`...` stripped unless surrounded by real words (preserves `(music)` in-title); newline-preserving; IsOnly==Filter-empty; post-pipeline + PasteLast re-filter + CommandMode IsOnly guard. Final review APPROVE. Residuals: snippet/dictionary expansions containing literal markers get stripped post-expansion; command-mode mixed markers unguarded; TextPipeline collapses raw newlines (pre-existing); mic-capture silence root cause UNFIXED (hardware check owed) |

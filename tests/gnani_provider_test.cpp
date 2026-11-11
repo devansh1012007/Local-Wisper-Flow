@@ -3,6 +3,8 @@
 #include "stt/cloud/GnaniProvider.h"
 #include "stt/cloud/GnaniContract.h"
 
+#include <nlohmann/json.hpp>
+
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -64,6 +66,30 @@ std::vector<float> ConstantAudio(std::size_t samples) {
     return std::vector<float>(samples, 0.3f);
 }
 
+std::size_t CountOccurrences(const std::string& haystack, const std::string& needle) {
+    std::size_t count = 0;
+    std::size_t pos = 0;
+    while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+        ++count;
+        pos += needle.size();
+    }
+    return count;
+}
+
+std::string ExtractMultipartField(const std::string& body, const std::string& name) {
+    const std::string header = "name=\"" + name + "\"\r\n\r\n";
+    const std::size_t at = body.find(header);
+    if (at == std::string::npos) {
+        return {};
+    }
+    const std::size_t value_start = at + header.size();
+    const std::size_t value_end = body.find("\r\n", value_start);
+    if (value_end == std::string::npos) {
+        return {};
+    }
+    return body.substr(value_start, value_end - value_start);
+}
+
 }  // namespace
 
 TEST_CASE("provider transcribes one clip through the transport") {
@@ -89,6 +115,7 @@ TEST_CASE("provider sends the documented request shape") {
     const HttpRequest& request = transport.Requests()[0];
     CHECK(request.host == GnaniContract::kHost);
     CHECK(request.path == GnaniContract::kPath);
+    CHECK(request.path == "/stt/v3");
     REQUIRE(request.headers.size() == 1);
     CHECK(request.headers[0].first == GnaniContract::kApiKeyHeader);
     CHECK(request.headers[0].second == "key-id-1");
@@ -96,9 +123,9 @@ TEST_CASE("provider sends the documented request shape") {
     CHECK(request.timeout_ms == Settings().timeout_ms);
     const std::string body(request.body.begin(), request.body.end());
     CHECK(body.find("name=\"model\"\r\n\r\nprisma-v3.0") != std::string::npos);
-    CHECK(body.find("name=\"language\"\r\n\r\nindic-auto") != std::string::npos);
+    CHECK(body.find("name=\"language_code\"\r\n\r\nindic-auto") != std::string::npos);
     const std::string audio_header =
-        "Content-Disposition: form-data; name=\"audio\"; filename=\"audio.wav\"\r\n"
+        "Content-Disposition: form-data; name=\"audio_file\"; filename=\"audio.wav\"\r\n"
         "Content-Type: audio/wav\r\n\r\n";
     const std::size_t audio_at = body.find(audio_header);
     REQUIRE(audio_at != std::string::npos);
@@ -221,4 +248,97 @@ TEST_CASE("provider skips the transport for empty audio") {
     CHECK(result.success);
     CHECK(result.text.empty());
     CHECK(transport.Requests().empty());
+}
+
+TEST_CASE("provider parses the full live success envelope") {
+    FakeTransport transport({ScriptedResponse{200,
+        R"({"success":true,"request_id":"live-req-1","transcript":"hello full envelope","model":"prisma-v3.0","detected_language_code":"hi-IN","processing_time":0.62,"end_to_end_latency":0.71})",
+        "live-req-1"}});
+    GnaniProvider provider(transport, Settings());
+    const SttTranscription result = provider.Transcribe(ConstantAudio(16000), {});
+    CHECK(result.success);
+    CHECK(result.text == "hello full envelope");
+}
+
+TEST_CASE("provider surfaces auth detail object message") {
+    FakeTransport transport({ScriptedResponse{401,
+        R"({"detail":{"error_code":"INVALID_API_KEY","message":"Unauthorized","status_code":401}})",
+        "r401"}});
+    GnaniProvider provider(transport, Settings());
+    const SttTranscription result = provider.Transcribe(ConstantAudio(16000), {});
+    CHECK(!result.success);
+    CHECK(result.error == SttErrorCategory::Auth);
+    REQUIRE(result.attempts.size() == 1);
+    CHECK(result.attempts[0].detail.find("Unauthorized") != std::string::npos);
+}
+
+TEST_CASE("provider surfaces validation array first message") {
+    FakeTransport transport({ScriptedResponse{422,
+        R"({"detail":[{"type":"missing","loc":["body","language_code"],"msg":"Field required","input":null}]})",
+        "r422"}});
+    GnaniProvider provider(transport, Settings());
+    const SttTranscription result = provider.Transcribe(ConstantAudio(16000), {});
+    CHECK(!result.success);
+    CHECK(result.error == SttErrorCategory::InvalidRequest);
+    REQUIRE(result.attempts.size() == 1);
+    CHECK(result.attempts[0].detail.find("Field required") != std::string::npos);
+}
+
+TEST_CASE("provider surfaces new error envelope type and message") {
+    FakeTransport transport({ScriptedResponse{400,
+        R"({"success":false,"error":{"type":"INVALID_MODEL","message":"Invalid model 'foo'"}})",
+        "r400"}});
+    GnaniProvider provider(transport, Settings());
+    const SttTranscription result = provider.Transcribe(ConstantAudio(16000), {});
+    CHECK(!result.success);
+    CHECK(result.error == SttErrorCategory::InvalidRequest);
+    REQUIRE(result.attempts.size() == 1);
+    CHECK(result.attempts[0].detail.find("INVALID_MODEL") != std::string::npos);
+    CHECK(result.attempts[0].detail.find("Invalid model") != std::string::npos);
+}
+
+TEST_CASE("provider sends keyterms as single JSON array field") {
+    FakeTransport transport({ScriptedResponse()});
+    GnaniProviderSettings settings = Settings();
+    settings.keyterms = {"खाता", "HDFC Bank"};
+    GnaniProvider provider(transport, settings);
+    provider.Transcribe(ConstantAudio(1600), {});
+    REQUIRE(transport.Requests().size() == 1);
+    const std::string body(transport.Requests()[0].body.begin(),
+                           transport.Requests()[0].body.end());
+    CHECK(CountOccurrences(body, "name=\"keyterms\"") == 1);
+    const std::string value = ExtractMultipartField(body, "keyterms");
+    REQUIRE(!value.empty());
+    const nlohmann::json parsed = nlohmann::json::parse(value, nullptr, false);
+    REQUIRE(!parsed.is_discarded());
+    REQUIRE(parsed.is_array());
+    REQUIRE(parsed.size() == 2);
+    CHECK(parsed.at(0).get<std::string>() == "खाता");
+    CHECK(parsed.at(1).get<std::string>() == "HDFC Bank");
+}
+
+TEST_CASE("provider surfaces validation array without msg or type") {
+    FakeTransport transport({ScriptedResponse{422,
+        R"({"detail":[{"loc":["body","language_code"],"input":null}]})",
+        "r422-empty"}});
+    GnaniProvider provider(transport, Settings());
+    const SttTranscription result = provider.Transcribe(ConstantAudio(16000), {});
+    CHECK(!result.success);
+    CHECK(result.error == SttErrorCategory::InvalidRequest);
+    REQUIRE(result.attempts.size() == 1);
+    CHECK(!result.attempts[0].detail.empty());
+    CHECK(result.attempts[0].detail.find("validation error") != std::string::npos);
+}
+
+TEST_CASE("provider surfaces validation error for empty detail array") {
+    FakeTransport transport({ScriptedResponse{422,
+        R"({"detail":[]})",
+        "r422-empty-array"}});
+    GnaniProvider provider(transport, Settings());
+    const SttTranscription result = provider.Transcribe(ConstantAudio(16000), {});
+    CHECK(!result.success);
+    CHECK(result.error == SttErrorCategory::InvalidRequest);
+    REQUIRE(result.attempts.size() == 1);
+    CHECK(!result.attempts[0].detail.empty());
+    CHECK(result.attempts[0].detail.find("validation error") != std::string::npos);
 }

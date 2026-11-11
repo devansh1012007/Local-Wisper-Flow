@@ -16,8 +16,6 @@ namespace {
 
 using lwf::ui::Color;
 using lwf::ui::Pack;
-using lwf::ui::kDarkPalette;
-using lwf::ui::kStudioPalette;
 
 constexpr float kSheetWidth = 440.0f;
 constexpr float kRowTextPadding = 16.0f;
@@ -29,7 +27,7 @@ std::string TruncateToWidth(const std::string& text, float max_width, float scal
     if (max_width <= 0.0f) {
         return "...";
     }
-    ImGui::PushFont(nullptr, 15.0f);
+    ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
     const float full_w = ImGui::CalcTextSize(text.c_str()).x;
     if (full_w <= max_width) {
         ImGui::PopFont();
@@ -88,7 +86,7 @@ bool SnippetsPage::DeleteEdit() {
     return true;
 }
 
-void SnippetsPage::Draw(float scale) {
+void SnippetsPage::Draw(float scale, const lwf::ui::Palette& palette) {
     if (state_.pending_delete) {
         if (toast_.TakeAction()) {
             std::string undo_error;
@@ -97,49 +95,52 @@ void SnippetsPage::Draw(float scale) {
             (void)CommitExpiredPending(state_, ImGui::GetTime());
         }
     }
-    DrawHeader(scale);
-    DrawBanner(scale);
-    DrawRows(scale);
-    DrawSheet(scale);
-    toast_.Draw(scale);
+    DrawHeader(scale, palette);
+    DrawBanner(scale, palette);
+    DrawRows(scale, palette);
+    DrawSheet(scale, palette);
+    toast_.Draw(scale, palette);
 }
 
-void SnippetsPage::DrawHeader(float scale) {
+void SnippetsPage::DrawHeader(float scale, const lwf::ui::Palette& palette) {
     ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
     ImGui::TextUnformatted("Snippets");
     ImGui::PopFont();
-    ImGui::SameLine(0.0f, 16.0f * scale);
-    if (widgets::LightButton("snippets_add_new", kSnippetsAddLabel, scale)) {
+    ImGui::SameLine(0.0f, studio_metrics::gap_block * scale);
+    if (widgets::LightButton("snippets_add_new", kSnippetsAddLabel, scale, palette)) {
         OpenAdd();
     }
-    ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
+    ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_section * scale));
 }
 
-void SnippetsPage::DrawBanner(float scale) {
+void SnippetsPage::DrawBanner(float scale, const lwf::ui::Palette& palette) {
     if (!VisibleBanner(state_)) {
         return;
     }
     bool open = true;
-    widgets::Banner("##snippets_banner", kSnippetsBannerHeadline, "", &open, scale);
+    widgets::Banner("##snippets_banner", kSnippetsBannerHeadline, "", &open, scale, palette);
     if (!open) {
         state_.banner_closed = true;
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap * scale));
         return;
     }
     ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap * scale));
-    (void)widgets::Chip("##snippets_chip_trigger", kSnippetsBannerExampleTrigger, false, scale);
-    ImGui::SameLine(0.0f, 8.0f * scale);
-    ImGui::PushFont(nullptr, 13.0f);
+    (void)widgets::Chip("##snippets_chip_trigger", kSnippetsBannerExampleTrigger, false, scale, palette);
+    ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
+    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     ImGui::TextUnformatted("→");
     ImGui::PopFont();
-    ImGui::SameLine(0.0f, 8.0f * scale);
-    (void)widgets::Chip("##snippets_chip_expansion", kSnippetsBannerExampleExpansion, false, scale);
+    ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
+    (void)widgets::Chip("##snippets_chip_expansion", kSnippetsBannerExampleExpansion, false, scale, palette);
     ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap * scale));
 }
 
-void SnippetsPage::DrawRows(float scale) {
+void SnippetsPage::DrawRows(float scale, const lwf::ui::Palette& palette) {
     const std::vector<SnippetStore::Entry> rows = VisibleEntries(store_, state_);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kStudioPalette.card_bg_white));
+    // T10b ruled rows: the list sits on the window background and rows are
+    // separated by 1 px hairlines (current palette border); the scrollable
+    // BeginChild stays because the list exceeds the window height.
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(palette.bg));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, studio_metrics::radius_row * scale);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGui::BeginChild("##snippets_rows", ImVec2(0.0f, 0.0f),
@@ -147,13 +148,13 @@ void SnippetsPage::DrawRows(float scale) {
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
     if (rows.empty()) {
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
         const ImVec2 pos = ImGui::GetCursorScreenPos();
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         const ImVec2 text_size = ImGui::CalcTextSize(kSnippetsEmptyCopy);
         draw.AddText(ImVec2(pos.x + kRowTextPadding * scale,
                             pos.y + (studio_metrics::row_height * scale - text_size.y) * 0.5f),
-                     Pack(kStudioPalette.muted), kSnippetsEmptyCopy);
+                     Pack(palette.muted), kSnippetsEmptyCopy);
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::row_height * scale));
         ImGui::PopFont();
     } else {
@@ -164,7 +165,7 @@ void SnippetsPage::DrawRows(float scale) {
             if (i > 0) {
                 const ImVec2 sep = ImGui::GetCursorScreenPos();
                 draw.AddLine(ImVec2(sep.x, sep.y), ImVec2(sep.x + width, sep.y),
-                             Pack(kStudioPalette.border), 1.0f * scale);
+                             Pack(palette.border), 1.0f * scale);
             }
             const float row_h = studio_metrics::row_height * scale;
             const std::string row_id = std::string("##snippets_row_") + entry.id;
@@ -179,21 +180,21 @@ void SnippetsPage::DrawRows(float scale) {
                 OpenEdit(entry.id);
             }
             if (hovered) {
-                draw.AddRectFilled(row_min, row_max, Pack(kStudioPalette.teal_100, 0.35f),
+                draw.AddRectFilled(row_min, row_max, Pack(palette.border, 0.35f),
                                    studio_metrics::radius_row * scale);
             }
             if (focused) {
                 draw.AddRect(ImVec2(row_min.x - 2.0f * scale, row_min.y - 2.0f * scale),
                              ImVec2(row_max.x + 2.0f * scale, row_max.y + 2.0f * scale),
-                             Pack(kStudioPalette.teal_700), 4.0f * scale, 0, 2.0f * scale);
+                             Pack(palette.accent), 4.0f * scale, 0, 2.0f * scale);
             }
-            ImGui::PushFont(nullptr, 15.0f);
+            ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
             ImDrawList& row_draw = *ImGui::GetWindowDrawList();
             const std::string shown = TruncateToWidth(RowText(entry), width - kRowActionReserve * scale,
                                                       scale);
             row_draw.AddText(ImVec2(row_min.x + kRowTextPadding * scale,
                                     row_min.y + (row_h - ImGui::CalcTextSize(shown.c_str()).y) * 0.5f),
-                             Pack(kStudioPalette.ink), shown.c_str());
+                             Pack(palette.text), shown.c_str());
             ImGui::PopFont();
             if (!hovered && !focused) {
                 continue;
@@ -203,24 +204,25 @@ void SnippetsPage::DrawRows(float scale) {
             ImGui::SetCursorScreenPos(ImVec2(row_max.x - hit * 2.0f - kRowButtonGap * scale - 12.0f * scale,
                                              row_min.y + (row_h - hit) * 0.5f));
             const std::string edit_id = std::string("snippets_edit_") + entry.id;
-            if (widgets::IconButton(edit_id.c_str(), "✎", scale)) {
+            if (widgets::IconButton(edit_id.c_str(), "✎", scale, palette)) {
                 OpenEdit(entry.id);
             }
             ImGui::SameLine(0.0f, kRowButtonGap * scale);
             const std::string delete_id = std::string("snippets_delete_") + entry.id;
-            if (widgets::IconButton(delete_id.c_str(), "x", scale)) {
+            if (widgets::IconButton(delete_id.c_str(), "x", scale, palette)) {
                 if (RequestDelete(store_, state_, entry.id, ImGui::GetTime())) {
                     toast_.Show(std::string("Deleted \"") + entry.trigger + "\"",
                                 kSnippetsUndoAction);
                 }
             }
-            ImGui::SetCursorScreenPos(saved_cursor);
+            ImGui::SetCursorScreenPos(ImVec2(saved_cursor.x, saved_cursor.y - ImGui::GetStyle().ItemSpacing.y));
+            ImGui::Dummy(ImVec2(0.0f, 0.0f));
         }
     }
     ImGui::EndChild();
 }
 
-void SnippetsPage::DrawSheet(float scale) {
+void SnippetsPage::DrawSheet(float scale, const lwf::ui::Palette& palette) {
     if (!editing_) {
         editor_sheet_.Close();
         return;
@@ -230,11 +232,11 @@ void SnippetsPage::DrawSheet(float scale) {
     }
     const char* title = editing_id_.empty() ? kSnippetsEditorAddTitle : kSnippetsEditorEditTitle;
     if (editor_sheet_.Begin(title, kSheetWidth, scale)) {
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
         ImGui::TextUnformatted(title);
         ImGui::PopFont();
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
+        ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
         ImGui::TextUnformatted("Trigger");
         ImGui::PopFont();
         ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x);
@@ -244,11 +246,11 @@ void SnippetsPage::DrawSheet(float scale) {
                                      ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::PopItemWidth();
         RefreshFromBuffers();
-        ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
+        ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
         ImGui::TextUnformatted("Expansion");
         ImGui::PopFont();
-        ImGui::PushFont(nullptr, 15.0f);
+        ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
         const float line_height = ImGui::GetTextLineHeight();
         ImGui::PopFont();
         ImGui::InputTextMultiline("##snippets_expansion", expansion_buffer_,
@@ -257,32 +259,32 @@ void SnippetsPage::DrawSheet(float scale) {
                                          line_height * static_cast<float>(kSnippetsEditorVisibleLines)),
                                   ImGuiInputTextFlags_None);
         RefreshFromBuffers();
-        ImGui::PushFont(nullptr, 13.0f);
+        ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
         const std::string counter =
             std::to_string(CountCodePoints(edit_expansion_)) + " / " +
             std::to_string(SnippetStore::kMaxExpansionChars);
-        ImGui::TextColored(Color(kStudioPalette.muted), "%s", counter.c_str());
+        ImGui::TextColored(Color(palette.muted), "%s", counter.c_str());
         ImGui::PopFont();
         if (!edit_error_.empty()) {
-            ImGui::Dummy(ImVec2(0.0f, 8.0f * scale));
-            ImGui::PushFont(nullptr, 15.0f);
+            ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
+            ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
             ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 24.0f * scale);
-            ImGui::TextColored(Color(kDarkPalette.err), "%s", edit_error_.c_str());
+            ImGui::TextColored(Color(palette.err), "%s", edit_error_.c_str());
             ImGui::PopTextWrapPos();
             ImGui::PopFont();
         }
-        ImGui::Dummy(ImVec2(0.0f, 12.0f * scale));
-        if (widgets::LightButton("snippets_cancel", "Cancel", scale)) {
+        ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_section * scale));
+        if (widgets::LightButton("snippets_cancel", "Cancel", scale, palette)) {
             CloseEditor();
         }
-        ImGui::SameLine(0.0f, 8.0f * scale);
+        ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
         if (!editing_id_.empty()) {
-            if (widgets::LightButton("snippets_sheet_delete", "Delete", scale)) {
+            if (widgets::LightButton("snippets_sheet_delete", "Delete", scale, palette)) {
                 DeleteEdit();
             }
-            ImGui::SameLine(0.0f, 8.0f * scale);
+            ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
         }
-        if (widgets::PrimaryButton("snippets_save", "Save", scale)) {
+        if (widgets::PrimaryButton("snippets_save", "Save", scale, palette)) {
             if (SaveEdit()) {
                 toast_.Show("Saved", "");
             }

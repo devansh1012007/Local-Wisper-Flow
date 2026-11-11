@@ -14,3 +14,6 @@ transforms_test_tmp.json
 ggml-base.en.bin
 imgui.ini
 local-wisper-flow.exe
+
+# CMake scratch junk from `cmake --system-information` (accidentally committed once as ec1b7e9; dropped before PR)
+__cmake_systeminformation/

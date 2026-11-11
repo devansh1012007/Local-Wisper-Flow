@@ -25,13 +25,23 @@ std::filesystem::path ScratchDir(const char* name) {
     return dir;
 }
 
-std::string ReadSource(const std::string& path) {
-    const std::filesystem::path full = std::filesystem::path(LWF_SOURCE_DIR) / path;
-    std::ifstream file(full.string());
+std::string ReadSourceFrom(const std::string& root, const std::string& relative) {
+    std::ifstream file(root + "/" + relative);
     if (!file.is_open()) {
-        return {};
+        file.open(relative);
     }
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+}
+
+// T-004: LWF_SOURCE_DIR first with a bare-relative fallback (pattern from
+// tests/test_transforms_page.cpp:30-44) so source scans work from the repo
+// root and from build/ alike; previously this helper had no fallback.
+std::string ReadSource(const std::string& path) {
+#ifdef LWF_SOURCE_DIR
+    return ReadSourceFrom(LWF_SOURCE_DIR, path);
+#else
+    return ReadSourceFrom(".", path);
+#endif
 }
 
 std::size_t CountHits(const std::string& haystack, const std::string& needle) {
@@ -340,8 +350,40 @@ TEST_CASE("scratchpad page source wires shell widgets and notes store") {
     CHECK(page_cpp.find("Undo") != std::string::npos);
     CHECK(page_cpp.find("IconButton") != std::string::npos);
     CHECK(page_cpp.find("LightButton") != std::string::npos);
-    CHECK(page_cpp.find("PushFont(nullptr, 17.0f)") != std::string::npos);
-    CHECK(page_cpp.find("PushFont(nullptr, 15.0f)") != std::string::npos);
+    // T10e: the live palette is explicit and threads every custom draw and
+    // widget; the Undo HeatColor(3) data-viz fill stays (accent-ramp L3).
+    CHECK(page_h.find("void Draw(float scale, const lwf::ui::Palette& palette = lwf::ui::kDarkPalette)") !=
+          std::string::npos);
+    CHECK(page_cpp.find("kLightPalette") == std::string::npos);
+    CHECK(page_cpp.find("Pack(palette.text)") != std::string::npos);
+    CHECK(page_cpp.find("Pack(palette.muted)") != std::string::npos);
+    CHECK(page_cpp.find("Pack(palette.surface)") != std::string::npos);
+    CHECK(page_cpp.find("Pack(palette.border)") != std::string::npos);
+    CHECK(page_cpp.find("Pack(palette.accent)") != std::string::npos);
+    CHECK(page_cpp.find("Color(palette.surface)") != std::string::npos);
+    CHECK(page_cpp.find("BadgeBeta(scale, palette)") != std::string::npos);
+    CHECK(page_cpp.find("ToggleSwitch(\"##scratchpad_flow_bar\", flow_on, scale, palette)") !=
+          std::string::npos);
+    CHECK(page_cpp.find("LightButton(\"##start_new_note\", \"Start new note\", scale, palette)") !=
+          std::string::npos);
+    // Pre-PR review fix: the "?" button id must NOT reuse ##scratch_search
+    // (the input's id) — shared ids in one scope collide in ImGui.
+    CHECK(page_cpp.find("IconButton(\"##scratch_search_focus\", \"?\", scale, palette)") !=
+          std::string::npos);
+    CHECK(page_cpp.find("IconButton(\"##scratch_search\", \"?\", scale, palette)") ==
+          std::string::npos);
+    CHECK(page_cpp.find("HeatColor(3)") != std::string::npos);
+    // T-004 pin flip (P-005): PushFont must go through design-px tokens, not
+    // digit literals. 15px has a same-value token (metrics::font_card_title_px)
+    // so it must be gone; 17px has no token in either palette and stays
+    // allowlisted (capped at HEAD count 1) in the overlay ban for Wave 2 T-003.
+    const bool has_token_font =
+        page_cpp.find("PushFont(nullptr, studio_metrics::") != std::string::npos ||
+        page_cpp.find("PushFont(nullptr, metrics::") != std::string::npos ||
+        page_cpp.find("PushFont(nullptr, lwf::ui::metrics::") != std::string::npos;
+    CHECK(has_token_font);
+    CHECK(page_cpp.find("PushFont(nullptr, 15.0f)") == std::string::npos);
+    CHECK(CountHits(page_cpp, "PushFont(nullptr, 17.0f)") <= 1);
     CHECK(page_cpp.find("SetWindowFontScale") == std::string::npos);
     CHECK(page_cpp.find("ImGui::CreateContext") == std::string::npos);
 }
@@ -367,7 +409,26 @@ TEST_CASE("scratchpad editor window source keeps its own context and sizes") {
     CHECK(win_cpp.find("ImGui::GetCurrentContext()") == std::string::npos);
     CHECK(win_cpp.find("ImGui::SetCurrentContext") != std::string::npos);
     CHECK(win_cpp.find("glfwMakeContextCurrent") != std::string::npos);
-    CHECK(win_cpp.find("ApplyStudioStyle") != std::string::npos);
+    CHECK(win_cpp.find("ApplyImGuiStyle") != std::string::npos);
+    // T2b: style selected via PaletteForTheme.
+    CHECK(win_cpp.find("PaletteForTheme") != std::string::npos);
+    // T10e: the tab chrome reads the live current_palette_ (never Paper);
+    // the queue-only ApplyTheme stays queue-only (span-scoped absence).
+    CHECK(win_cpp.find("kLightPalette") == std::string::npos);
+    CHECK(win_cpp.find("current_palette_->surface") != std::string::npos);
+    CHECK(win_cpp.find("current_palette_->text") != std::string::npos);
+    CHECK(win_cpp.find("current_palette_->muted") != std::string::npos);
+    CHECK(win_cpp.find("current_palette_->accent") != std::string::npos);
+    CHECK(win_cpp.find("current_palette_->bg") != std::string::npos);
+    {
+        const std::size_t apply = win_cpp.find("void ScratchpadWindow::ApplyTheme");
+        REQUIRE(apply != std::string::npos);
+        const std::size_t open_note = win_cpp.find("void ScratchpadWindow::OpenNote", apply);
+        REQUIRE(open_note != std::string::npos);
+        const std::string apply_span = win_cpp.substr(apply, open_note - apply);
+        CHECK(apply_span.find("ApplyImGuiStyle(") == std::string::npos);
+        CHECK(apply_span.find("pending_theme_palette_ = &palette") != std::string::npos);
+    }
     CHECK(win_cpp.find("InputTextMultiline") != std::string::npos);
     CHECK(win_cpp.find("CallbackAlways") != std::string::npos);
     CHECK(win_cpp.find("Bold") != std::string::npos);

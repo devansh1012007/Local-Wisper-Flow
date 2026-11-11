@@ -16,6 +16,12 @@
 | T-002 | P-002,P-003 tranche1 | ui/pages+widgets | SURFACE | 37 PushFont + ~30 Dummy digit literals | pages/*.cpp + widgets/* | none | — | C1 resolved disjoint | 1 | W1-IMPL-02 | pending |
 | T-004 (P-005) | P-005 | tests | SURFACE | Tests bless literals, no bypass ban | test_overlay_settings_ui + scratchpad + snippets tests | none | — (red-by-design) | C5 resolved disjoint | 1 | W1-IMPL-03 | pending |
 | T-003 | Token gaps 24/17/10 + 12px gap | theme | DEEP | No token for 24/17/10 headings, 12px gap | StudioPalette.h (additive) + tranche2 | additive studio_metrics fonts/gaps | T-002 spelling first | C4 ordering | 2 | TBD | deferred |
+## Tasks (synthesized from Wave 0 digests 2026-11-08)
+| Task | Plan items | Domain | Class | Root cause (1 line) | Write-set | Contract-set | Depends on | Conflicts | Wave | Agent | Status |
+| T-001 | P-001 | ui/MainWindow | SURFACE | Geometry literals bypass metrics::* | MainWindow.cpp, MainWindow.h | none | — | C1 resolved disjoint | 1 | W1-IMPL-01 | pending |
+| T-002 | P-002,P-003 tranche1 | ui/pages+widgets | SURFACE | 37 PushFont + ~30 Dummy digit literals | pages/*.cpp + widgets/* | none | — | C1 resolved disjoint | 1 | W1-IMPL-02 | pending |
+| T-004 (P-005) | P-005 | tests | SURFACE | Tests bless literals, no bypass ban | test_overlay_settings_ui + scratchpad + snippets tests | none | — (red-by-design) | C5 resolved disjoint | 1 | W1-IMPL-03 | pending |
+| T-003 | Token gaps 24/17/10 + 12px gap | theme | DEEP | No token for 24/17/10 headings, 12px gap | StudioPalette.h (additive) + tranche2 | additive studio_metrics fonts/gaps | T-002 spelling first | C4 ordering | 2 | TBD | deferred |
 
 ## Waves
 ### Wave 0 (Investigation) — DONE 2026-11-08

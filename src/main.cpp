@@ -42,6 +42,7 @@
 #include "core/UiBus.h"
 #include "core/UnavailableProviders.h"
 #include "llm/LocalLlamaProvider.h"
+#include "llm/OpenRouterModels.h"
 #include "llm/OpenRouterProvider.h"
 #include "os/ActiveWindow.h"
 #include "os/CrashHandler.h"
@@ -60,10 +61,13 @@
 #include "ui/MainWindow.h"
 #include "ui/ScratchpadWindow.h"
 #include "ui/Overlay.h"
+#include "ui/theme/ThemePalette.h"
 #include "ui/pages/DictionaryPage.h"
 #include "ui/pages/InsightsPage.h"
 #include "ui/pages/ScratchpadPage.h"
 #include "ui/pages/SnippetsPage.h"
+#include "ui/pages/HistoryPage.h"
+#include "ui/pages/ProfilesPage.h"
 #include "ui/pages/TransformsPage.h"
 
 #include <atomic>
@@ -331,7 +335,9 @@ int main() {
                 "config.json was corrupt and has been moved aside; defaults loaded");
         }
 
-        MiniaudioCapture audio(kSampleRate, 1);
+        // INVARIANT: config.Store() is loaded in the ConfigManager/SettingsStore ctor
+        // above, so mic_device (hot_apply=false, restart banner) is readable here.
+        MiniaudioCapture audio(kSampleRate, 1, config.Store().GetString("mic_device"));
         std::unique_ptr<LocalWhisperProvider> local_stt;
         try {
             local_stt = std::make_unique<LocalWhisperProvider>(
@@ -560,6 +566,7 @@ int main() {
         engine.SetStatsStore(&usage_stats);
         engine.SetActiveWindow(CreateActiveWindow());
         engine.SetAppContextResolver(&app_context);
+        engine.SetHistoryStore(&history);
         engine.SetScratchpadTarget(false);
         engine.SetTransformStore(&transforms);
         engine.SetTransformLlm(llm);
@@ -577,6 +584,35 @@ int main() {
         tray.Start();
 
         MainWindow full(fsm, audio, config.Store(), ui_bus);
+        // DECISION: non-owning transport for the Cleanup model list Refresh.
+        // openrouter_http is declared before `full`, so it outlives the
+        // window; ~MainWindow joins the fetch worker before `full` is
+        // destroyed, so the worker never uses a dead transport.
+        full.SetModelsTransport(&openrouter_http);
+        // Composition root maps the Task-A fetch result onto the UI-facing
+        // primitives (ok/empty/ids/error) so MainWindow never includes the
+        // backend model tree (the F9 copy lint scans src/ui literals,
+        // including #include paths). Fetch errors share one UI message;
+        // errorDetail is already redacted + capped in Task A.
+        full.SetModelsFetcher([](IHttpTransport& transport,
+                                 const std::string& api_key) -> MainWindow::ModelListResult {
+            MainWindow::ModelListResult mapped;
+            const auto result = OpenRouterModels::FetchOpenRouterModels(transport, api_key);
+            switch (result.status) {
+                case OpenRouterModels::FetchStatus::Ok:
+                    mapped.ok = true;
+                    mapped.ids = result.modelIds;
+                    break;
+                case OpenRouterModels::FetchStatus::Empty:
+                    mapped.ok = true;
+                    mapped.empty = true;
+                    break;
+                default:
+                    mapped.error = result.errorDetail;
+                    break;
+            }
+            return mapped;
+        });
         full.SetDictionaryPage(
             std::make_unique<lwf::ui::pages::DictionaryPage>(dictionary_store, &dictionary));
         full.SetInsightsPage(std::make_unique<lwf::ui::insights::InsightsPage>(usage_stats));
@@ -586,6 +622,12 @@ int main() {
         full.SetScratchpadPage(
             std::make_unique<ScratchpadPage>(notes, config.Store(), ui_bus));
         full.SetSnippetsPage(std::make_unique<lwf::ui::pages::SnippetsPage>(snippets));
+        full.SetHistoryPage(std::make_unique<lwf::ui::pages::HistoryPage>(
+            history, config.Store(),
+            [&full](const std::string& p) { ShellExecuteA(nullptr, "open", p.c_str(), nullptr, nullptr, 1); },
+            [&full]() { full.OpenSettingsPrivacy(); }));
+        full.SetProfilesPage(std::make_unique<lwf::ui::pages::ProfilesPage>(
+            app_context, config.Store(), data_dir));
         {
             MainWindow::DataResetStores reset_stores;
             reset_stores.dictionary = &dictionary_store;
@@ -610,6 +652,10 @@ int main() {
         // (negative sentinel = never moved: default anchor above the tray).
         overlay.SetSavedPosition(config.Store().GetInt("mini_x"),
                                  config.Store().GetInt("mini_y"));
+        // T2b: Overlay has no SettingsStore ref, so the startup theme is
+        // fed here (before Init, which promotes the pending selection). The
+        // Full/Scratchpad windows read the store in their own Init.
+        overlay.SetTheme(lwf::ui::PaletteForTheme(config.Store().GetString("theme")));
         overlay.SetPositionPersistHandler([&config](int x, int y) {
             config.Store().SetInt("mini_x", x);
             config.Store().SetInt("mini_y", y);
@@ -645,6 +691,9 @@ int main() {
                         full.SetVisible(true);
                         break;
                     case UiCommandType::OpenHistory:
+                        full.SetVisible(true);
+                        full.OpenHistoryPage();
+                        break;
                     case UiCommandType::OpenLogsFolder:
                         ShellExecuteA(nullptr, "open", (data_dir + "\\logs").c_str(), nullptr,
                                       nullptr, 1);
@@ -680,9 +729,18 @@ int main() {
                         overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
                         usage_stats.SetUsageStatsEnabled(config.Store().GetBool("keep_usage_stats"));
                         overlay.SetScratchpadVisible(config.Store().GetBool("scratchpad_flow_bar"));
-                        break;
-                    case UiCommandType::ToggleAutostart:
-                        Autostart::SetEnabled(!Autostart::IsEnabled());
+                        // T2b live theme swap (hot_apply=true, no restart).
+                        // The ApplyTheme/SetTheme calls only queue the
+                        // palette; each window re-styles inside its own
+                        // frame where its ImGui context is current, so this
+                        // drain never colors another window's context.
+                        {
+                            const lwf::ui::Palette& theme_palette =
+                                lwf::ui::PaletteForTheme(config.Store().GetString("theme"));
+                            full.ApplyTheme(theme_palette);
+                            overlay.SetTheme(theme_palette);
+                            scratchpad_editor.ApplyTheme(theme_palette);
+                        }
                         break;
                     case UiCommandType::Quit:
                         quit.store(true);

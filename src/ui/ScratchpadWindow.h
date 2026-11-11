@@ -12,6 +12,10 @@
 struct GLFWwindow;
 struct ImGuiContext;
 
+namespace lwf::ui {
+struct Palette;
+}
+
 namespace lwf::ui::scratchpad {
 
 inline constexpr const char* kEditorTitle = "Scratchpad";
@@ -339,6 +343,12 @@ public:
     bool TakeCloseRequest();
     void RenderFrame(float delta_seconds);
 
+    // Live theme swap (T2b, fed from main.cpp's ApplySettings drain). Does
+    // NOT call ApplyImGuiStyle directly (the drain may run while another
+    // window's context is current); defers to RenderFrame where this
+    // window's context is current.
+    void ApplyTheme(const lwf::ui::Palette& palette);
+
     void OpenNote(const std::string& id);
     void OpenNewNote();
     void SetDictationActive(bool active);
@@ -376,6 +386,13 @@ private:
     bool close_requested_ = false;
     double dpi_scale_ = 1.0;
     float pending_dpi_scale_ = 0.0f;
+    // T2b theme selection. INVARIANT: current_palette_ is the last-applied
+    // palette (Init promotes the store selection into it); pending slots hold
+    // a live-swap selection until RenderFrame applies it with this window's
+    // context current. Pointer identity detects an actual change.
+    const lwf::ui::Palette* current_palette_ = nullptr;
+    const lwf::ui::Palette* pending_theme_palette_ = nullptr;
+    bool theme_pending_ = false;
     bool focus_editor_pending_ = false;
     bool inputs_synced_ = false;
     double saved_until_ = -1.0;
