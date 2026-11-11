@@ -96,7 +96,6 @@ void SnippetsPage::Draw(float scale, const lwf::ui::Palette& palette) {
         }
     }
     DrawHeader(scale, palette);
-    DrawBanner(scale, palette);
     DrawRows(scale, palette);
     DrawSheet(scale, palette);
     toast_.Draw(scale, palette);
@@ -111,28 +110,6 @@ void SnippetsPage::DrawHeader(float scale, const lwf::ui::Palette& palette) {
         OpenAdd();
     }
     ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_section * scale));
-}
-
-void SnippetsPage::DrawBanner(float scale, const lwf::ui::Palette& palette) {
-    if (!VisibleBanner(state_)) {
-        return;
-    }
-    bool open = true;
-    widgets::Banner("##snippets_banner", kSnippetsBannerHeadline, "", &open, scale, palette);
-    if (!open) {
-        state_.banner_closed = true;
-        ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap * scale));
-        return;
-    }
-    ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap * scale));
-    (void)widgets::Chip("##snippets_chip_trigger", kSnippetsBannerExampleTrigger, false, scale, palette);
-    ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
-    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-    ImGui::TextUnformatted("→");
-    ImGui::PopFont();
-    ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
-    (void)widgets::Chip("##snippets_chip_expansion", kSnippetsBannerExampleExpansion, false, scale, palette);
-    ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap * scale));
 }
 
 void SnippetsPage::DrawRows(float scale, const lwf::ui::Palette& palette) {

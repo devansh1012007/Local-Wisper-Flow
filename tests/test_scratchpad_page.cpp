@@ -360,7 +360,9 @@ TEST_CASE("scratchpad page source wires shell widgets and notes store") {
     CHECK(page_cpp.find("Pack(palette.surface)") != std::string::npos);
     CHECK(page_cpp.find("Pack(palette.border)") != std::string::npos);
     CHECK(page_cpp.find("Pack(palette.accent)") != std::string::npos);
-    CHECK(page_cpp.find("Color(palette.surface)") != std::string::npos);
+    // Followups D2: the banner mock (the only Color(palette.surface) site)
+    // is retired; the row hover keeps the surface token alive via Pack.
+    CHECK(page_cpp.find("Color(palette.surface)") == std::string::npos);
     CHECK(page_cpp.find("BadgeBeta(scale, palette)") != std::string::npos);
     CHECK(page_cpp.find("ToggleSwitch(\"##scratchpad_flow_bar\", flow_on, scale, palette)") !=
           std::string::npos);

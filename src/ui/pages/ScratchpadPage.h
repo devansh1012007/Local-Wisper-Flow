@@ -15,10 +15,6 @@ class UiBus;
 
 namespace lwf::ui::scratchpad {
 
-inline constexpr const char* kBannerHeadline = "Capture ideas without leaving the flow";
-inline constexpr const char* kBannerBody =
-    "Notes stay on this computer. Dictate straight into the editor while the scratchpad "
-    "window is focused.";
 inline constexpr const char* kDefaultScratchpadShortcut = "Win+Alt+S";
 inline constexpr const char* kShortcutHelper = "Click to enable shortcut";
 inline constexpr std::size_t kPreviewChars = 80;
@@ -179,7 +175,6 @@ public:
 
 private:
     void DrawHeader(float scale, const lwf::ui::Palette& palette);
-    void DrawBanner(float scale, const lwf::ui::Palette& palette);
     void DrawRecents(float scale, const lwf::ui::Palette& palette);
     void DrawNoteRow(const NotesStore::Note& note, float scale, const lwf::ui::Palette& palette);
     void DrawUndoToast(float scale, const lwf::ui::Palette& palette);

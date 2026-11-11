@@ -270,7 +270,6 @@ bool MainWindow::Init() {
 
     if (FirstRunNeeded()) {
         page_ = Page::Welcome;
-        welcome_step_ = 1;
     }
     return true;
 }
@@ -336,19 +335,9 @@ void MainWindow::SetLastTranscript(const std::string& text) {
     copied_until_ = -1.0f;  // a new transcript is not yet copied
 }
 
-void MainWindow::SetDetectedHotkey(const std::string& chord) {
-    detected_hotkey_ = chord;
-    if (learn_target_ == "hotkey_ptt") {
-        learn_target_.clear();
-    }
-}
-
 void MainWindow::SetLearnedHotkey(const std::string& target_key, const std::string& chord) {
     if (learn_target_ == target_key) {
         learn_target_.clear();
-    }
-    if (target_key == "hotkey_ptt") {
-        detected_hotkey_ = chord;
     }
     if (target_key == "hotkey_handsfree") {
         hotkey_handsfree_field_.seeded = false;
@@ -542,8 +531,10 @@ void MainWindow::RunOnce(float) {
                               ImGui::GetIO().DisplaySize.y - strip_h);
     ImGui::SetCursorScreenPos(content_pos);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    // Followups D8: generous left/right page gutter (page_gutter, 48 px)
+    // with the vertical padding unchanged (space_xl).
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                        ImVec2(metrics::space_xl * scale, metrics::space_xl * scale));
+                        ImVec2(metrics::page_gutter * scale, metrics::space_xl * scale));
     ImGui::BeginChild("##content", content_size, ImGuiChildFlags_None);
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
@@ -619,7 +610,14 @@ void MainWindow::DrawTopStrip(float scale) {
     const float strip_w = ImGui::GetIO().DisplaySize.x;
     // No filled panel: window background with a 1 px hairline at the bottom.
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    // Followups D8: the strip's side inset matches the page gutter so the
+    // wordmark aligns with the page content below it. The avail budget
+    // below subtracts BOTH side paddings (the old budget ignored the
+    // default 16 px WindowPadding and could run into the right padding).
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                        ImVec2(metrics::page_gutter * scale, 0.0f));
     ImGui::BeginChild("##strip", ImVec2(strip_w, strip_h), ImGuiChildFlags_None);
+    ImGui::PopStyleVar();
     ImGui::PopStyleColor();
 
     // Wordmark at the design size until real fonts land, vertically centred
@@ -668,7 +666,8 @@ void MainWindow::DrawTopStrip(float scale) {
         hide_w = ImGui::CalcTextSize("Hide").x + metrics::space_xl * scale + 2.0f * scale;
         ImGui::PopFont();
     }
-    float avail = strip_w - wordmark_size.x - status_reserve - hide_w - 3.0f * gap;
+    float avail = strip_w - 2.0f * metrics::page_gutter * scale - wordmark_size.x -
+                  status_reserve - hide_w - 3.0f * gap;
     if (avail < 0.0f) {
         avail = 0.0f;
     }
@@ -3033,322 +3032,297 @@ void MainWindow::DrawSettingsPage(float scale) {
 }
 
 void MainWindow::DrawWelcomePage(float scale) {
-    DrawPageChrome("Welcome", "Four small steps and you are dictating.", scale);
+    // Followups D7: the four-step test wizard is retired. The page is a
+    // short welcome (what the app does), the current push-to-talk chord,
+    // the speech-model row (this page stays the destination while the
+    // model path is empty), and one Get started action. T9 ruled rows
+    // (DESIGN §6): the intro, the catalog listing and the download state
+    // are taller than the 52 px ruled row, so those sections stay uncarded
+    // blocks; the hotkey, model-path and get-started rows are ruled rows
+    // with their controls in the slots. The download worker is the one
+    // shared with the Speech tab (same latch, consumed in RunOnce), so a
+    // transfer started here completes even if the page changes; this page
+    // carries its own ids and never reuses them.
+    DrawPageChrome("Welcome", "Dictation from this computer, in one hotkey.", scale);
     DrawRestartBanner(scale);
-    // T9 ruled rows (DESIGN §6): same migration note as DrawGeneralPage;
-    // the former BeginCard id is carried by the first block below so the
-    // page-structure pin keeps passing. The mic meter and the catalog
-    // listing are taller than the 52 px ruled row, so those sections stay
-    // uncarded blocks; the hotkey, model-path and finish steps are ruled
-    // rows with their controls in the slots. Step 3 reuses the one shared
-    // download worker on the Speech tab (same latch, consumed in RunOnce),
-    // so a transfer started here completes even if the page changes; the
-    // mirror-not-extract shape keeps the Speech pins intact (this page
-    // carries its own ids and never reuses them).
-    if (welcome_step_ == 1) {
-        ImGui::SetCursorPosX(16.0f * scale);
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextWrapped("%s", "Step 1 of 4 - microphone test.");
-        ImGui::PopFont();
-        // BLOCK EXCEPTION (DESIGN §6, as-built T9 — same note as DrawCloudPage):
-        // the live meter plus two actions is taller than the 52 px ruled row,
-        // so this step stays an uncarded block on the page background.
-        ImGui::PushID("##card_welcome");
-        {
-            ImGui::TextWrapped("%s", "Speak now; the bar should move.");
-            const float level = audio_.AudioLevel();
-            ImGui::ProgressBar(level, ImVec2(-FLT_MIN, 0.0f));
-            if (level > 0.05f && ImGui::Button("Microphone works")) {
-                welcome_step_ = 2;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Open microphone settings")) {
-#ifdef _WIN32
-                ShellExecuteA(nullptr, "open", "ms-settings:privacy-microphone", nullptr, nullptr,
-                              1);
-#endif
-            }
+
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("How it works");
+    ImGui::PopFont();
+    // BLOCK EXCEPTION (DESIGN §6, as-built T9): the intro paragraph is
+    // taller than the 52 px ruled row, so it stays an uncarded block.
+    ImGui::PushID("##card_welcome");
+    {
+        ImGui::TextWrapped("%s",
+                           "Hold the push-to-talk hotkey, speak, and release. Your words are "
+                           "typed where your cursor is, and everything runs on this computer.");
+    }
+    ImGui::PopID();
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+
+    {
+        const std::string chord = settings_.GetString("hotkey_ptt");
+        const std::string helper =
+            chord.empty()
+                ? "No chord set yet. Learn one from the Home page."
+                : "Current chord: " + chord + ". Change it any time from the Home page.";
+        lwf::ui::widgets::Row("##card_welcome_hotkey", "Push-to-talk", helper.c_str(),
+                              360.0f * scale, scale, *current_palette_);
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Speech model");
+    ImGui::PopFont();
+
+    // The Download control is catalog-driven (T13a): the exe-dir
+    // models.json, the first whisper entry (same rule as the Speech
+    // tab). While its url is empty the button stays inert (Q2); Browse
+    // is never blocked by the catalog.
+    const std::string path = GetExeDir() + "\\models.json";
+    const Onboarding::ModelCatalog catalog = Onboarding::ParseModelsJson(path);
+    const Onboarding::ModelDownload* welcome_entry = nullptr;
+    if (!catalog.whisper.empty()) {
+        welcome_entry = &catalog.whisper.front();
+    }
+    const bool download_available = welcome_entry != nullptr && !welcome_entry->url.empty() &&
+                                    Onboarding::IsSafeFileName(welcome_entry->name);
+    // BLOCK EXCEPTION (DESIGN §6, as-built T9 — same note as DrawCloudPage):
+    // the catalog listing (warnings, both model lists) is taller than the
+    // 52 px ruled row, so it stays an uncarded block; the path row below
+    // is ruled exactly like the Speech model row.
+    ImGui::PushID("##card_welcome_models");
+    {
+        for (const std::string& warning : catalog.warnings) {
+            ImGui::TextDisabled("%s", warning.c_str());
         }
-        ImGui::PopID();
-    } else if (welcome_step_ == 2) {
-        ImGui::SetCursorPosX(16.0f * scale);
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextWrapped("%s", "Step 2 of 4 - press your push-to-talk chord now.");
-        ImGui::PopFont();
-        {
-            lwf::ui::widgets::Row("##card_welcome_hotkey", "Push-to-talk",
-                                  "You can also learn a chord later from the Home page.",
-                                  360.0f * scale, scale, *current_palette_);
-            if (detected_hotkey_.empty()) {
-                ImGui::TextDisabled("Waiting for a chord...");
-            } else {
-                ImGui::Text("Detected: %s", detected_hotkey_.c_str());
+        for (const auto& model : catalog.whisper) {
+            ImGui::BulletText("%s (%.0f MB)", model.name.c_str(),
+                              static_cast<double>(model.size_bytes) / 1048576.0);
+            if (model.sha256.empty()) {
                 ImGui::SameLine();
-                if (ImGui::Button("That is my hotkey")) {
-                    settings_.SetString("hotkey_ptt", detected_hotkey_);
-                    ApplyAndSave();  // also posts ApplySettings + shows Saved
-                    welcome_step_ = 3;
-                }
+                ImGui::TextColored(Color(current_palette_->warn), "unverified file");
             }
-            lwf::ui::widgets::RowEnd(scale);
         }
-    } else if (welcome_step_ == 3) {
-        ImGui::SetCursorPosX(16.0f * scale);
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextWrapped("%s", "Step 3 of 4 - models.");
-        ImGui::PopFont();
-        // The Download control is catalog-driven (T13a): the exe-dir
-        // models.json, the first whisper entry (same rule as the Speech
-        // tab). While its url is empty the button stays inert (Q2); Browse
-        // is never blocked by the catalog.
-        const std::string path = GetExeDir() + "\\models.json";
-        const Onboarding::ModelCatalog catalog = Onboarding::ParseModelsJson(path);
-        const Onboarding::ModelDownload* welcome_entry = nullptr;
-        if (!catalog.whisper.empty()) {
-            welcome_entry = &catalog.whisper.front();
-        }
-        const bool download_available = welcome_entry != nullptr && !welcome_entry->url.empty() &&
-                                        Onboarding::IsSafeFileName(welcome_entry->name);
-        // BLOCK EXCEPTION (DESIGN §6, as-built T9 — same note as DrawCloudPage):
-        // the catalog listing (warnings, both model lists) is taller than the
-        // 52 px ruled row, so it stays an uncarded block; the path row below
-        // is ruled exactly like the Speech model row.
-        ImGui::PushID("##card_welcome_models");
-        {
-            for (const std::string& warning : catalog.warnings) {
-                ImGui::TextDisabled("%s", warning.c_str());
-            }
-            for (const auto& model : catalog.whisper) {
-                ImGui::BulletText("%s (%.0f MB)", model.name.c_str(),
-                                  static_cast<double>(model.size_bytes) / 1048576.0);
-                if (model.sha256.empty()) {
-                    ImGui::SameLine();
-                    ImGui::TextColored(Color(current_palette_->warn), "unverified file");
-                }
-            }
-            for (const auto& model : catalog.llm) {
-                ImGui::BulletText("%s (%.0f MB)", model.name.c_str(),
-                                  static_cast<double>(model.size_bytes) / 1048576.0);
-                if (model.sha256.empty()) {
-                    ImGui::SameLine();
-                    ImGui::TextColored(Color(current_palette_->warn), "unverified file");
-                }
-            }
-            ImGui::TextWrapped("%s",
-                               "Files are verified against the listed SHA-256 checksums.");
-        }
-        ImGui::PopID();
-        {
-            if (model_path_buffer_[0] == '\0') {
-                const std::string current = settings_.GetString("whisper_model_path");
-                std::snprintf(model_path_buffer_, sizeof(model_path_buffer_), "%s",
-                              current.c_str());
-            }
-            const float model_control_w = 380.0f * scale;
-            const float browse_width = ImGui::CalcTextSize("Browse...").x +
-                                       ImGui::GetStyle().FramePadding.x * 2.0f;
-            const float download_width = ImGui::CalcTextSize("Download").x +
-                                         ImGui::GetStyle().FramePadding.x * 2.0f;
-            const float spacing = ImGui::GetStyle().ItemSpacing.x;
-            lwf::ui::widgets::Row("##card_welcome_model_path", "Speech model",
-                                  "Restart is needed after changing the model path.",
-                                  model_control_w, scale, *current_palette_);
-            ImGui::SetNextItemWidth(model_control_w - browse_width - spacing - download_width -
-                                    (download_busy_.load() ? spacing + ImGui::CalcTextSize("Cancel").x +
-                                                               ImGui::GetStyle().FramePadding.x * 2.0f
-                                                           : 0.0f));
-            ImGui::InputText("##welcome_model_path", model_path_buffer_,
-                             sizeof(model_path_buffer_));
-            if (ImGui::IsItemDeactivatedAfterEdit()) {
-                validation_error_ = SettingsUiModel::ValidateModelPath(model_path_buffer_);
-                if (validation_error_.empty()) {
-                    settings_.SetString("whisper_model_path", model_path_buffer_);
-                    restart_needed_ = true;
-                    ApplyAndSave();
-                }
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Browse...##browse_welcome")) {
-                PickAndApplyModelPath(model_path_buffer_, sizeof(model_path_buffer_),
-                                     "whisper_model_path", validation_error_);
-            }
-            ImGui::SameLine();
-            ImGui::BeginDisabled(download_busy_.load() || !download_available);
-            const bool download_pressed = ImGui::Button("Download##download_welcome");
-            ImGui::EndDisabled();
-            if (download_pressed && download_available && !download_busy_.load()) {
-                // The transfer is synchronous and slow, so it runs on a worker
-                // thread with copies of everything it needs; the cancel flag
-                // stops it on the next chunk. The UI thread keeps ownership of
-                // the state model, and the latch is consumed in RunOnce.
-                const std::string download_url = welcome_entry->url;
-                const std::string download_sha = welcome_entry->sha256;
-                const std::int64_t download_size =
-                    static_cast<std::int64_t>(welcome_entry->size_bytes);
-                const std::filesystem::path download_dir =
-                    std::filesystem::path(GetDataDir()) / "models";
-                const std::string destination = (download_dir / welcome_entry->name).string();
-                const std::string stored_path = "models/" + welcome_entry->name;
-                std::error_code mkdir_ec;
-                std::filesystem::create_directories(download_dir, mkdir_ec);
-                // A destination the resume planner already finds complete skips
-                // the transfer (and the thread) entirely.
-                std::uint64_t existing_bytes = 0;
-                std::string actual_hash;
-                {
-                    std::error_code fs_ec;
-                    if (std::filesystem::exists(destination, fs_ec)) {
-                        existing_bytes = static_cast<std::uint64_t>(
-                            std::filesystem::file_size(destination, fs_ec));
-                        bool hash_ok = false;
-                        actual_hash = lwf_sha256::HexDigestOfFile(destination, hash_ok);
-                        if (!hash_ok) {
-                            actual_hash.clear();
-                        }
-                    }
-                }
-                const Onboarding::DownloadStartPlan start_plan = Onboarding::PlanDownloadStart(
-                    existing_bytes, welcome_entry->size_bytes, welcome_entry->sha256, actual_hash);
-                download_model_.Start(destination, welcome_entry->size_bytes);
-                if (start_plan.skip) {
-                    download_model_.OnSuccess();
-                    settings_.SetString("whisper_model_path", stored_path);
-                    validation_error_.clear();
-                    restart_needed_ = true;
-                    ApplyAndSave();
-                    std::snprintf(model_path_buffer_, sizeof(model_path_buffer_), "%s",
-                                  stored_path.c_str());
-                } else {
-                    download_stored_path_ = stored_path;
-                    download_downloaded_.store(0);
-                    download_cancelled_.store(false);
-                    download_busy_.store(true);
-                    if (download_worker_.joinable()) {
-                        download_worker_.join();
-                    }
-                    download_worker_ = std::thread(
-                        [this, download_url, destination, download_sha, download_size]() {
-                            Onboarding::WindowsDownloader downloader;
-                            Onboarding::DownloadSnapshot result;
-                            result.destination = destination;
-                            try {
-                                const bool ok = downloader.Download(
-                                    download_url, destination, download_sha, download_size,
-                                    [this](const Onboarding::DownloadProgress& progress) {
-                                        download_downloaded_.store(progress.downloaded);
-                                        return !download_cancelled_.load();
-                                    });
-                                if (ok) {
-                                    result.state = Onboarding::DownloadState::Success;
-                                } else {
-                                    result.state = Onboarding::DownloadState::Failed;
-                                    result.error =
-                                        Onboarding::MapDownloadError(ErrorCode::DownloadFailed,
-                                                                    "download did not complete");
-                                }
-                            } catch (const InjectionException& e) {
-                                if (download_cancelled_.load() ||
-                                    Onboarding::IsCancellationDetail(e.what())) {
-                                    result.state = Onboarding::DownloadState::Cancelled;
-                                } else {
-                                    result.state = Onboarding::DownloadState::Failed;
-                                    result.error =
-                                        Onboarding::MapDownloadError(e.Code(), e.what());
-                                }
-                            } catch (const std::exception& e) {
-                                result.state = Onboarding::DownloadState::Failed;
-                                result.error =
-                                    Onboarding::MapDownloadError(ErrorCode::Unknown, e.what());
-                            } catch (...) {
-                                result.state = Onboarding::DownloadState::Failed;
-                                result.error =
-                                    Onboarding::MapDownloadError(ErrorCode::Unknown, "");
-                            }
-                            std::lock_guard<std::mutex> latch_lock(download_latch_mutex_);
-                            download_latch_ = result;
-                            download_latch_ready_ = true;
-                        });
-                }
-            }
-            if (download_busy_.load()) {
+        for (const auto& model : catalog.llm) {
+            ImGui::BulletText("%s (%.0f MB)", model.name.c_str(),
+                              static_cast<double>(model.size_bytes) / 1048576.0);
+            if (model.sha256.empty()) {
                 ImGui::SameLine();
-                if (ImGui::Button("Cancel##cancel_download_welcome")) {
-                    download_cancelled_.store(true);
-                }
-            }
-            lwf::ui::widgets::RowEnd(scale);
-        }
-        if (!validation_error_.empty()) {
-            ImGui::TextColored(Color(current_palette_->err), "%s", validation_error_.c_str());
-        }
-        // Download state row (total=0 is indeterminate: breathing bar,
-        // never a stuck 0%). Written in the page's err idiom so the word
-        // always carries the state next to any color.
-        {
-            const Onboarding::DownloadSnapshot download_state = download_model_.Snapshot();
-            if (download_state.state == Onboarding::DownloadState::Downloading) {
-                const double fraction = download_model_.ProgressFraction();
-                if (fraction >= 0.0) {
-                    char overlay[32];
-                    std::snprintf(overlay, sizeof(overlay), "%.0f%%", fraction * 100.0);
-                    ImGui::ProgressBar(static_cast<float>(fraction), ImVec2(-FLT_MIN, 0.0f),
-                                       overlay);
-                } else {
-                    ImGui::ProgressBar(0.5f + 0.5f * std::sin(ImGui::GetTime() * 3.0f),
-                                       ImVec2(-FLT_MIN, 0.0f), "");
-                }
-            } else if (download_state.state == Onboarding::DownloadState::Success) {
-                ImGui::TextDisabled("Download complete. Restart the app to use the new model.");
-            } else if (download_state.state == Onboarding::DownloadState::Cancelled) {
-                ImGui::TextDisabled("Download stopped.");
-            } else if (download_state.state == Onboarding::DownloadState::Failed) {
-                if (download_state.error.code == ErrorCode::ChecksumMismatch) {
-                    ImGui::TextColored(
-                        Color(current_palette_->err),
-                        "The saved model file did not pass its check. The saved bytes differ "
-                        "from the listed check value, so the file may be damaged. Choose "
-                        "Download again to save a fresh copy.");
-                } else {
-                    ImGui::TextColored(
-                        Color(current_palette_->err),
-                        "The model download did not finish. The connection stopped before all "
-                        "the file arrived. Check the connection and choose Download to try "
-                        "again.");
-                }
-                if (!download_state.error.detail.empty()) {
-                    // The detail is transfer-layer machine context only:
-                    // it never carries a transcript or a key by design.
-                    ImGui::TextDisabled("More detail: %s", download_state.error.detail.c_str());
-                }
-            } else if (!download_available) {
-                ImGui::TextDisabled(
-                    "No download address is listed for this file yet. You can still browse "
-                    "to a file on this computer.");
+                ImGui::TextColored(Color(current_palette_->warn), "unverified file");
             }
         }
-        if (ImGui::Button("Skip (I have models)")) {
-            welcome_step_ = 4;
+        ImGui::TextWrapped("%s",
+                           "Files are verified against the listed SHA-256 checksums.");
+    }
+    ImGui::PopID();
+    {
+        if (model_path_buffer_[0] == '\0') {
+            const std::string current = settings_.GetString("whisper_model_path");
+            std::snprintf(model_path_buffer_, sizeof(model_path_buffer_), "%s",
+                          current.c_str());
         }
-    } else {
-        ImGui::SetCursorPosX(16.0f * scale);
-        ImGui::PushFont(nullptr, metrics::font_card_title_px);
-        ImGui::TextWrapped("%s", "Step 4 of 4 - try it.");
-        ImGui::PopFont();
-        {
-            lwf::ui::widgets::Row("##card_welcome_finish", "Try it",
-                                  "Hold the hotkey and read a sentence aloud.", 248.0f * scale,
-                                  scale, *current_palette_);
-            if (ImGui::Button("Finish")) {
-                settings_.SetBool("first_run", false);
+        const float model_control_w = 380.0f * scale;
+        const float browse_width = ImGui::CalcTextSize("Browse...").x +
+                                   ImGui::GetStyle().FramePadding.x * 2.0f;
+        const float download_width = ImGui::CalcTextSize("Download").x +
+                                     ImGui::GetStyle().FramePadding.x * 2.0f;
+        const float spacing = ImGui::GetStyle().ItemSpacing.x;
+        lwf::ui::widgets::Row("##card_welcome_model_path", "Model path",
+                              "Restart is needed after changing the model path.",
+                              model_control_w, scale, *current_palette_);
+        ImGui::SetNextItemWidth(model_control_w - browse_width - spacing - download_width -
+                                (download_busy_.load() ? spacing + ImGui::CalcTextSize("Cancel").x +
+                                                           ImGui::GetStyle().FramePadding.x * 2.0f
+                                                       : 0.0f));
+        ImGui::InputText("##welcome_model_path", model_path_buffer_,
+                         sizeof(model_path_buffer_));
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            validation_error_ = SettingsUiModel::ValidateModelPath(model_path_buffer_);
+            if (validation_error_.empty()) {
+                settings_.SetString("whisper_model_path", model_path_buffer_);
+                restart_needed_ = true;
                 ApplyAndSave();
-                welcome_step_ = 0;
-                validation_error_.clear();  // page switch: errors stay on their page
-                page_ = Page::Home;
-                PersistPage();
-                page_focus_pending_ = true;
             }
-            lwf::ui::widgets::RowEnd(scale);
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Browse...##browse_welcome")) {
+            PickAndApplyModelPath(model_path_buffer_, sizeof(model_path_buffer_),
+                                 "whisper_model_path", validation_error_);
+        }
+        ImGui::SameLine();
+        ImGui::BeginDisabled(download_busy_.load() || !download_available);
+        const bool download_pressed = ImGui::Button("Download##download_welcome");
+        ImGui::EndDisabled();
+        if (download_pressed && download_available && !download_busy_.load()) {
+            // The transfer is synchronous and slow, so it runs on a worker
+            // thread with copies of everything it needs; the cancel flag
+            // stops it on the next chunk. The UI thread keeps ownership of
+            // the state model, and the latch is consumed in RunOnce.
+            const std::string download_url = welcome_entry->url;
+            const std::string download_sha = welcome_entry->sha256;
+            const std::int64_t download_size =
+                static_cast<std::int64_t>(welcome_entry->size_bytes);
+            const std::filesystem::path download_dir =
+                std::filesystem::path(GetDataDir()) / "models";
+            const std::string destination = (download_dir / welcome_entry->name).string();
+            const std::string stored_path = "models/" + welcome_entry->name;
+            std::error_code mkdir_ec;
+            std::filesystem::create_directories(download_dir, mkdir_ec);
+            // A destination the resume planner already finds complete skips
+            // the transfer (and the thread) entirely.
+            std::uint64_t existing_bytes = 0;
+            std::string actual_hash;
+            {
+                std::error_code fs_ec;
+                if (std::filesystem::exists(destination, fs_ec)) {
+                    existing_bytes = static_cast<std::uint64_t>(
+                        std::filesystem::file_size(destination, fs_ec));
+                    bool hash_ok = false;
+                    actual_hash = lwf_sha256::HexDigestOfFile(destination, hash_ok);
+                    if (!hash_ok) {
+                        actual_hash.clear();
+                    }
+                }
+            }
+            const Onboarding::DownloadStartPlan start_plan = Onboarding::PlanDownloadStart(
+                existing_bytes, welcome_entry->size_bytes, welcome_entry->sha256, actual_hash);
+            download_model_.Start(destination, welcome_entry->size_bytes);
+            if (start_plan.skip) {
+                download_model_.OnSuccess();
+                settings_.SetString("whisper_model_path", stored_path);
+                validation_error_.clear();
+                restart_needed_ = true;
+                ApplyAndSave();
+                std::snprintf(model_path_buffer_, sizeof(model_path_buffer_), "%s",
+                              stored_path.c_str());
+            } else {
+                download_stored_path_ = stored_path;
+                download_downloaded_.store(0);
+                download_cancelled_.store(false);
+                download_busy_.store(true);
+                if (download_worker_.joinable()) {
+                    download_worker_.join();
+                }
+                download_worker_ = std::thread(
+                    [this, download_url, destination, download_sha, download_size]() {
+                        Onboarding::WindowsDownloader downloader;
+                        Onboarding::DownloadSnapshot result;
+                        result.destination = destination;
+                        try {
+                            const bool ok = downloader.Download(
+                                download_url, destination, download_sha, download_size,
+                                [this](const Onboarding::DownloadProgress& progress) {
+                                    download_downloaded_.store(progress.downloaded);
+                                    return !download_cancelled_.load();
+                                });
+                            if (ok) {
+                                result.state = Onboarding::DownloadState::Success;
+                            } else {
+                                result.state = Onboarding::DownloadState::Failed;
+                                result.error =
+                                    Onboarding::MapDownloadError(ErrorCode::DownloadFailed,
+                                                                "download did not complete");
+                            }
+                        } catch (const InjectionException& e) {
+                            if (download_cancelled_.load() ||
+                                Onboarding::IsCancellationDetail(e.what())) {
+                                result.state = Onboarding::DownloadState::Cancelled;
+                            } else {
+                                result.state = Onboarding::DownloadState::Failed;
+                                result.error =
+                                    Onboarding::MapDownloadError(e.Code(), e.what());
+                            }
+                        } catch (const std::exception& e) {
+                            result.state = Onboarding::DownloadState::Failed;
+                            result.error =
+                                Onboarding::MapDownloadError(ErrorCode::Unknown, e.what());
+                        } catch (...) {
+                            result.state = Onboarding::DownloadState::Failed;
+                            result.error =
+                                Onboarding::MapDownloadError(ErrorCode::Unknown, "");
+                        }
+                        std::lock_guard<std::mutex> latch_lock(download_latch_mutex_);
+                        download_latch_ = result;
+                        download_latch_ready_ = true;
+                    });
+            }
+        }
+        if (download_busy_.load()) {
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel##cancel_download_welcome")) {
+                download_cancelled_.store(true);
+            }
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    if (!validation_error_.empty()) {
+        ImGui::TextColored(Color(current_palette_->err), "%s", validation_error_.c_str());
+    }
+    // Download state row (total=0 is indeterminate: breathing bar,
+    // never a stuck 0%). Written in the page's err idiom so the word
+    // always carries the state next to any color.
+    {
+        const Onboarding::DownloadSnapshot download_state = download_model_.Snapshot();
+        if (download_state.state == Onboarding::DownloadState::Downloading) {
+            const double fraction = download_model_.ProgressFraction();
+            if (fraction >= 0.0) {
+                char overlay[32];
+                std::snprintf(overlay, sizeof(overlay), "%.0f%%", fraction * 100.0);
+                ImGui::ProgressBar(static_cast<float>(fraction), ImVec2(-FLT_MIN, 0.0f),
+                                   overlay);
+            } else {
+                ImGui::ProgressBar(0.5f + 0.5f * std::sin(ImGui::GetTime() * 3.0f),
+                                   ImVec2(-FLT_MIN, 0.0f), "");
+            }
+        } else if (download_state.state == Onboarding::DownloadState::Success) {
+            ImGui::TextDisabled("Download complete. Restart the app to use the new model.");
+        } else if (download_state.state == Onboarding::DownloadState::Cancelled) {
+            ImGui::TextDisabled("Download stopped.");
+        } else if (download_state.state == Onboarding::DownloadState::Failed) {
+            if (download_state.error.code == ErrorCode::ChecksumMismatch) {
+                ImGui::TextColored(
+                    Color(current_palette_->err),
+                    "The saved model file did not pass its check. The saved bytes differ "
+                    "from the listed check value, so the file may be damaged. Choose "
+                    "Download again to save a fresh copy.");
+            } else {
+                ImGui::TextColored(
+                    Color(current_palette_->err),
+                    "The model download did not finish. The connection stopped before all "
+                    "the file arrived. Check the connection and choose Download to try "
+                    "again.");
+            }
+            if (!download_state.error.detail.empty()) {
+                // The detail is transfer-layer machine context only:
+                // it never carries a transcript or a key by design.
+                ImGui::TextDisabled("More detail: %s", download_state.error.detail.c_str());
+            }
+        } else if (!download_available) {
+            ImGui::TextDisabled(
+                "No download address is listed for this file yet. You can still browse "
+                "to a file on this computer.");
+        }
+    }
+
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_s * scale));
+    {
+        lwf::ui::widgets::Row("##card_welcome_finish", "Get started",
+                              "You can change everything later in Settings.", 248.0f * scale,
+                              scale, *current_palette_);
+        if (lwf::ui::widgets::PrimaryButton("welcome_get_started", "Get started", scale,
+                                            *current_palette_)) {
+            settings_.SetBool("first_run", false);
+            ApplyAndSave();
+            validation_error_.clear();  // page switch: errors stay on their page
+            page_ = Page::Home;
+            PersistPage();
+            page_focus_pending_ = true;
+        }
+        lwf::ui::widgets::RowEnd(scale);
     }
     ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 }

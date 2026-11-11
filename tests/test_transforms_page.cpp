@@ -249,6 +249,12 @@ TEST_CASE("card descriptions pin built-in copy and truncate customs") {
     const auto entries = store.Entries();
     CHECK(page.CardDescription(entries.at(0)) == "Improve clarity and conciseness");
     CHECK(page.CardDescription(entries.at(1)) == "Constructs optimal prompts");
+    // Followups D5: an edited built-in shows its real prompt on the card.
+    std::string set_error;
+    REQUIRE(store.SetSlot(1, "Polish", "Make it crisp. {text}", set_error));
+    const auto edited = page.Cards().at(0);
+    CHECK(edited.slot == 1);
+    CHECK(page.CardDescription(edited) == "Make it crisp. {text}");
     FillCustom(store, 3, "Custom",
                "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz0123456789 rest");
     const auto custom = page.Cards().at(2);
@@ -387,7 +393,8 @@ TEST_CASE("transforms page threads the live palette and err for edit_error") {
     CHECK(source.find("Color(palette.muted)") != std::string::npos);
     CHECK(source.find("Pack(palette.accent)") != std::string::npos);
     CHECK(source.find("Pack(palette.border)") != std::string::npos);
-    CHECK(source.find("hovered ? palette.text : palette.accent") != std::string::npos);
+    // T10c link-hover pair retired with the banner's TextLink (D3); the
+    // live-palette threading stays pinned by the rows above.
     CHECK(source.find("palette.err") != std::string::npos);
     CHECK(source.find("Color(palette.err), \"%s\", edit_error_.c_str()") != std::string::npos);
     CHECK(source.find("Color(palette.muted), \"%s\", edit_error_.c_str()") == std::string::npos);
@@ -396,7 +403,8 @@ TEST_CASE("transforms page threads the live palette and err for edit_error") {
     CHECK(header.find("std::to_string(slot)") != std::string::npos);
     CHECK(source.find("RunSlot(entry.slot)") != std::string::npos);
     CHECK(source.find("transforms_run_") != std::string::npos);
-    CHECK(source.find("\"Try it out\"") != std::string::npos);
+    // Followups D3: the banner button copy is retired with the hero
+    // banner; TryItOut() stays as the polish-slot API its unit pins use.
     // T10c review CRITICAL (hit-test): the card overlay must carry AllowOverlap
     // so the later Run button wins hover/click (first-submitted-wins);
     // scoped to the DrawCard span so a stray flag elsewhere cannot pass this.
@@ -409,18 +417,15 @@ TEST_CASE("transforms page threads the live palette and err for edit_error") {
     CHECK(card_span.find("ImGuiButtonFlags_AllowOverlap") != std::string::npos);
 }
 
-TEST_CASE("page copy keeps opt-in banner and original banner text") {
-    CHECK(lwf::ui::transforms::kOptInOffBanner == "Turn on Opt in to use transforms.");
-    CHECK(std::string(lwf::ui::transforms::kBannerHeadline).size() > 20);
-    CHECK(std::string(lwf::ui::transforms::kBannerBody).size() > 40);
+TEST_CASE("page copy keeps how-it-works text; banners are retired") {
+    // Followups D3/D4: the hero banner and the opted-out notice strip were
+    // removed (constants gone); the How-it-works modal copy stays and keeps
+    // the third-party-name ban.
     CHECK(std::string(lwf::ui::transforms::kHowItWorksBody).size() > 40);
-    CHECK(std::string(lwf::ui::transforms::kBannerHeadline).find("Slack") == std::string::npos);
-    CHECK(std::string(lwf::ui::transforms::kBannerHeadline).find("Gmail") == std::string::npos);
-    CHECK(
-        std::string(lwf::ui::transforms::kBannerHeadline).find("LinkedIn") == std::string::npos);
-    CHECK(std::string(lwf::ui::transforms::kBannerBody).find("Slack") == std::string::npos);
-    CHECK(std::string(lwf::ui::transforms::kBannerBody).find("Gmail") == std::string::npos);
-    CHECK(std::string(lwf::ui::transforms::kBannerBody).find("LinkedIn") == std::string::npos);
+    CHECK(std::string(lwf::ui::transforms::kHowItWorksBody).find("Slack") == std::string::npos);
+    CHECK(std::string(lwf::ui::transforms::kHowItWorksBody).find("Gmail") == std::string::npos);
+    CHECK(std::string(lwf::ui::transforms::kHowItWorksBody).find("LinkedIn") ==
+          std::string::npos);
 }
 
 TEST_CASE("transforms page sources respect the font and hygiene rules") {
@@ -447,7 +452,9 @@ TEST_CASE("transforms page sources respect the font and hygiene rules") {
     CHECK(source.find("My Transforms") != std::string::npos);
     CHECK(source.find("Create New") != std::string::npos);
     CHECK(source.find("Reset to defaults") != std::string::npos);
-    CHECK(source.find("Try it out") != std::string::npos);
+    // Followups D3: the banner "Try it out" button is gone with the hero
+    // banner; "How it works" stays (the header "i" button opens the modal).
+    CHECK(source.find("Try it out") == std::string::npos);
     CHECK(source.find("How it works") != std::string::npos);
     CHECK(source.find("Copy result") != std::string::npos);
     CHECK(header.find("<selection>{text}</selection>") != std::string::npos);

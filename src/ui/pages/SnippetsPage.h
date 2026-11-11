@@ -12,9 +12,6 @@
 
 namespace lwf::ui::pages {
 
-inline constexpr const char* kSnippetsBannerHeadline = "Reusable phrases.";
-inline constexpr const char* kSnippetsBannerExampleTrigger = "my booking link";
-inline constexpr const char* kSnippetsBannerExampleExpansion = "https://example.com/book";
 inline constexpr const char* kSnippetsEmptyCopy = "No snippets yet.";
 inline constexpr const char* kSnippetsEditorAddTitle = "Add new snippet";
 inline constexpr const char* kSnippetsEditorEditTitle = "Edit snippet";
@@ -23,7 +20,6 @@ inline constexpr const char* kSnippetsUndoAction = "Undo";
 inline constexpr int kSnippetsEditorVisibleLines = 6;
 
 struct SnippetsPageState {
-    bool banner_closed = false;
     bool pending_delete = false;
     SnippetStore::Entry pending_entry;
     float delete_at = -1.0f;
@@ -150,10 +146,6 @@ inline bool UndoPendingDelete(SnippetStore& store, SnippetsPageState& state, std
     return true;
 }
 
-inline bool VisibleBanner(const SnippetsPageState& state) {
-    return !state.banner_closed;
-}
-
 class SnippetsPage {
 public:
     explicit SnippetsPage(SnippetStore& store) : store_(store) {}
@@ -244,7 +236,6 @@ public:
 
 private:
     void DrawHeader(float scale, const lwf::ui::Palette& palette);
-    void DrawBanner(float scale, const lwf::ui::Palette& palette);
     void DrawRows(float scale, const lwf::ui::Palette& palette);
     void DrawSheet(float scale, const lwf::ui::Palette& palette);
     bool DeleteEdit();
