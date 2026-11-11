@@ -248,7 +248,7 @@ void InsightsPage::DrawCardD(float width, float scale, const lwf::ui::Palette& p
         ImGui::SetCursorScreenPos(ImVec2(row_pos.x + 32.0f * scale, row_pos.y));
         const std::string pill_id = std::string("##insights_pill_") + row.key;
         widgets::ProgressPill(pill_id.c_str(), row.fraction,
-                              PillLabel(row.words, row.display_label).c_str(), scale, palette);
+                              PillLabel(row.words, row.display_label).c_str(), scale);
         ImGui::SetCursorScreenPos(ImVec2(row_pos.x, row_pos.y + row_h + 8.0f * scale - ImGui::GetStyle().ItemSpacing.y));
         ImGui::Dummy(ImVec2(0.0f, 0.0f));
     }
