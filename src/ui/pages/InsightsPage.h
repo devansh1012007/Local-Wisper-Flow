@@ -2,8 +2,7 @@
 
 #include "core/InsightsModel.h"
 #include "core/StatsStore.h"
-#include "ui/theme/StudioPalette.h"
-#include "ui/widgets/Overlays.h"
+#include "ui/theme/ThemePalette.h"
 
 #include <algorithm>
 #include <chrono>
@@ -20,8 +19,6 @@ namespace lwf::ui::insights {
 
 inline constexpr const char* kPageTitle = "Insights";
 inline constexpr const char* kTabUsage = "Your usage";
-inline constexpr const char* kTabVoice = "Your voice";
-inline constexpr const char* kVoiceEmpty = "Not available yet.";
 inline constexpr const char* kWpmCaption = "WORDS PER MINUTE";
 inline constexpr const char* kWpmTooltip = "Your average speaking speed while dictating.";
 inline constexpr const char* kGaugeCenter = "Average";
@@ -38,14 +35,7 @@ inline constexpr const char* kMobileLabel = "Download on mobile";
 inline constexpr const char* kMobileTooltip = "Mobile is not available in this app.";
 inline constexpr const char* kUsageTitle = "Desktop usage";
 inline constexpr const char* kDesktopEmpty = "No dictations yet. Hold Ctrl + Win to start.";
-inline constexpr const char* kShareDialogTitle = "Share";
-inline constexpr const char* kShareHighlightsTitle = "Flow Highlights";
-inline constexpr const char* kShareStreakTitle = "Flow Streak";
-inline constexpr const char* kShareCopy = "Copy image";
-inline constexpr const char* kShareDownload = "Download image";
-inline constexpr const char* kComingSoon = "Coming soon";
 inline constexpr const char* kEmptyWpm = "—";
-inline constexpr const char* kShareBadgeLabel = "SHARE";
 inline constexpr double kWpmGaugeCap = 200.0;
 
 struct CategoryDef {
@@ -432,12 +422,6 @@ inline std::string NextNavigable(const std::map<std::string, DayStats>& snapshot
     return next;
 }
 
-inline std::vector<std::string> ShareHighlightLines(const InsightsSummary& summary) {
-    return {StreakTitle(summary.current_streak), WpmLabel(summary.wpm) + " wpm",
-            std::to_string(summary.total_words) + " words",
-            std::to_string(summary.total_apps) + " apps"};
-}
-
 class InsightsPage {
 public:
     explicit InsightsPage(StatsStore& store) : store_(store) {}
@@ -445,33 +429,9 @@ public:
     InsightsPage(const InsightsPage&) = delete;
     InsightsPage& operator=(const InsightsPage&) = delete;
 
-    void Draw(float scale);
-
-    bool IsShareOpen() const {
-        return share_open_;
-    }
-
-    void OpenShare() {
-        share_open_ = true;
-    }
-
-    void CloseShare() {
-        share_open_ = false;
-    }
-
-    int Tab() const {
-        return tab_;
-    }
-
-    void SetTab(int tab) {
-        if (tab == 0 || tab == 1) {
-            tab_ = tab;
-        }
-    }
-
-    bool IsVoice() const {
-        return tab_ == 1;
-    }
+    // T10d: the live palette is explicit (T10a/b/c pattern). The default
+    // keeps any old call site compiling; MainWindow passes *current_palette_.
+    void Draw(float scale, const lwf::ui::Palette& palette = lwf::ui::kDarkPalette);
 
     std::uint64_t LastGeneration() const {
         return last_generation_;
@@ -577,21 +537,16 @@ private:
         }
     }
 
-    void DrawHeader(float scale);
-    void DrawTabs(float scale);
-    void DrawRow1(float scale);
-    void DrawCardA(float width, float scale);
-    void DrawCardB(float width, float scale);
-    void DrawCardC(float width, float scale);
-    void DrawRow2(float scale);
-    void DrawCardD(float width, float scale);
-    void DrawCardE(float width, float scale);
-    void DrawShareDialog(float scale);
+    void DrawHeader(float scale, const lwf::ui::Palette& palette);
+    void DrawRow1(float scale, const lwf::ui::Palette& palette);
+    void DrawCardA(float width, float scale, const lwf::ui::Palette& palette);
+    void DrawCardB(float width, float scale, const lwf::ui::Palette& palette);
+    void DrawCardC(float width, float scale, const lwf::ui::Palette& palette);
+    void DrawRow2(float scale, const lwf::ui::Palette& palette);
+    void DrawCardD(float width, float scale, const lwf::ui::Palette& palette);
+    void DrawCardE(float width, float scale, const lwf::ui::Palette& palette);
 
     StatsStore& store_;
-    widgets::Modal share_modal_;
-    bool share_open_ = false;
-    int tab_ = 0;
     bool snapshot_valid_ = false;
     std::uint64_t last_generation_ = 0;
     std::map<std::string, DayStats> snapshot_;

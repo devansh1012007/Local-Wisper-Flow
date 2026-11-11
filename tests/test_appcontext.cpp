@@ -99,3 +99,87 @@ TEST_CASE("cleanup prompt passes through profile addendum without title leakage"
     CHECK(llm.prompts.back().find("SECRETKEYS") == std::string::npos);
     CHECK(llm.prompts.back().find("No auto-capitalization") != std::string::npos);
 }
+
+TEST_CASE("app context Save round-trips profiles and rules") {
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_appctx_save.json").string();
+    WriteFile(path, R"json({
+        "profiles": {
+            "p": {"prompt_addendum": "hi", "casual": true, "trailing_period": false,
+                  "use_llm": false, "paste_chord": "ctrl+shift+v", "category": "Emails"}
+        },
+        "rules": [
+            {"match": {"process": "foo\\.exe"}, "profile": "p", "disabled": false}
+        ]
+    })json");
+    AppContextResolver resolver;
+    REQUIRE(resolver.Load(path));
+    CHECK(resolver.Path() == path);
+    CHECK(resolver.AssignCategory("p", "Personal"));
+    CHECK(resolver.SetEnabled("p", false));
+    REQUIRE(resolver.Save());
+
+    AppContextResolver reloaded;
+    REQUIRE(reloaded.Load(path));
+    CHECK(reloaded.ProfileByName("p").category == "Personal");
+    CHECK(reloaded.ProfileByName("p").casual == true);
+    CHECK(reloaded.ProfileByName("p").use_llm == false);
+    CHECK(reloaded.ProfileByName("p").paste_chord == "ctrl+shift+v");
+    // rule disabled -> resolves to default
+    CHECK(reloaded.Resolve("foo.exe", "").name == "default");
+}
+
+TEST_CASE("app context AssignCategory rejects unknown category/profile") {
+    AppContextResolver resolver;
+    resolver.UseBuiltInProfiles();
+    CHECK_FALSE(resolver.AssignCategory("nope", "Emails"));
+    CHECK_FALSE(resolver.AssignCategory("email", "Not a category"));
+    CHECK(resolver.AssignCategory("email", "Personal"));
+}
+
+TEST_CASE("app context SetEnabled toggles matching rules") {
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_appctx_enabled.json").string();
+    WriteFile(path, R"json({
+        "profiles": {"p": {"prompt_addendum": "hi"}},
+        "rules": [
+            {"match": {"process": "foo\\.exe"}, "profile": "p", "disabled": false}
+        ]
+    })json");
+    AppContextResolver resolver;
+    REQUIRE(resolver.Load(path));
+    CHECK(resolver.SetEnabled("p", false));
+    CHECK_FALSE(resolver.ProfileEnabled("p"));
+    CHECK(resolver.SetEnabled("p", true));
+    CHECK(resolver.ProfileEnabled("p"));
+    CHECK_FALSE(resolver.SetEnabled("missing", true));
+}
+
+TEST_CASE("app context Save drops unknown keys but keeps known data") {
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_appctx_unknown.json").string();
+    WriteFile(path, R"json({
+        "profiles": {"p": {"prompt_addendum": "hi", "future_key": 42}},
+        "rules": [],
+        "unknown_top": "x"
+    })json");
+    AppContextResolver resolver;
+    REQUIRE(resolver.Load(path));
+    REQUIRE(resolver.Save());
+    const std::string content = [&]() {
+        std::ifstream f(path);
+        std::ostringstream s;
+        s << f.rdbuf();
+        return s.str();
+    }();
+    CHECK(content.find("future_key") == std::string::npos);
+    CHECK(content.find("prompt_addendum") != std::string::npos);
+    CHECK(content.find("unknown_top") == std::string::npos);
+}
+
+TEST_CASE("app context Reload returns false when path empty") {
+    AppContextResolver resolver;
+    resolver.UseBuiltInProfiles();
+    CHECK_FALSE(resolver.Reload());
+    CHECK(resolver.Path().empty());
+}

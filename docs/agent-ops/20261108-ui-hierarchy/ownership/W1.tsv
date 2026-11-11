@@ -1,0 +1,13 @@
+W1-IMPL-01	src/ui/MainWindow.cpp
+W1-IMPL-01	src/ui/MainWindow.h
+W1-IMPL-02	src/ui/pages/DictionaryPage.cpp
+W1-IMPL-02	src/ui/pages/InsightsPage.cpp
+W1-IMPL-02	src/ui/pages/SnippetsPage.cpp
+W1-IMPL-02	src/ui/pages/TransformsPage.cpp
+W1-IMPL-02	src/ui/pages/ScratchpadPage.cpp
+W1-IMPL-02	src/ui/widgets/Buttons.cpp
+W1-IMPL-02	src/ui/widgets/Display.cpp
+W1-IMPL-02	src/ui/widgets/Overlays.cpp
+W1-IMPL-03	tests/test_overlay_settings_ui.cpp
+W1-IMPL-03	tests/test_scratchpad_page.cpp
+W1-IMPL-03	tests/test_snippets_page.cpp

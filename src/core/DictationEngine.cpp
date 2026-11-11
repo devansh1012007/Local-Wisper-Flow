@@ -9,6 +9,7 @@
 #include "core/CommandModeController.h"
 #include "core/ILlmProvider.h"
 #include "core/StatsStore.h"
+#include "core/HistoryStore.h"
 #include "core/StreamingDictation.h"
 #include "core/TextPipeline.h"
 #include "core/TransformStore.h"
@@ -17,6 +18,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <future>
 #include <memory>
 #include <utility>
@@ -257,6 +259,10 @@ void DictationEngine::SetToneFeedback(IToneFeedback* tones) {
 
 void DictationEngine::SetStatsStore(StatsStore* stats) {
     stats_ = stats;
+}
+
+void DictationEngine::SetHistoryStore(HistoryStore* store) {
+    history_ = store;
 }
 
 void DictationEngine::SetActiveWindow(IActiveWindow* active_window) {
@@ -549,6 +555,26 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
         return;
     }
 
+    // Silent-mic gate: distinguish "mic recorded nothing" from "mic heard
+    // sound but Whisper returned a blank filtered transcript" (both used to
+    // land as "nothing to inject"). Gate on raw PCM peak before any boost
+    // or transcription, logging only the level, never transcript text.
+    float pcm_peak = 0.0f;
+    for (float sample : full) {
+        pcm_peak = std::max(pcm_peak, std::fabs(sample));
+    }
+    if (pcm_peak < 0.005f) {
+        char peak_buf[64];
+        std::snprintf(peak_buf, sizeof(peak_buf), "%.5f", static_cast<double>(pcm_peak));
+        // INVARIANT: log the level only; raw/final transcript text must never
+        // enter the log ring (privacy gate).
+        lwf::Log::Info(std::string("audio: peak level ") + peak_buf +
+                       " < 0.005 — no sound recorded");
+        sink_.OnStatus("no sound recorded — check microphone");
+        FailToIdle(fsm_);
+        return;
+    }
+
     const double speech_ratio = chunk_count_ > 0
                                     ? static_cast<double>(speech_chunk_count_) /
                                           static_cast<double>(chunk_count_)
@@ -661,6 +687,20 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
         record.words_corrected = result.words_corrected;
         record.dictionary_fixes = result.dictionary_fixes;
         stats_->Record(record);
+    }
+
+    if (history_ != nullptr && !scratchpad_target_.load()) {
+        HistoryEntry entry;
+        entry.timestamp = HistoryStore::NowSeconds();
+        entry.raw = raw;
+        entry.text = final_text;
+        entry.app_profile = app_context_ != nullptr
+                                ? app_context_->Resolve(capture_app_.process_name,
+                                                        capture_app_.window_title)
+                                      .name
+                                : std::string();
+        entry.duration_ms = duration_ms;
+        history_->Append(entry);
     }
 
     {

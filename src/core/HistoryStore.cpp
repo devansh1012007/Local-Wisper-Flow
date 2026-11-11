@@ -31,7 +31,7 @@ bool HistoryStore::Enabled() const {
     return enabled_;
 }
 
-std::int64_t HistoryStore::NowSeconds() const {
+std::int64_t HistoryStore::NowSeconds() {
     return std::chrono::duration_cast<std::chrono::seconds>(
                std::chrono::system_clock::now().time_since_epoch())
         .count();
@@ -188,4 +188,8 @@ bool HistoryStore::Export(const std::string& path) const {
 std::size_t HistoryStore::Size() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return entries_.size();
+}
+
+const std::string& HistoryStore::Path() const {
+    return path_;
 }

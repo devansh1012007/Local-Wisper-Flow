@@ -20,6 +20,43 @@ std::string ValidateInt(const std::string& key, int value, int min_value, int ma
 std::string ValidateModelPath(const std::string& path);
 std::string ValidateLanguage(const std::string& code);
 
+// Microphone picker index contract (Settings > Speech). The combo entry list
+// is built as entry 0 = "System default" (stored value "") followed by the
+// capture-device display names in enumeration order, so this returns the
+// 0-based index into THAT combined list:
+//   selected == ""            -> 0 (System default)
+//   selected == names[i]      -> i + 1
+//   unknown / stale name      -> 0 (falls back to System default)
+//   empty list + empty select -> 0
+// The caller derives the label from the index: index 0 renders the fixed
+// "System default" string, otherwise names[index - 1].
+int MatchMicDeviceIndex(const std::vector<std::string>& names, const std::string& selected);
+
+// Cleanup-model lookup (Settings > Cleanup). Returns the index i into the
+// FETCHED list with fetched[i] == selected, or -1 when there is no such entry:
+//   selected == ""            -> -1 (nothing set)
+//   selected not in fetched   -> -1
+//   empty fetched list        -> -1
+// The comparison is case-sensitive ("GPT-x" != "gpt-x"). There is no sentinel
+// entry: the caller adds a synthetic entry for the current stored value when
+// this returns -1 and the stored value is non-empty, so the active model is
+// always visible.
+int MatchModelIndex(const std::vector<std::string>& fetched, const std::string& selected);
+
+// API key entry helpers (Settings UI). Pure logic only: trim, source
+// derivation from live store/env state, and user-facing status labels.
+// Key material never crosses these functions; callers keep the secret in
+// a masked buffer and persist it through ApiKeyStore directly. Labels are
+// sentence-case and avoid internal terms per the F9 copy lint.
+enum class ApiKeySource { Saved, Environment, NotSet };
+
+ApiKeySource ApiKeySourceFor(bool has_saved, bool has_env);
+const char* ApiKeySourceLabel(ApiKeySource source);
+const char* ApiKeyStatusWord(ApiKeySource source);
+std::string TrimApiKeyInput(const std::string& raw);
+// Returns the inline error for a trimmed value, empty when save may proceed.
+std::string ApiKeySaveError(const std::string& trimmed);
+
 class DictionaryEditorModel {
 public:
     struct Word {

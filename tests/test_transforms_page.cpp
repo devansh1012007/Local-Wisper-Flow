@@ -347,6 +347,68 @@ TEST_CASE("try it out posts a start transform command for polish") {
     CHECK(false == bus.PollCommand(command));
 }
 
+// T10c per-slot Run: RunSlot posts the caller's real slot (plan AC: "Run on
+// slot N reaches engine.RequestTransform(N)"). TryItOut above keeps its
+// fixed polish slot "1" — that payload is a shortcut only, pinned below.
+TEST_CASE("per-slot run posts the real slot") {
+    TransformStore store;
+    UiBus bus;
+    lwf::ui::TransformsPage page(store, &bus, nullptr);
+    CHECK(page.RunSlot(3));
+    UiCommand command{UiCommandType::Quit, {}};
+    REQUIRE(bus.PollCommand(command));
+    CHECK(command.type == UiCommandType::StartTransform);
+    CHECK(command.payload == "3");
+    CHECK(page.RunSlot(7));
+    REQUIRE(bus.PollCommand(command));
+    CHECK(command.type == UiCommandType::StartTransform);
+    CHECK(command.payload == "7");
+    CHECK(page.RunSlot(1));
+    REQUIRE(bus.PollCommand(command));
+    CHECK(command.payload == "1");
+    lwf::ui::TransformsPage unwired(store);
+    CHECK(false == unwired.RunSlot(4));
+    CHECK(false == bus.PollCommand(command));
+}
+
+// T10c F1: every custom draw and widget call threads the live palette;
+// edit_error renders in palette.err (byte-identical string).
+TEST_CASE("transforms page threads the live palette and err for edit_error") {
+    const std::string header = ReadPageFile("src/ui/pages/TransformsPage.h");
+    const std::string source = ReadPageFile("src/ui/pages/TransformsPage.cpp");
+    REQUIRE(!header.empty());
+    REQUIRE(!source.empty());
+    CHECK(header.find("Draw(float scale, const Palette& palette = kDarkPalette)") !=
+          std::string::npos);
+    CHECK(header.find("kLightPalette") == std::string::npos);
+    CHECK(source.find("kLightPalette") == std::string::npos);
+    CHECK(source.find("palette.") != std::string::npos);
+    CHECK(source.find("Color(palette.surface)") != std::string::npos);
+    CHECK(source.find("Color(palette.muted)") != std::string::npos);
+    CHECK(source.find("Pack(palette.accent)") != std::string::npos);
+    CHECK(source.find("Pack(palette.border)") != std::string::npos);
+    CHECK(source.find("hovered ? palette.text : palette.accent") != std::string::npos);
+    CHECK(source.find("palette.err") != std::string::npos);
+    CHECK(source.find("Color(palette.err), \"%s\", edit_error_.c_str()") != std::string::npos);
+    CHECK(source.find("Color(palette.muted), \"%s\", edit_error_.c_str()") == std::string::npos);
+    CHECK(source.find("FLAG: edit_error") == std::string::npos);
+    // RunSlot posts the real slot; TryItOut keeps the polish slot "1".
+    CHECK(header.find("std::to_string(slot)") != std::string::npos);
+    CHECK(source.find("RunSlot(entry.slot)") != std::string::npos);
+    CHECK(source.find("transforms_run_") != std::string::npos);
+    CHECK(source.find("\"Try it out\"") != std::string::npos);
+    // T10c review CRITICAL (hit-test): the card overlay must carry AllowOverlap
+    // so the later Run button wins hover/click (first-submitted-wins);
+    // scoped to the DrawCard span so a stray flag elsewhere cannot pass this.
+    const std::size_t card_begin = source.find("void TransformsPage::DrawCard");
+    const std::size_t card_end = source.find("void TransformsPage::DrawCreateCard");
+    REQUIRE(card_begin != std::string::npos);
+    REQUIRE(card_end != std::string::npos);
+    REQUIRE(card_end > card_begin);
+    const std::string card_span = source.substr(card_begin, card_end - card_begin);
+    CHECK(card_span.find("ImGuiButtonFlags_AllowOverlap") != std::string::npos);
+}
+
 TEST_CASE("page copy keeps opt-in banner and original banner text") {
     CHECK(lwf::ui::transforms::kOptInOffBanner == "Turn on Opt in to use transforms.");
     CHECK(std::string(lwf::ui::transforms::kBannerHeadline).size() > 20);
@@ -377,7 +439,7 @@ TEST_CASE("transforms page sources respect the font and hygiene rules") {
         CHECK(text.find("Log::") == std::string::npos);
     }
     CHECK(header.find("PushFont") == std::string::npos);
-    CHECK(source.find("PushFont(nullptr, metrics::font_") != std::string::npos);
+    CHECK(source.find("PushFont(nullptr, studio_metrics::font_") != std::string::npos);
     CHECK(source.find("widgets::BadgeBeta") != std::string::npos);
     CHECK(source.find("widgets::ToggleSwitch") != std::string::npos);
     CHECK(source.find("widgets::PrimaryButton") != std::string::npos);

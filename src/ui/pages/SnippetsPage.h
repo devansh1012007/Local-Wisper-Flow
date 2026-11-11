@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/SnippetStore.h"
-#include "ui/theme/StudioPalette.h"
+#include "ui/theme/ThemePalette.h"
 #include "ui/widgets/Overlays.h"
 
 #include <algorithm>
@@ -161,7 +161,10 @@ public:
     SnippetsPage(const SnippetsPage&) = delete;
     SnippetsPage& operator=(const SnippetsPage&) = delete;
 
-    void Draw(float scale);
+    // T10b: the live palette is explicit. The default keeps the old
+    // MainWindow call site compiling; MainWindow::DrawSnippetsPage passes
+    // *current_palette_ (wired in the same commit, see docs/PROGRESS.md T10b).
+    void Draw(float scale, const lwf::ui::Palette& palette = lwf::ui::kDarkPalette);
 
     void OpenAdd() {
         editing_id_.clear();
@@ -240,10 +243,10 @@ public:
     }
 
 private:
-    void DrawHeader(float scale);
-    void DrawBanner(float scale);
-    void DrawRows(float scale);
-    void DrawSheet(float scale);
+    void DrawHeader(float scale, const lwf::ui::Palette& palette);
+    void DrawBanner(float scale, const lwf::ui::Palette& palette);
+    void DrawRows(float scale, const lwf::ui::Palette& palette);
+    void DrawSheet(float scale, const lwf::ui::Palette& palette);
     bool DeleteEdit();
 
     void SyncBuffers() {

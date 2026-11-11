@@ -82,6 +82,7 @@ set(LWF_CORE_SOURCES
     src/stt/cloud/MuseResponse.cpp
     src/stt/cloud/MuseProvider.cpp
     src/llm/OpenRouterProvider.cpp
+    src/llm/OpenRouterModels.cpp
     src/core/DictationCleanup.cpp
     src/core/DictationEngine.cpp
     src/core/CrashReporter.cpp
@@ -160,6 +161,8 @@ add_executable(lwf_tests
     tests/test_fsm.cpp
     tests/test_gain.cpp
     tests/test_history.cpp
+    tests/test_history_page.cpp
+    tests/test_profiles_page.cpp
     tests/test_hotkey.cpp
     tests/test_insights.cpp
     tests/test_dictionary_page.cpp
@@ -373,8 +376,9 @@ if(LWF_BUILD_FULL)
             src/ui/pages/ScratchpadPage.cpp
             src/ui/pages/TransformsPage.cpp
             src/ui/pages/SnippetsPage.cpp
+            src/ui/pages/HistoryPage.cpp
+            src/ui/pages/ProfilesPage.cpp
             src/ui/theme/ThemePalette.cpp
-            src/ui/theme/StudioPalette.cpp
             src/ui/widgets/Buttons.cpp
             src/ui/widgets/Display.cpp
             src/ui/widgets/Overlays.cpp

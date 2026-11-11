@@ -3,7 +3,7 @@
 #include "core/NotesStore.h"
 #include "core/SettingsStore.h"
 #include "core/UiBus.h"
-#include "ui/theme/StudioPalette.h"
+#include "ui/theme/ThemePalette.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -168,7 +168,9 @@ class ScratchpadPage {
 public:
     ScratchpadPage(NotesStore& notes, SettingsStore& settings, UiBus& bus);
 
-    void Draw(float scale);
+    // T10e: the live palette is explicit (T10a/b/c/d pattern). The default
+    // keeps any old call site compiling; MainWindow passes *current_palette_.
+    void Draw(float scale, const lwf::ui::Palette& palette = lwf::ui::kDarkPalette);
 
     bool HasPendingUndo() const;
     void ClearUndo();
@@ -176,11 +178,11 @@ public:
     bool IsShortcutArmed() const;
 
 private:
-    void DrawHeader(float scale);
-    void DrawBanner(float scale);
-    void DrawRecents(float scale);
-    void DrawNoteRow(const NotesStore::Note& note, float scale);
-    void DrawUndoToast(float scale);
+    void DrawHeader(float scale, const lwf::ui::Palette& palette);
+    void DrawBanner(float scale, const lwf::ui::Palette& palette);
+    void DrawRecents(float scale, const lwf::ui::Palette& palette);
+    void DrawNoteRow(const NotesStore::Note& note, float scale, const lwf::ui::Palette& palette);
+    void DrawUndoToast(float scale, const lwf::ui::Palette& palette);
 
     NotesStore& notes_;
     SettingsStore& settings_;

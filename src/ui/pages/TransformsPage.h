@@ -4,6 +4,7 @@
 #include "core/TextDiff.h"
 #include "core/TransformStore.h"
 #include "core/UiBus.h"
+#include "ui/theme/ThemePalette.h"
 #include "ui/widgets/Overlays.h"
 
 #include <cstddef>
@@ -340,7 +341,10 @@ public:
     TransformsPage(const TransformsPage&) = delete;
     TransformsPage& operator=(const TransformsPage&) = delete;
 
-    void Draw(float scale);
+    // T10c: the live palette is explicit. The default keeps the old
+    // MainWindow call site compiling; MainWindow::DrawTransformsPage passes
+    // *current_palette_ (wired in the same commit, see docs/PROGRESS.md T10c).
+    void Draw(float scale, const Palette& palette = kDarkPalette);
 
     void SetOptIn(bool enabled) {
         store_.SetEnabled(enabled);
@@ -612,11 +616,24 @@ public:
         diff_modal_.Close();
     }
 
+    // Banner "Try it out" shortcut: fixed polish slot (slot 1), kept
+    // byte-identical for the existing polish pin. Per-card Run buttons go
+    // through RunSlot(entry.slot) for their real slot.
     bool TryItOut() {
         if (bus_ == nullptr) {
             return false;
         }
         bus_->PostCommand(UiCommandType::StartTransform, "1");
+        return true;
+    }
+
+    // T10c per-slot Run path: posts the caller's real slot so
+    // engine.RequestTransform(N) reaches slot N (main.cpp stoi consumer).
+    bool RunSlot(int slot) {
+        if (bus_ == nullptr) {
+            return false;
+        }
+        bus_->PostCommand(UiCommandType::StartTransform, std::to_string(slot));
         return true;
     }
 
@@ -653,16 +670,17 @@ public:
     }
 
 private:
-    void DrawHeader(float scale);
-    void DrawBanner(float scale);
-    void DrawMyTransforms(float scale);
-    void DrawGrid(float scale);
-    void DrawCard(const TransformStore::Entry& entry, float width, float height, float scale);
-    void DrawCreateCard(float width, float height, float scale);
-    void DrawEditor(float scale);
-    void DrawResetConfirm(float scale);
-    void DrawDiff(float scale);
-    void DrawHowItWorks(float scale);
+    void DrawHeader(float scale, const Palette& palette);
+    void DrawBanner(float scale, const Palette& palette);
+    void DrawMyTransforms(float scale, const Palette& palette);
+    void DrawGrid(float scale, const Palette& palette);
+    void DrawCard(const TransformStore::Entry& entry, float width, float height, float scale,
+                  const Palette& palette);
+    void DrawCreateCard(float width, float height, float scale, const Palette& palette);
+    void DrawEditor(float scale, const Palette& palette);
+    void DrawResetConfirm(float scale, const Palette& palette);
+    void DrawDiff(float scale, const Palette& palette);
+    void DrawHowItWorks(float scale, const Palette& palette);
     void PollRecording();
     void SyncBuffers() {
         const std::size_t name_cap = sizeof(name_buffer_) - 1;
