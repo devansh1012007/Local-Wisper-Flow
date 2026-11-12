@@ -658,7 +658,7 @@ TEST_CASE("main window keyboard nav and commit-on-deactivate wiring") {
 TEST_CASE("studio navigation routes round-trip with Home fallback") {
     using Page = MainWindow::Page;
     const Page pages[] = {Page::Home, Page::History, Page::Insights, Page::Dictionary, Page::Snippets,
-                          Page::Transforms, Page::Profiles, Page::Settings};
+                          Page::Transforms, Page::Profiles, Page::Models, Page::Settings};
     for (Page page : pages) {
         const std::string route = MainWindow::RouteName(page);
         CHECK(MainWindow::PageForRoute(route) == page);
@@ -670,6 +670,7 @@ TEST_CASE("studio navigation routes round-trip with Home fallback") {
     CHECK(MainWindow::PageForRoute("Snippets") == Page::Snippets);
     CHECK(MainWindow::PageForRoute("Transforms") == Page::Transforms);
     CHECK(MainWindow::PageForRoute("Profiles") == Page::Profiles);
+    CHECK(MainWindow::PageForRoute("Models") == Page::Models);
     CHECK(MainWindow::PageForRoute("Settings") == Page::Settings);
     CHECK(MainWindow::PageForRoute("Welcome") == Page::Home);
     CHECK(MainWindow::PageForRoute("Speech") == Page::Home);
@@ -736,7 +737,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     const std::string header_content((std::istreambuf_iterator<char>(header)),
                                      std::istreambuf_iterator<char>());
     CHECK(header_content.find("enum class Page") != std::string::npos);
-    CHECK(header_content.find("Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Profiles, Settings") != std::string::npos);
+    CHECK(header_content.find("Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Profiles, Models, Settings") != std::string::npos);
     CHECK(header_content.find("Scratchpad") == std::string::npos);
     CHECK(header_content.find("Welcome, Home, Speech, Cloud, Cleanup, Privacy, About") == std::string::npos);
     CHECK(header_content.find("void DrawSettingsPage(float scale)") != std::string::npos);
@@ -762,6 +763,8 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("##strip_transforms") != std::string::npos);
     CHECK(content.find("##strip_scratchpad") == std::string::npos);
     CHECK(content.find("##strip_profiles") != std::string::npos);
+    CHECK(content.find("##strip_models") != std::string::npos);
+    CHECK(content.find("\"Models\", Page::Models") != std::string::npos);
     CHECK(content.find("##strip_settings") != std::string::npos);
     CHECK(content.find("##nav_home") == std::string::npos);
     CHECK(content.find("##nav_insights") == std::string::npos);
@@ -799,6 +802,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("void MainWindow::DrawTransformsPage") != std::string::npos);
     CHECK(content.find("void MainWindow::DrawScratchpadPage") == std::string::npos);
     CHECK(content.find("void MainWindow::DrawProfilesPage") != std::string::npos);
+    CHECK(content.find("void MainWindow::DrawModelsPage") != std::string::npos);
     CHECK(content.find("##card_general_hotkey") != std::string::npos);
     CHECK(content.find("StartLearnHotkey") != std::string::npos);
     CHECK(content.find("sound_enabled") != std::string::npos);
@@ -2107,10 +2111,12 @@ TEST_CASE("T5 settings General and Speech ruled rows pin") {
 }
 
 TEST_CASE("T13a speech model download wiring pin") {
-    // The catalog-driven Download control lives in DrawSpeechPage only:
-    // worker thread, cancel flag, latch, empty-url disabled state, and the
-    // ErrorCode mapping. The transfer layer itself stays in os/ (T13a adds
-    // no network code), and Speech is the only page that spawns it.
+    // The catalog-driven Download control lives in DrawSpeechPage and goes
+    // through the shared BeginCatalogDownload spawn path (followups-6:
+    // Speech, Welcome and the Models page all start transfers through it).
+    // The worker thread, cancel flag, latch and ErrorCode mapping stay in
+    // that helper; the transfer layer itself stays in os/ (T13a adds no
+    // network code). The Speech page pins the catalog + disabled state.
     const std::string content = ReadSource("src/ui/MainWindow.cpp");
     REQUIRE_FALSE(content.empty());
     const std::size_t speech = content.find("void MainWindow::DrawSpeechPage");
@@ -2124,9 +2130,18 @@ TEST_CASE("T13a speech model download wiring pin") {
     CHECK(speech_src.find("\"Cancel##cancel_download\"") != std::string::npos);
     CHECK(speech_src.find("download_busy_.load()") != std::string::npos);
     CHECK(speech_src.find("download_cancelled_.store(true)") != std::string::npos);
-    CHECK(speech_src.find("IsSafeFileName") != std::string::npos);
-    CHECK(speech_src.find("PlanDownloadStart") != std::string::npos);
-    CHECK(speech_src.find("GetDataDir()") != std::string::npos);
+    CHECK(speech_src.find("BeginCatalogDownload(*speech_entry, \"whisper_model_path\")") !=
+          std::string::npos);
+    // The shared spawn path owns the resume planning and the destination.
+    const std::size_t begin_dl = content.find("bool MainWindow::BeginCatalogDownload");
+    REQUIRE(begin_dl != std::string::npos);
+    const std::size_t pick_fn = content.find("bool MainWindow::PickAndApplyModelPath", begin_dl);
+    REQUIRE(pick_fn != std::string::npos);
+    const std::string begin_dl_src = content.substr(begin_dl, pick_fn - begin_dl);
+    CHECK(begin_dl_src.find("PlanDownloadStart") != std::string::npos);
+    CHECK(begin_dl_src.find("GetDataDir()") != std::string::npos);
+    CHECK(begin_dl_src.find("WindowsDownloader downloader") != std::string::npos);
+    CHECK(begin_dl_src.find("IsSafeFileName") != std::string::npos);
     // The latch is consumed in RunOnce (before the hidden early-out), not
     // on the Speech page, so completion survives a hidden window.
     const std::size_t run_once = content.find("void MainWindow::RunOnce");
@@ -2138,10 +2153,10 @@ TEST_CASE("T13a speech model download wiring pin") {
     CHECK(run_once_src.find("download_model_.OnSuccess()") != std::string::npos);
     CHECK(run_once_src.find("download_model_.OnFailed(") != std::string::npos);
     CHECK(run_once_src.find("download_model_.OnCancelled()") != std::string::npos);
-    // The worker owns the synchronous transfer and is joined in the
-    // destructor after the cancel flag is set; the worker never touches
-    // ImGui. The ErrorCode mapping stays in the portable model.
-    CHECK(content.find("WindowsDownloader downloader") != std::string::npos);
+    // The worker owns the synchronous transfer (inside BeginCatalogDownload)
+    // and is joined in the destructor after the cancel flag is set; the
+    // worker never touches ImGui. The ErrorCode mapping stays in the
+    // portable model.
     CHECK(content.find("MapDownloadError") != std::string::npos);
     CHECK(content.find("IsCancellationDetail") != std::string::npos);
     const std::size_t dtor = content.find("MainWindow::~MainWindow()");
@@ -2766,14 +2781,17 @@ TEST_CASE("T9 Welcome onboarding ruled rows and step-3 download pin") {
     CHECK(welcome_src.find("Color(kLightPalette.err") == std::string::npos);
     CHECK(welcome_src.find("Color(kLightPalette.warn") == std::string::npos);
     // Step-3 download: Welcome ids, never the Speech ids (same window would
-    // collide), same availability rule and spawn gate, shared latch.
+    // collide), same availability rule and spawn gate, shared latch. The
+    // resume planning and destination live in the shared
+    // BeginCatalogDownload spawn path (followups-6); Welcome pins its call.
     CHECK(welcome_src.find("\"Download##download_welcome\"") != std::string::npos);
     CHECK(welcome_src.find("\"Cancel##cancel_download_welcome\"") != std::string::npos);
     CHECK(welcome_src.find("\"Download##download_speech\"") == std::string::npos);
     CHECK(welcome_src.find("\"Cancel##cancel_download\"") == std::string::npos);
     CHECK(welcome_src.find("ParseModelsJson") != std::string::npos);
     CHECK(welcome_src.find("IsSafeFileName") != std::string::npos);
-    CHECK(welcome_src.find("PlanDownloadStart") != std::string::npos);
+    CHECK(welcome_src.find("BeginCatalogDownload(*welcome_entry, \"whisper_model_path\")") !=
+          std::string::npos);
     CHECK(welcome_src.find("BeginDisabled(") != std::string::npos);
     CHECK(welcome_src.find("download_pressed && download_available && !download_busy_.load()") !=
           std::string::npos);

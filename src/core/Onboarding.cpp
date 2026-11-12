@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 
@@ -51,6 +52,18 @@ ModelCatalog ParseModelsJson(const std::string& path) {
             if (element.contains("size_bytes") && element["size_bytes"].is_number_unsigned()) {
                 model.size_bytes = element["size_bytes"].get<std::uint64_t>();
             }
+            // Optional display metadata (ModelsPage); tolerate wrong types
+            // by leaving the default empty string.
+            const auto read_string_field = [&element](const char* key) {
+                if (element.contains(key) && element[key].is_string()) {
+                    return element[key].get<std::string>();
+                }
+                return std::string();
+            };
+            model.display_name = read_string_field("display_name");
+            model.language = read_string_field("language");
+            model.license = read_string_field("license");
+            model.notes = read_string_field("notes");
             if (model.sha256.empty()) {
                 catalog.warnings.push_back("model '" + model.name + "' has no sha256");
             }
@@ -131,6 +144,38 @@ bool IsSafeFileName(const std::string& name) {
     // filename chars <>"|?*, and path separators.
     // SECURITY: catalog names are attacker-influenced via models.json (Q2).
     return name.find_first_of("/\\:<>\"|?*") == std::string::npos;
+}
+
+std::string ModelDisplayName(const ModelDownload& model) {
+    return model.display_name.empty() ? model.name : model.display_name;
+}
+
+std::string LanguageDisplayName(const std::string& language) {
+    if (language == "en") {
+        return "English";
+    }
+    if (language == "hi-hinglish") {
+        return "Hinglish (Hindi + English)";
+    }
+    if (language == "multi") {
+        return "Multilingual";
+    }
+    return "Other";
+}
+
+std::string ModelSizeLabel(std::uint64_t size_bytes) {
+    if (size_bytes == 0) {
+        return "unknown size";
+    }
+    char buffer[32];
+    if (size_bytes >= 1024ull * 1024ull * 1024ull) {
+        std::snprintf(buffer, sizeof(buffer), "%.1f GB",
+                      static_cast<double>(size_bytes) / (1024.0 * 1024.0 * 1024.0));
+    } else {
+        std::snprintf(buffer, sizeof(buffer), "%.0f MB",
+                      static_cast<double>(size_bytes) / (1024.0 * 1024.0));
+    }
+    return buffer;
 }
 
 DownloadStartPlan PlanDownloadStart(std::uint64_t existing_bytes, std::uint64_t remote_size,

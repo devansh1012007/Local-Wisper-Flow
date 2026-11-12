@@ -1,20 +1,32 @@
 {
-    "//": "Model download catalog (read from the exe dir at startup). URLs and sha256 are pinned from the official sources below, checked 2026-11-13 via the HuggingFace API (lfs.oid = sha256 of the stored file): ggerganov/whisper.cpp (official whisper.cpp weights) and Qwen/Qwen2.5-1.5B-Instruct-GGUF (official Qwen GGUF). Do not add a model without a verified URL AND sha256 - the downloader refuses files that fail the hash.",
+    "//": "Model download catalog (read from the exe dir at startup). URLs and sha256 are pinned from the official sources below, checked 2026-11-13 via the HuggingFace API (lfs.oid = sha256 of the stored file): ggerganov/whisper.cpp (official whisper.cpp weights) and Qwen/Qwen2.5-1.5B-Instruct-GGUF (official Qwen GGUF). Do not add a model without a verified URL AND sha256 - the downloader refuses files that fail the hash. The optional display_name/language/license/notes fields feed the Models page; an old catalog without them still parses.",
     "whisper": [
         {
             "name": "ggml-base.en.bin",
+            "display_name": "Whisper Base (English)",
+            "language": "en",
+            "license": "MIT",
+            "notes": "Fastest, English only. The classic default for dictation.",
             "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
             "sha256": "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
             "size_bytes": 147964211
         },
         {
             "name": "ggml-small.bin",
+            "display_name": "Whisper Small (Multilingual)",
+            "language": "multi",
+            "license": "MIT",
+            "notes": "Handles Hindi and other languages; decent accuracy at a modest size.",
             "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
             "sha256": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
             "size_bytes": 487601967
         },
         {
             "name": "ggml-large-v3-turbo.bin",
+            "display_name": "Whisper Large v3 Turbo (Multilingual)",
+            "language": "hi-hinglish",
+            "license": "MIT",
+            "notes": "Best local accuracy for Hinglish (Hindi + English in one sentence) today; a cloud provider with codemix output can beat it - compare before committing to a default.",
             "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
             "sha256": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
             "size_bytes": 1624555275
@@ -23,6 +35,10 @@
     "llm": [
         {
             "name": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+            "display_name": "Qwen2.5 1.5B Instruct (Q4_K_M)",
+            "language": "en",
+            "license": "Apache-2.0",
+            "notes": "Local cleanup model: fixes filler words and punctuation after transcription.",
             "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
             "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
             "size_bytes": 1117320736

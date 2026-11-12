@@ -269,3 +269,69 @@ TEST_CASE("download file name safety rejects separators and parents") {
     CHECK_FALSE(Onboarding::IsSafeFileName("trailing."));
     CHECK_FALSE(Onboarding::IsSafeFileName("trailing "));
 }
+
+TEST_CASE("models catalog parses optional display metadata with backward-compatible defaults") {
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "lwf_models_meta.json").string();
+
+    // Old shape (no display metadata): every new field defaults to empty.
+    WriteFile(path, R"json({
+        "whisper": [
+            {"name": "ggml-base.en.bin", "url": "https://example/ggml-base.en.bin",
+             "sha256": "abc123", "size_bytes": 148000000}
+        ],
+        "llm": []
+    })json");
+    const Onboarding::ModelCatalog legacy = Onboarding::ParseModelsJson(path);
+    REQUIRE(legacy.whisper.size() == 1);
+    CHECK(legacy.whisper[0].display_name.empty());
+    CHECK(legacy.whisper[0].language.empty());
+    CHECK(legacy.whisper[0].license.empty());
+    CHECK(legacy.whisper[0].notes.empty());
+    CHECK(Onboarding::ModelDisplayName(legacy.whisper[0]) == "ggml-base.en.bin");
+
+    // New shape: metadata parsed, wrong-typed fields tolerated as empty.
+    WriteFile(path, R"json({
+        "whisper": [
+            {"name": "ggml-large-v3-turbo.bin", "url": "https://example/t.bin",
+             "sha256": "abc123", "size_bytes": 1624555275,
+             "display_name": "Whisper Large v3 Turbo",
+             "language": "hi-hinglish", "license": "MIT",
+             "notes": "Best local Hinglish accuracy",
+             "size_bytes_wrong_type": 7}
+        ],
+        "llm": [
+            {"name": "q.gguf", "url": "https://example/q.gguf", "sha256": "def456",
+             "display_name": 42, "language": ["en"]}
+        ]
+    })json");
+    const Onboarding::ModelCatalog modern = Onboarding::ParseModelsJson(path);
+    REQUIRE(modern.whisper.size() == 1);
+    CHECK(modern.whisper[0].display_name == "Whisper Large v3 Turbo");
+    CHECK(modern.whisper[0].language == "hi-hinglish");
+    CHECK(modern.whisper[0].license == "MIT");
+    CHECK(modern.whisper[0].notes == "Best local Hinglish accuracy");
+    CHECK(Onboarding::ModelDisplayName(modern.whisper[0]) == "Whisper Large v3 Turbo");
+    REQUIRE(modern.llm.size() == 1);
+    CHECK(modern.llm[0].display_name.empty());
+    CHECK(modern.llm[0].language.empty());
+}
+
+TEST_CASE("model display helpers map languages and sizes") {
+    Onboarding::ModelDownload model;
+    model.name = "a.bin";
+    CHECK(Onboarding::ModelDisplayName(model) == "a.bin");
+    model.display_name = "Whisper Base (English)";
+    CHECK(Onboarding::ModelDisplayName(model) == "Whisper Base (English)");
+
+    CHECK(Onboarding::LanguageDisplayName("en") == "English");
+    CHECK(Onboarding::LanguageDisplayName("hi-hinglish") == "Hinglish (Hindi + English)");
+    CHECK(Onboarding::LanguageDisplayName("multi") == "Multilingual");
+    CHECK(Onboarding::LanguageDisplayName("tlh") == "Other");
+    CHECK(Onboarding::LanguageDisplayName("") == "Other");
+
+    CHECK(Onboarding::ModelSizeLabel(0) == "unknown size");
+    CHECK(Onboarding::ModelSizeLabel(147964211) == "141 MB");
+    CHECK(Onboarding::ModelSizeLabel(1624555275) == "1.5 GB");
+    CHECK(Onboarding::ModelSizeLabel(1024ull * 1024ull * 1024ull) == "1.0 GB");
+}

@@ -54,7 +54,7 @@ struct Palette;
 // docs/design/mockup.html sections 3 and 5.
 class MainWindow {
 public:
-    enum class Page { Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Profiles, Settings };
+    enum class Page { Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Profiles, Models, Settings };
 
     static const char* RouteName(Page page) {
         switch (page) {
@@ -72,6 +72,8 @@ public:
                 return "Transforms";
             case Page::Profiles:
                 return "Profiles";
+            case Page::Models:
+                return "Models";
             case Page::Settings:
                 return "Settings";
             default:
@@ -97,6 +99,9 @@ public:
         }
         if (route == "Profiles") {
             return Page::Profiles;
+        }
+        if (route == "Models") {
+            return Page::Models;
         }
         if (route == "Settings") {
             return Page::Settings;
@@ -194,6 +199,7 @@ private:
     void DrawSnippetsPage(float scale);
     void DrawTransformsPage(float scale);
     void DrawSettingsPage(float scale);
+    void DrawModelsPage(float scale);
     void DrawGeneralPage(float scale);
     void DrawSpeechPage(float scale);
     void DrawCloudPage(float scale);
@@ -217,6 +223,13 @@ private:
     void ActivateStripPage(Page page);
     bool PickAndApplyModelPath(char* buffer, std::size_t buffer_size, const char* setting_key,
                                std::string& error);
+    // Shared spawn path for catalog-driven downloads (Speech page, Welcome
+    // page, Models page). Starts the transfer for `entry` into
+    // <data>\models\<name> (resume-aware, hash-verified); on an instant
+    // skip it applies `config_key` = models/<name> plus the restart banner.
+    // Refused while another download runs. The latch consumer in RunOnce
+    // writes download_config_key_, so pages only call this.
+    bool BeginCatalogDownload(const Onboarding::ModelDownload& entry, const char* config_key);
     void DeleteLocalData();
     // Masked key entry row shared by Cloud (Gnani, ElevenLabs, Muse) and
     // Cleanup (OpenRouter). Never seeds buffer with stored value.
@@ -358,6 +371,10 @@ private:
     std::atomic<bool> download_cancelled_{false};
     std::atomic<std::uint64_t> download_downloaded_{0};
     std::string download_stored_path_;
+    // Config key the download latch consumer writes on success
+    // ("whisper_model_path" or "llm_model_path"), set by the page that
+    // spawned the transfer through BeginCatalogDownload.
+    std::string download_config_key_ = "whisper_model_path";
     std::mutex download_latch_mutex_;
     bool download_latch_ready_ = false;  // guarded by latch mutex
     Onboarding::DownloadSnapshot download_latch_;  // guarded by latch mutex
@@ -368,6 +385,12 @@ private:
     // called per frame; mic_devices_loaded_ latches the one enumeration.
     std::vector<std::string> mic_devices_;
     bool mic_devices_loaded_ = false;
+    // Models page (followups-6): the exe-dir catalog parsed once on first
+    // visit (ParseModelsJson reads a file, never per frame) with a manual
+    // Reload; the download lifecycle itself is shared with Speech/Welcome
+    // (download_model_ + BeginCatalogDownload, one transfer at a time).
+    Onboarding::ModelCatalog models_catalog_;
+    bool models_catalog_loaded_ = false;
 
     // Microphone check (followups-3, "mic is not working" report): a 2 s
     // probe on a throwaway MiniaudioCapture instance for the SELECTED device

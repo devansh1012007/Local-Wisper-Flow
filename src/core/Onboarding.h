@@ -13,7 +13,23 @@ struct ModelDownload {
     std::string url;
     std::string sha256;
     std::uint64_t size_bytes = 0;
+    // Optional display metadata (ModelsPage, followups-6). All fields are
+    // optional in models.json: an old catalog without them parses with the
+    // defaults below, and the first-run wizard keeps working unchanged.
+    std::string display_name;  // falls back to name when empty
+    std::string language;      // "en", "hi-hinglish", "multi", ... empty = "other"
+    std::string license;       // shown as a chip, e.g. "MIT"
+    std::string notes;         // one-line caption under the entry
 };
+
+// Display name of a catalog entry (display_name when present, else name).
+std::string ModelDisplayName(const ModelDownload& model);
+
+// Human label for a language tag. Unknown/empty tags map to "Other".
+std::string LanguageDisplayName(const std::string& language);
+
+// "148 MB" / "1.6 GB" style label (binary units), "unknown size" for 0.
+std::string ModelSizeLabel(std::uint64_t size_bytes);
 
 struct ModelCatalog {
     std::vector<ModelDownload> whisper;
