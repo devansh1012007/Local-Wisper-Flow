@@ -390,7 +390,7 @@ Do them on a Windows machine at 100%, 125% and 150% DPI.
    (no swap until hover/drag/state change); hovering wakes it.
 2. Idle alphas readable on a dark desktop (0.55 idle / 1.0 active); attention
    message text legible at 13 px. Normal badge hugs the icons (38x48 at
-   100% DPI, 58 wide with the scratchpad note); Attention expands to 250 px
+   100% DPI); Attention expands to 250 px
    wide and shrinks back after the dwell (followups-1).
 
 ### R2-d: DPI scaling
@@ -475,7 +475,7 @@ Windows hardware; the dev sandbox has no window runtime.
    press and Ctrl+<digit> land on the same page with identical persistence,
    error-clear and focus semantics (shared ActivateStripPage path).
 2. Theme switcher (Settings > General, T5 + T2b): Graphite <-> Paper swaps
-   live on all three windows (Full, Scratchpad window, Mini badge) without a
+   live on both windows (Full, Mini badge) without a
    restart; after an app restart the selected theme persists; a hand-edited
    bogus `theme` value in config.json falls back to Graphite.
 3. Settings tabs click-through eyeball at 100%, 150% and 200% DPI: no clipped
@@ -510,14 +510,14 @@ Followups-1 additions (ops/ui-followups-1, 2026-11-12):
 10. Live knobs: change Settings > General Volume, Speech max-recording and
     hands-free-silence sliders; the next dictation tone/timeout follows the
     new values without a restart (shared LoadEngineSettings in main.cpp).
-11. Banners gone: Transforms, Snippets and Scratchpad pages open without
-    their page-top banners; Scratchpad "Start new note" lives in the Recents
-    toolbar; Transforms shows no "Turn on Opt in" strip when opted out.
+11. Banners gone: Transforms and Snippets pages open without
+    their page-top banners; Transforms shows no "Turn on Opt in" strip when opted out.
+    (The Scratchpad page and its banner were removed outright afterwards —
+    see item 20.)
 12. Built-in transform edits visible: edit Polish's prompt; the card
     subtitle shows the real prompt ("Restore default" returns the stock
     copy). The "Create your own" card is centered.
-13. Mini badge extent: normal badge hugs the dot (plus note icon when the
-    Flow Bar toggle is on); an attention error expands it to show the
+13. Mini badge extent: normal badge hugs the dot; an attention error expands it to show the
     message and it shrinks back after the dwell; drag persistence still
     clamps inside the work area at 100/150/200% DPI.
 14. Switch tracks: the toggle track reads as filled gray in Graphite AND
@@ -545,7 +545,19 @@ superseded by 18 (the built-ins are gone entirely):
     right-click the note icon in the mini window — the icon disappears and
     the badge re-hugs to the dot-only width; the Scratchpad page toggle
     adds it back (the header shows the right-click hint while the icon is
-    on).
+    on). (Superseded by item 20: the whole Scratchpad feature is gone.)
+
+Scratchpad removal (remove/scratchpad-page, 2026-11-12) — items 11/13/19
+above keep their historical wording; the Scratchpad surface no longer
+exists:
+
+20. Scratchpad fully removed: no Scratchpad destination in the top strip
+    (eight destinations, Ctrl+1..8); no Scratchpad page, no floating
+    Scratchpad window, no note icon on the mini badge (always 38x48);
+    Settings > General has no "Scratchpad bar" row; a stale
+    `last_page: "Scratchpad"` in config.json opens on Home; dictation
+    always injects into the active window and always records stats and
+    history.
 
 ```
 [ ] PASS   [ ] FAIL   notes:

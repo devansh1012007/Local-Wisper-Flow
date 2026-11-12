@@ -602,23 +602,6 @@ TEST_CASE("stats store records nothing for paste last") {
     std::filesystem::remove(path);
 }
 
-TEST_CASE("stats store records nothing for scratchpad target") {
-    const std::string path = StatsPath("scratchpad");
-    std::filesystem::remove(path);
-    StatsStore store(path);
-    Harness h;
-    auto engine = MakeEngine(h);
-    engine->SetStatsStore(&store);
-    engine->SetScratchpadTarget(true);
-
-    PressAndSpeak(h, *engine);
-
-    REQUIRE(h.injector.InjectionCount() == 1);
-    CHECK(store.Generation() == 0);
-    CHECK(store.Snapshot().empty());
-    std::filesystem::remove(path);
-}
-
 TEST_CASE("stats store toggle off records nothing") {
     const std::string path = StatsPath("toggleoff");
     std::filesystem::remove(path);

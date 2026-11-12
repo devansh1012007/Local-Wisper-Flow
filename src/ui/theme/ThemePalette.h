@@ -152,16 +152,14 @@ inline constexpr float full_min_w = 760.0f;
 inline constexpr float full_min_h = 520.0f;
 
 // Mini badge. Quarter-size dot with a tiny status label under it. The
-// window hugs the icons (followups D6): the normal extent is the dot, the
-// optional scratchpad note and the status strip, each with ring_pad
-// clearance for the listening ring; the attention state expands the window
-// to the message reserve below the dot. The badge stays semi-transparent so
-// it never blocks the desktop behind it.
+// window hugs the icons (followups D6): the normal extent is the dot and
+// the status strip, each with ring_pad clearance for the listening ring;
+// the attention state expands the window to the message reserve below the
+// dot. The badge stays semi-transparent so it never blocks the desktop
+// behind it.
 inline constexpr float mini_dot = 22.0f;             // was 44: 1/4 of the area
 inline constexpr float mini_ring_pad = 8.0f;   // clearance around the dot (listening ring)
 inline constexpr float mini_status_h = 18.0f;  // status word strip under the dot
-inline constexpr float mini_note = 16.0f;      // scratchpad note icon
-inline constexpr float mini_note_gap = 4.0f;   // dot-to-note gap
 inline constexpr float mini_message_w = 250.0f;      // attention expansion width
 inline constexpr float mini_message_h = 48.0f;       // attention message reserve under the dot
 inline constexpr float mini_margin = 16.0f;  // above the taskbar

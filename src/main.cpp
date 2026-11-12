@@ -27,7 +27,6 @@
 #include "core/InjectionException.h"
 #include "core/ITextInjector.h"
 #include "core/Log.h"
-#include "core/NotesStore.h"
 #include "core/PersonalDictionary.h"
 #include "core/SettingsStore.h"
 #include "core/SnippetStore.h"
@@ -60,12 +59,10 @@
 #include "stt/GrpcInferenceProvider.h"
 #include "stt/LocalWhisperProvider.h"
 #include "ui/MainWindow.h"
-#include "ui/ScratchpadWindow.h"
 #include "ui/Overlay.h"
 #include "ui/theme/ThemePalette.h"
 #include "ui/pages/DictionaryPage.h"
 #include "ui/pages/InsightsPage.h"
-#include "ui/pages/ScratchpadPage.h"
 #include "ui/pages/SnippetsPage.h"
 #include "ui/pages/HistoryPage.h"
 #include "ui/pages/ProfilesPage.h"
@@ -336,12 +333,6 @@ int main() {
         config.Store().SetBool("first_run", config.Store().GetBool("first_run"));
 
         ApiKeyStore api_keys(data_dir + "\\api_keys.json");
-        NotesStore notes(data_dir);
-
-        ScratchpadWindow scratchpad_editor(notes, config.Store());
-        if (!scratchpad_editor.Init()) {
-            lwf::Log::Warning("scratchpad window init failed; continuing without it");
-        }
 
         UiBus ui_bus;
         AttentionBox attention;
@@ -378,8 +369,6 @@ int main() {
             local_stt ? static_cast<IInferenceProvider&>(*local_stt)
                       : static_cast<IInferenceProvider&>(unavailable_stt);
         WindowsTextInjector injector;
-        lwf::ui::scratchpad::ScratchpadRouteInjector scratchpad_router(
-            injector, scratchpad_editor.DictationBuffer(), scratchpad_editor.DictationActiveFlag());
 
         AppContextResolver app_context;
         if (!app_context.Load(data_dir + "\\app_profiles.json")) {
@@ -573,15 +562,14 @@ int main() {
         });
         RealClock clock;
         IVadProvider* vad = nullptr;
-        DictationEngine engine(audio, vad, stt_router, pipeline, scratchpad_router, fsm,
-                               clock, bridge, settings);
+        DictationEngine engine(audio, vad, stt_router, pipeline, injector, fsm, clock,
+                               bridge, settings);
         engine.SetToneFeedback(&tone_player);
         engine.SetCommandController(&command_controller);
         engine.SetStatsStore(&usage_stats);
         engine.SetActiveWindow(CreateActiveWindow());
         engine.SetAppContextResolver(&app_context);
         engine.SetHistoryStore(&history);
-        engine.SetScratchpadTarget(false);
         engine.SetTransformStore(&transforms);
         engine.SetTransformLlm(llm);
         engine.SetSelectionCapture(&selection_capture);
@@ -633,8 +621,6 @@ int main() {
         lwf::ui::EngineDiffSource transforms_diff_source(&engine);
         full.SetTransformsPage(std::make_unique<lwf::ui::TransformsPage>(transforms, &ui_bus,
                                                                           &transforms_diff_source));
-        full.SetScratchpadPage(
-            std::make_unique<ScratchpadPage>(notes, config.Store(), ui_bus));
         full.SetSnippetsPage(std::make_unique<lwf::ui::pages::SnippetsPage>(snippets));
         full.SetHistoryPage(std::make_unique<lwf::ui::pages::HistoryPage>(
             history, config.Store(),
@@ -648,7 +634,6 @@ int main() {
             reset_stores.snippets = &snippets;
             reset_stores.stats = &usage_stats;
             reset_stores.transforms = &transforms;
-            reset_stores.notes = &notes;
             reset_stores.api_keys = &api_keys;
             reset_stores.history = &history;
             reset_stores.dictionary_legacy = &dictionary;
@@ -668,7 +653,7 @@ int main() {
                                  config.Store().GetInt("mini_y"));
         // T2b: Overlay has no SettingsStore ref, so the startup theme is
         // fed here (before Init, which promotes the pending selection). The
-        // Full/Scratchpad windows read the store in their own Init.
+        // Full window reads the store in its own Init.
         overlay.SetTheme(lwf::ui::PaletteForTheme(config.Store().GetString("theme")));
         overlay.SetPositionPersistHandler([&config](int x, int y) {
             config.Store().SetInt("mini_x", x);
@@ -679,17 +664,6 @@ int main() {
             overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
             overlay.SetActivateHandler([&ui_bus] {
                 ui_bus.PostCommand(UiCommandType::SetEnabled, "1");
-            });
-            overlay.SetScratchpadVisible(config.Store().GetBool("scratchpad_flow_bar"));
-            overlay.SetScratchpadActivateHandler([&ui_bus] {
-                ui_bus.PostCommand(UiCommandType::OpenScratchpad);
-            });
-            // Followups-2: right-click on the note icon removes it from the
-            // mini window; the Scratchpad page's flow-bar toggle adds it back.
-            overlay.SetScratchpadRemoveHandler([&config, &ui_bus] {
-                config.Store().SetBool("scratchpad_flow_bar", false);
-                config.Save();
-                ui_bus.PostCommand(UiCommandType::ApplySettings);
             });
         } else {
             lwf::Log::Error("mini badge init failed; continuing without it");
@@ -747,7 +721,6 @@ int main() {
                         snippets.SetMode(config.Store().GetString("snippet_mode"));
                         overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
                         usage_stats.SetUsageStatsEnabled(config.Store().GetBool("keep_usage_stats"));
-                        overlay.SetScratchpadVisible(config.Store().GetBool("scratchpad_flow_bar"));
                         // T2b live theme swap (hot_apply=true, no restart).
                         // The ApplyTheme/SetTheme calls only queue the
                         // palette; each window re-styles inside its own
@@ -758,7 +731,6 @@ int main() {
                                 lwf::ui::PaletteForTheme(config.Store().GetString("theme"));
                             full.ApplyTheme(theme_palette);
                             overlay.SetTheme(theme_palette);
-                            scratchpad_editor.ApplyTheme(theme_palette);
                         }
                         break;
                     case UiCommandType::Quit:
@@ -776,14 +748,6 @@ int main() {
                         engine.RequestTransform(slot);
                         break;
                     }
-                    case UiCommandType::OpenScratchpad:
-                        lwf::Log::Info("scratchpad open requested");
-                        if (command.payload.empty()) {
-                            scratchpad_editor.OpenNewNote();
-                        } else {
-                            scratchpad_editor.OpenNote(command.payload);
-                        }
-                        break;
                     case UiCommandType::PreviewTone:
                         // Followups-2 D1: the Volume slider asks for an
                         // immediate sample at the dragged amplitude so the
@@ -879,9 +843,6 @@ int main() {
             full.RunOnce(1.0f / 60.0f);
             full.TakeCloseRequest();  // close hides; the tray owns Quit
             overlay.RenderFrame(1.0f / 60.0f);
-            engine.SetScratchpadTarget(scratchpad_editor.IsDictationActive());
-            scratchpad_editor.RenderFrame(1.0f / 60.0f);
-            scratchpad_editor.TakeCloseRequest();
             std::this_thread::sleep_for(std::chrono::milliseconds(8));
         }
 
@@ -890,7 +851,6 @@ int main() {
         tray.Stop();
         tone_player.Shutdown();
         overlay.Shutdown();
-        scratchpad_editor.Shutdown();
         full.Shutdown();
         glfwTerminate();
         lwf::Log::Info("shutdown complete");

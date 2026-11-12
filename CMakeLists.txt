@@ -97,7 +97,6 @@ set(LWF_CORE_SOURCES
     src/core/InsightsModel.cpp
     src/core/Languages.cpp
     src/core/Log.cpp
-    src/core/NotesStore.cpp
     src/core/PersonalDictionary.cpp
     src/core/OverlayModel.cpp
     src/core/PathResolver.cpp
@@ -167,7 +166,6 @@ add_executable(lwf_tests
     tests/test_insights.cpp
     tests/test_dictionary_page.cpp
     tests/test_insights_page.cpp
-    tests/test_scratchpad_page.cpp
     tests/test_snippets_page.cpp
     tests/test_transforms_page.cpp
     tests/test_languages.cpp
@@ -175,7 +173,6 @@ add_executable(lwf_tests
     tests/test_log.cpp
     tests/test_dictionary.cpp
     tests/test_dictionarystore.cpp
-    tests/test_notesstore.cpp
     tests/test_onboarding.cpp
     tests/test_openrouter.cpp
     tests/test_overlay_settings_ui.cpp
@@ -195,7 +192,6 @@ add_executable(lwf_tests
     tests/test_transformstore.cpp
     tests/test_uibus.cpp
     tests/test_apikeystore.cpp
-    tests/test_scratchpad_target.cpp
     tests/test_tone_volume_live.cpp
     tests/whisperfilter_test.cpp
 )
@@ -371,10 +367,8 @@ if(LWF_BUILD_FULL)
             src/os/WindowsTray.cpp
             src/ui/MainWindow.cpp
             src/ui/Overlay.cpp
-            src/ui/ScratchpadWindow.cpp
             src/ui/pages/DictionaryPage.cpp
             src/ui/pages/InsightsPage.cpp
-            src/ui/pages/ScratchpadPage.cpp
             src/ui/pages/TransformsPage.cpp
             src/ui/pages/SnippetsPage.cpp
             src/ui/pages/HistoryPage.cpp

@@ -19,12 +19,10 @@ struct ImGuiContext;
 class MiniaudioCapture;
 class SettingsStore;
 class UiBus;
-class ScratchpadPage;
 class DictionaryStore;
 class SnippetStore;
 class StatsStore;
 class TransformStore;
-class NotesStore;
 class ApiKeyStore;
 class HistoryStore;
 class PersonalDictionary;
@@ -45,7 +43,7 @@ struct Palette;
 }
 
 // The Full window: top-strip navigation plus pages (Home, Insights, Dictionary,
-// Snippets, Transforms, Scratchpad, Settings, and the first-run Welcome).
+// Snippets, Transforms, Profiles, Settings, and the first-run Welcome).
 // T2b: the shell applies the selected palette (PaletteForTheme, Graphite
 // default); custom-drawn chrome converts per-surface in T3+.
 // Owns its GLFW window and its Dear ImGui context (one context per OS window, docs/UI_AUDIT.md section 1).
@@ -56,7 +54,7 @@ struct Palette;
 // docs/design/mockup.html sections 3 and 5.
 class MainWindow {
 public:
-    enum class Page { Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Scratchpad, Profiles, Settings };
+    enum class Page { Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Profiles, Settings };
 
     static const char* RouteName(Page page) {
         switch (page) {
@@ -72,8 +70,6 @@ public:
                 return "Snippets";
             case Page::Transforms:
                 return "Transforms";
-            case Page::Scratchpad:
-                return "Scratchpad";
             case Page::Profiles:
                 return "Profiles";
             case Page::Settings:
@@ -98,9 +94,6 @@ public:
         }
         if (route == "Transforms") {
             return Page::Transforms;
-        }
-        if (route == "Scratchpad") {
-            return Page::Scratchpad;
         }
         if (route == "Profiles") {
             return Page::Profiles;
@@ -144,7 +137,6 @@ public:
     void SetProfilesPage(std::unique_ptr<lwf::ui::pages::ProfilesPage> page);
     void SetInsightsPage(std::unique_ptr<lwf::ui::insights::InsightsPage> page);
     void SetTransformsPage(std::unique_ptr<lwf::ui::TransformsPage> page);
-    void SetScratchpadPage(std::unique_ptr<ScratchpadPage> page);
     void SetSnippetsPage(std::unique_ptr<lwf::ui::pages::SnippetsPage> page);
 
     struct DataResetStores {
@@ -152,7 +144,6 @@ public:
         SnippetStore* snippets = nullptr;
         StatsStore* stats = nullptr;
         TransformStore* transforms = nullptr;
-        NotesStore* notes = nullptr;
         ApiKeyStore* api_keys = nullptr;
         HistoryStore* history = nullptr;
         PersonalDictionary* dictionary_legacy = nullptr;
@@ -202,7 +193,6 @@ private:
     void DrawProfilesPage(float scale);
     void DrawSnippetsPage(float scale);
     void DrawTransformsPage(float scale);
-    void DrawScratchpadPage(float scale);
     void DrawSettingsPage(float scale);
     void DrawGeneralPage(float scale);
     void DrawSpeechPage(float scale);
@@ -296,7 +286,6 @@ private:
     std::unique_ptr<lwf::ui::pages::SnippetsPage> snippets_page_;
     std::unique_ptr<lwf::ui::insights::InsightsPage> insights_page_;
     std::unique_ptr<lwf::ui::TransformsPage> transforms_page_;
-    std::unique_ptr<ScratchpadPage> scratchpad_page_;
     DataResetStores reset_stores_;
     std::string learn_target_;
     std::string learn_error_target_;

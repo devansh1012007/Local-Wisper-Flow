@@ -73,7 +73,6 @@ public:
     void SetHistoryStore(HistoryStore* store);
     void SetActiveWindow(IActiveWindow* active_window);
     void SetAppContextResolver(AppContextResolver* resolver);
-    void SetScratchpadTarget(bool enabled);
     void SetTransformStore(const TransformStore* store);
     void SetTransformLlm(ILlmProvider* llm);
     void SetTransformLlmTimeoutMs(int timeout_ms);
@@ -135,7 +134,6 @@ private:
     HistoryStore* history_ = nullptr;
     IActiveWindow* active_window_ = nullptr;
     AppContextResolver* app_context_ = nullptr;
-    std::atomic<bool> scratchpad_target_{false};
     ActiveWindowInfo capture_app_;
     const TransformStore* transform_store_ = nullptr;
     ILlmProvider* transform_llm_ = nullptr;

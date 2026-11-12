@@ -349,12 +349,8 @@ TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete s
         "src/ui/pages/InsightsPage.cpp",
         "src/ui/pages/TransformsPage.h",
         "src/ui/pages/TransformsPage.cpp",
-        "src/ui/pages/ScratchpadPage.h",
-        "src/ui/pages/ScratchpadPage.cpp",
         "src/ui/pages/SnippetsPage.h",
         "src/ui/pages/SnippetsPage.cpp",
-        "src/ui/ScratchpadWindow.h",
-        "src/ui/ScratchpadWindow.cpp",
     };
     for (const std::string& path : font_sources) {
         std::ifstream file(path);
@@ -422,14 +418,12 @@ TEST_CASE("mini badge alphas meet the mockup contrast floors") {
     CHECK(metrics::mini_active_alpha == 1.0f);
     // The attention expansion keeps the wider message reserve.
     CHECK(metrics::mini_message_w == 250.0f);
-    // Followups D6: the normal window hugs the icons — dot + optional note
-    // + status strip with ring_pad clearance (38x48 without the note at
-    // 1.0 scale; the attention state expands to 250 wide).
+    // Followups D6: the normal window hugs the icons — dot + status strip
+    // with ring_pad clearance (38x48 at 1.0 scale; the attention state
+    // expands to 250 wide).
     CHECK(metrics::mini_dot == 22.0f);
     CHECK(metrics::mini_ring_pad == 8.0f);
     CHECK(metrics::mini_status_h == 18.0f);
-    CHECK(metrics::mini_note == 16.0f);
-    CHECK(metrics::mini_note_gap == 4.0f);
     CHECK(2.0f * metrics::mini_ring_pad + metrics::mini_dot == 38.0f);
     CHECK(metrics::mini_ring_pad + metrics::mini_dot + metrics::mini_status_h == 48.0f);
     // "Saved" dwell (mockup motion table: 1.5 s).
@@ -664,7 +658,7 @@ TEST_CASE("main window keyboard nav and commit-on-deactivate wiring") {
 TEST_CASE("studio navigation routes round-trip with Home fallback") {
     using Page = MainWindow::Page;
     const Page pages[] = {Page::Home, Page::History, Page::Insights, Page::Dictionary, Page::Snippets,
-                          Page::Transforms, Page::Scratchpad, Page::Profiles, Page::Settings};
+                          Page::Transforms, Page::Profiles, Page::Settings};
     for (Page page : pages) {
         const std::string route = MainWindow::RouteName(page);
         CHECK(MainWindow::PageForRoute(route) == page);
@@ -675,12 +669,14 @@ TEST_CASE("studio navigation routes round-trip with Home fallback") {
     CHECK(MainWindow::PageForRoute("Dictionary") == Page::Dictionary);
     CHECK(MainWindow::PageForRoute("Snippets") == Page::Snippets);
     CHECK(MainWindow::PageForRoute("Transforms") == Page::Transforms);
-    CHECK(MainWindow::PageForRoute("Scratchpad") == Page::Scratchpad);
     CHECK(MainWindow::PageForRoute("Profiles") == Page::Profiles);
     CHECK(MainWindow::PageForRoute("Settings") == Page::Settings);
     CHECK(MainWindow::PageForRoute("Welcome") == Page::Home);
     CHECK(MainWindow::PageForRoute("Speech") == Page::Home);
     CHECK(MainWindow::PageForRoute("About") == Page::Home);
+    // The Scratchpad page was removed outright; a stale persisted route
+    // (last_page = "Scratchpad" from an older config) must fall back Home.
+    CHECK(MainWindow::PageForRoute("Scratchpad") == Page::Home);
     CHECK(MainWindow::PageForRoute("") == Page::Home);
     CHECK(MainWindow::PageForRoute("bogus-route") == Page::Home);
     CHECK(MainWindow::PageForRoute("settings") == Page::Home);
@@ -740,7 +736,8 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     const std::string header_content((std::istreambuf_iterator<char>(header)),
                                      std::istreambuf_iterator<char>());
     CHECK(header_content.find("enum class Page") != std::string::npos);
-    CHECK(header_content.find("Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Scratchpad, Profiles, Settings") != std::string::npos);
+    CHECK(header_content.find("Welcome, Home, History, Insights, Dictionary, Snippets, Transforms, Profiles, Settings") != std::string::npos);
+    CHECK(header_content.find("Scratchpad") == std::string::npos);
     CHECK(header_content.find("Welcome, Home, Speech, Cloud, Cleanup, Privacy, About") == std::string::npos);
     CHECK(header_content.find("void DrawSettingsPage(float scale)") != std::string::npos);
     CHECK(header_content.find("void DrawGeneralPage(float scale)") != std::string::npos);
@@ -748,7 +745,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(header_content.find("void DrawDictionaryPage(float scale)") != std::string::npos);
     CHECK(header_content.find("void DrawSnippetsPage(float scale)") != std::string::npos);
     CHECK(header_content.find("void DrawTransformsPage(float scale)") != std::string::npos);
-    CHECK(header_content.find("void DrawScratchpadPage(float scale)") != std::string::npos);
+    CHECK(header_content.find("void DrawScratchpadPage(float scale)") == std::string::npos);
     CHECK(header_content.find("void DrawProfilesPage(float scale)") != std::string::npos);
     CHECK(header_content.find("RouteName") != std::string::npos);
     CHECK(header_content.find("PageForRoute") != std::string::npos);
@@ -763,7 +760,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("##strip_dictionary") != std::string::npos);
     CHECK(content.find("##strip_snippets") != std::string::npos);
     CHECK(content.find("##strip_transforms") != std::string::npos);
-    CHECK(content.find("##strip_scratchpad") != std::string::npos);
+    CHECK(content.find("##strip_scratchpad") == std::string::npos);
     CHECK(content.find("##strip_profiles") != std::string::npos);
     CHECK(content.find("##strip_settings") != std::string::npos);
     CHECK(content.find("##nav_home") == std::string::npos);
@@ -771,7 +768,6 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("##nav_dictionary") == std::string::npos);
     CHECK(content.find("##nav_snippets") == std::string::npos);
     CHECK(content.find("##nav_transforms") == std::string::npos);
-    CHECK(content.find("##nav_scratchpad") == std::string::npos);
     CHECK(content.find("##nav_settings") == std::string::npos);
     CHECK(content.find("##strip_speech") == std::string::npos);
     CHECK(content.find("##strip_cloud") == std::string::npos);
@@ -788,7 +784,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("##tab_cleanup") != std::string::npos);
     CHECK(content.find("##tab_privacy") != std::string::npos);
     CHECK(content.find("##tab_about") != std::string::npos);
-    CHECK(count_occurrences(content, "Not available yet.") == 7);
+    CHECK(count_occurrences(content, "Not available yet.") == 6);
     CHECK(content.find("kRailWidth") == std::string::npos);
     CHECK(content.find("40.0f * scale") == std::string::npos);
     CHECK(content.find("font_card_title_px") != std::string::npos);
@@ -801,7 +797,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     CHECK(content.find("void MainWindow::DrawDictionaryPage") != std::string::npos);
     CHECK(content.find("void MainWindow::DrawSnippetsPage") != std::string::npos);
     CHECK(content.find("void MainWindow::DrawTransformsPage") != std::string::npos);
-    CHECK(content.find("void MainWindow::DrawScratchpadPage") != std::string::npos);
+    CHECK(content.find("void MainWindow::DrawScratchpadPage") == std::string::npos);
     CHECK(content.find("void MainWindow::DrawProfilesPage") != std::string::npos);
     CHECK(content.find("##card_general_hotkey") != std::string::npos);
     CHECK(content.find("StartLearnHotkey") != std::string::npos);
@@ -821,7 +817,7 @@ TEST_CASE("studio navigation rail and settings tab structure source-scan") {
     const std::string main_content((std::istreambuf_iterator<char>(main_file)),
                                    std::istreambuf_iterator<char>());
     CHECK(main_content.find("case UiCommandType::StartTransform") != std::string::npos);
-    CHECK(main_content.find("case UiCommandType::OpenScratchpad") != std::string::npos);
+    CHECK(main_content.find("case UiCommandType::OpenScratchpad") == std::string::npos);
 }
 
 TEST_CASE("top strip status line and Ctrl-digit shortcuts source-scan") {
@@ -1277,43 +1273,6 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
     CHECK(insights_content.find("kTabVoice") == std::string::npos);
     CHECK(insights_content.find("TabRow") == std::string::npos);
     CHECK(insights_content.find("DrawShareDialog") == std::string::npos);
-    // T10e: Scratchpad page threads the live palette (no Paper read), keeps
-    // the HeatColor(3) undo fill, and passes it to its widgets.
-    std::ifstream scratchpad_page("src/ui/pages/ScratchpadPage.cpp");
-    REQUIRE(static_cast<bool>(scratchpad_page));
-    const std::string scratchpad_page_content((std::istreambuf_iterator<char>(scratchpad_page)),
-                                              std::istreambuf_iterator<char>());
-    CHECK(scratchpad_page_content.find("kLightPalette") == std::string::npos);
-    CHECK(scratchpad_page_content.find("Pack(palette.text)") != std::string::npos);
-    CHECK(scratchpad_page_content.find("Pack(palette.muted)") != std::string::npos);
-    CHECK(scratchpad_page_content.find("Pack(palette.surface)") != std::string::npos);
-    CHECK(scratchpad_page_content.find("Pack(palette.border)") != std::string::npos);
-    CHECK(scratchpad_page_content.find("Pack(palette.accent)") != std::string::npos);
-    CHECK(scratchpad_page_content.find("HeatColor(3)") != std::string::npos);
-    // T10e: Scratchpad editor chrome reads the live current_palette_ (never
-    // Paper); the clear color and tab fills follow the same pointer.
-    std::ifstream scratchpad_window("src/ui/ScratchpadWindow.cpp");
-    REQUIRE(static_cast<bool>(scratchpad_window));
-    const std::string scratchpad_window_content((std::istreambuf_iterator<char>(scratchpad_window)),
-                                                std::istreambuf_iterator<char>());
-    CHECK(scratchpad_window_content.find("kLightPalette") == std::string::npos);
-    CHECK(scratchpad_window_content.find("current_palette_->surface") != std::string::npos);
-    CHECK(scratchpad_window_content.find("current_palette_->text") != std::string::npos);
-    CHECK(scratchpad_window_content.find("current_palette_->muted") != std::string::npos);
-    CHECK(scratchpad_window_content.find("current_palette_->accent") != std::string::npos);
-    CHECK(scratchpad_window_content.find("current_palette_->bg") != std::string::npos);
-    // T10e MainWindow wiring: the page receives the live palette (scoped to
-    // DrawScratchpadPage so a lookalike elsewhere cannot satisfy the pin).
-    std::ifstream main_window_scratch("src/ui/MainWindow.cpp");
-    REQUIRE(static_cast<bool>(main_window_scratch));
-    const std::string main_window_scratch_content(
-        (std::istreambuf_iterator<char>(main_window_scratch)), std::istreambuf_iterator<char>());
-    const std::size_t scratch_fn = main_window_scratch_content.find("void MainWindow::DrawScratchpadPage");
-    REQUIRE(scratch_fn != std::string::npos);
-    const std::size_t scratch_next = main_window_scratch_content.find("void MainWindow::DrawGeneralPage", scratch_fn);
-    REQUIRE(scratch_next != std::string::npos);
-    const std::string scratch_span = main_window_scratch_content.substr(scratch_fn, scratch_next - scratch_fn);
-    CHECK(scratch_span.find("scratchpad_page_->Draw(scale, *current_palette_)") != std::string::npos);
 }
 
 TEST_CASE("Phase 5 pages carry cursor Dummy compensation") {
@@ -1327,7 +1286,6 @@ TEST_CASE("Phase 5 pages carry cursor Dummy compensation") {
         "src/ui/pages/SnippetsPage.cpp",
         "src/ui/pages/InsightsPage.cpp",
         "src/ui/pages/TransformsPage.cpp",
-        "src/ui/pages/ScratchpadPage.cpp",
     };
     for (const std::string& path : page_sources) {
         std::ifstream file(path);
@@ -1550,7 +1508,7 @@ const BanAllowance kBanAllowances[] = {};
 // the lexical shape deliberately leaves named-constant hoisting as the
 // spelling-only escape for gap values with no token in this wave. Excluded
 // from scope: ThemePalette.cpp (frozen token internals),
-// Overlay.cpp (Mini window), ScratchpadWindow.cpp (second OS window).
+// Overlay.cpp (Mini window).
 // Generic ImVec2 geometry outside Dummy (PushStyleVar padding, Button
 // extents) is not one of the P-005 APIs and is deliberately not scanned.
 std::vector<std::string> ScanLayoutLiterals(const std::string& path,
@@ -1658,7 +1616,6 @@ TEST_CASE(
         "src/ui/pages/InsightsPage.cpp",
         "src/ui/pages/SnippetsPage.cpp",
         "src/ui/pages/TransformsPage.cpp",
-        "src/ui/pages/ScratchpadPage.cpp",
         "src/ui/widgets/Buttons.cpp",
         "src/ui/widgets/Display.cpp",
         "src/ui/widgets/Overlays.cpp",
@@ -1694,13 +1651,11 @@ TEST_CASE(
     const std::string insights = ReadSource("src/ui/pages/InsightsPage.cpp");
     const std::string snippets = ReadSource("src/ui/pages/SnippetsPage.cpp");
     const std::string transforms = ReadSource("src/ui/pages/TransformsPage.cpp");
-    const std::string scratchpad = ReadSource("src/ui/pages/ScratchpadPage.cpp");
     const std::string mainwindow = ReadSource("src/ui/MainWindow.cpp");
     REQUIRE_FALSE(dictionary.empty());
     REQUIRE_FALSE(insights.empty());
     REQUIRE_FALSE(snippets.empty());
     REQUIRE_FALSE(transforms.empty());
-    REQUIRE_FALSE(scratchpad.empty());
     REQUIRE_FALSE(mainwindow.empty());
     INFO("MainWindow.cpp");
     CHECK(has_metrics_font(mainwindow));
@@ -1712,8 +1667,6 @@ TEST_CASE(
     CHECK(has_studio_font(snippets));
     INFO("TransformsPage.cpp");
     CHECK(has_studio_font(transforms));
-    INFO("ScratchpadPage.cpp");
-    CHECK(has_studio_font(scratchpad));
 }
 
 TEST_CASE("layout literal ban fires on violations and cap-exceeds") {

@@ -74,7 +74,7 @@ known hash (unverified entries warn in the UI).
 
 The wizard walks through the hotkey, the whisper model and the cleanup LLM.
 Everything can be changed later in the Full window (top strip: Home, History,
-Insights, Dictionary, Snippets, Transforms, Scratchpad, Profiles, plus the
+Insights, Dictionary, Snippets, Transforms, Profiles, plus the
 Settings tabs General, Speech, Cloud, Cleanup, Privacy, About). Dictation
 starts immediately with local Whisper; cloud STT stays off until you opt in.
 

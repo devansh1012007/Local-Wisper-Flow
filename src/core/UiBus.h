@@ -16,7 +16,6 @@ enum class UiCommandType {
     ApplySettings,
     Quit,
     StartTransform,
-    OpenScratchpad,
     PreviewTone,
 };
 

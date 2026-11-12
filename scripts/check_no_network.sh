@@ -27,7 +27,7 @@ if [ -n "$write_hits" ]; then
     fail "file-write APIs in audio/vad/llm (audio must never touch disk)" "$write_hits"
 fi
 
-core_write_hits=$(grep -rnE 'ofstream|fopen|freopen|CreateFile\(' src/core src/stt --include='*.cpp' --include='*.h' 2>/dev/null | grep -vE '^(src/core/((AtomicFile\.(cpp|h))|(ApiKeyStore|CrashReporter|DictionaryStore|HistoryStore|Log|NotesStore|SettingsStore|SnippetStore|StatsStore|TransformStore)\.cpp):)' || true)
+core_write_hits=$(grep -rnE 'ofstream|fopen|freopen|CreateFile\(' src/core src/stt --include='*.cpp' --include='*.h' 2>/dev/null | grep -vE '^(src/core/((AtomicFile\.(cpp|h))|(ApiKeyStore|CrashReporter|DictionaryStore|HistoryStore|Log|SettingsStore|SnippetStore|StatsStore|TransformStore)\.cpp):)' || true)
 if [ -n "$core_write_hits" ]; then
     fail "file-write APIs outside the text stores and log" "$core_write_hits"
 fi

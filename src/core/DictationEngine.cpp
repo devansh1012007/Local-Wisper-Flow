@@ -273,10 +273,6 @@ void DictationEngine::SetAppContextResolver(AppContextResolver* resolver) {
     app_context_ = resolver;
 }
 
-void DictationEngine::SetScratchpadTarget(bool enabled) {
-    scratchpad_target_.store(enabled);
-}
-
 void DictationEngine::SetTransformLlmTimeoutMs(int timeout_ms) {
     transform_llm_timeout_ms_ = timeout_ms > 0 ? timeout_ms : 8000;
 }
@@ -672,7 +668,7 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
 
     const std::int64_t end_ms = now_ms > 0 ? now_ms : clock_.NowMs();
     const std::int64_t duration_ms = end_ms > capture_start_ms_ ? end_ms - capture_start_ms_ : 0;
-    if (stats_ != nullptr && !scratchpad_target_.load()) {
+    if (stats_ != nullptr) {
         DictationRecord record;
         record.timestamp_local = 0;
         record.duration_ms = duration_ms;
@@ -689,7 +685,7 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
         stats_->Record(record);
     }
 
-    if (history_ != nullptr && !scratchpad_target_.load()) {
+    if (history_ != nullptr) {
         HistoryEntry entry;
         entry.timestamp = HistoryStore::NowSeconds();
         entry.raw = raw;

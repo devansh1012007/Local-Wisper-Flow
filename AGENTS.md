@@ -166,16 +166,15 @@ vendor docs on 2026-11-04, NOT yet against the live APIs.
   stopCallback (only while capturing) -> `IAudioCapture::DeviceLost()` -> engine discards
   with MicLost.
 
-## UI (GLFW + Dear ImGui, three windows)
+## UI (GLFW + Dear ImGui, two windows)
 
-- Three OS windows, each with its own Dear ImGui context AND its own GL
+- Two OS windows, each with its own Dear ImGui context AND its own GL
   context: `MainWindow` (Full window: Hairline top-strip navigation + pages —
   Welcome, Home, History, Insights, Dictionary, Snippets, Transforms,
-  Scratchpad, Profiles, Settings; the left rail was replaced by the top strip
-  in T4a), `Overlay` (Mini badge, draggable, click-through unless hovered) and
-  `ScratchpadWindow` (the floating scratchpad editor, T10e — owns its own
-  window/context while the Scratchpad page renders inside Full). Never share
-  a context between windows.
+  Profiles, Settings; the left rail was replaced by the top strip
+  in T4a) and `Overlay` (Mini badge, draggable, click-through unless
+  hovered). Never share a context between windows. (The former third window,
+  `ScratchpadWindow`, was removed with the Scratchpad feature.)
 - **`ImGui::CreateContext()` restores the PREVIOUS context after initializing the new
   one** (vendored v1.92.9b behaviour). Do NOT do
   `imgui_context_ = ImGui::GetCurrentContext()` after `CreateContext()` — it returns
@@ -184,9 +183,9 @@ vendor docs on 2026-11-04, NOT yet against the live APIs.
   rendered with `DisplaySize = 140x70` (the Mini badge's size), its GL viewport
   anchored at the bottom-left (GL origin) and the GUI appeared as a tiny pill on a
   black background (the long-standing "black screen"). Fixed in 1a8304f.
-- The main loop (src/main.cpp) calls `full.RunOnce()`, then
-  `overlay.RenderFrame()` and `scratchpad_editor.RenderFrame()` every tick;
-  all three re-assert `glfwMakeContextCurrent()` and `ImGui::SetCurrentContext()`
+- The main loop (src/main.cpp) calls `full.RunOnce()` and then
+  `overlay.RenderFrame()` every tick;
+  both re-assert `glfwMakeContextCurrent()` and `ImGui::SetCurrentContext()`
   before their backend NewFrame calls because they run back-to-back on one thread.
 - Theme tokens are the Hairline spec values from docs/design/DESIGN.md (the
   design source of truth; docs/design/mockup.html is superseded legacy) in

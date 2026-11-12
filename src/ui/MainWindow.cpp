@@ -9,7 +9,6 @@
 #include "core/HotkeyBinding.h"
 #include "core/InjectionException.h"
 #include "core/Languages.h"
-#include "core/NotesStore.h"
 #include "core/Onboarding.h"
 #include "core/PersonalDictionary.h"
 #include "core/SettingsStore.h"
@@ -24,7 +23,6 @@
 #include "os/WindowsDownloader.h"
 #include "ui/pages/DictionaryPage.h"
 #include "ui/pages/InsightsPage.h"
-#include "ui/pages/ScratchpadPage.h"
 #include "ui/pages/SnippetsPage.h"
 #include "ui/pages/HistoryPage.h"
 #include "ui/pages/ProfilesPage.h"
@@ -386,10 +384,6 @@ void MainWindow::SetTransformsPage(std::unique_ptr<lwf::ui::TransformsPage> page
     transforms_page_ = std::move(page);
 }
 
-void MainWindow::SetScratchpadPage(std::unique_ptr<ScratchpadPage> page) {
-    scratchpad_page_ = std::move(page);
-}
-
 void MainWindow::SetSnippetsPage(std::unique_ptr<lwf::ui::pages::SnippetsPage> page) {
     snippets_page_ = std::move(page);
 }
@@ -583,9 +577,6 @@ void MainWindow::RenderPages(float scale) {
         case Page::Transforms:
             DrawTransformsPage(scale);
             break;
-        case Page::Scratchpad:
-            DrawScratchpadPage(scale);
-            break;
         case Page::Profiles:
             DrawProfilesPage(scale);
             break;
@@ -602,10 +593,10 @@ void MainWindow::DrawTopStrip(float scale) {
     // end. Ctrl+digits activate the same destinations positionally (see the
     // shortcut block inside ##strip_items).
     // T11/T12 landed: History and Profiles sit mid-array at their DESIGN
-    // section 7 positions, so the strip carries nine destinations and the
-    // positional Ctrl mapping is Ctrl+1 (Home) .. Ctrl+9 (Settings) —
-    // Snippets moved from Ctrl+4 to Ctrl+5 in that mapping. The strip must
-    // keep working positionally if destinations are added or removed.
+    // section 7 positions, so the strip carries eight destinations and the
+    // positional Ctrl mapping is Ctrl+1 (Home) .. Ctrl+8 (Settings). The
+    // strip must keep working positionally if destinations are added or
+    // removed.
     const float strip_h = metrics::topstrip_height * scale;
     const float strip_w = ImGui::GetIO().DisplaySize.x;
     // No filled panel: window background with a 1 px hairline at the bottom.
@@ -648,7 +639,6 @@ void MainWindow::DrawTopStrip(float scale) {
         {"##strip_dictionary", "Dictionary", Page::Dictionary},
         {"##strip_snippets", "Snippets", Page::Snippets},
         {"##strip_transforms", "Transforms", Page::Transforms},
-        {"##strip_scratchpad", "Scratchpad", Page::Scratchpad},
         {"##strip_profiles", "Profiles", Page::Profiles},
         {"##strip_settings", "Settings", Page::Settings},
     };
@@ -1111,7 +1101,6 @@ void MainWindow::DeleteLocalData() {
     std::filesystem::remove(base / "dictionary.json", ec);
     std::filesystem::remove(base / "snippets.json", ec);
     std::filesystem::remove(base / "transforms.json", ec);
-    std::filesystem::remove_all(base / "notes", ec);
     std::filesystem::remove(base / "api_keys.json", ec);
     std::filesystem::remove(base / "history.jsonl", ec);
     std::filesystem::remove(base / "stats.json.bak", ec);
@@ -1140,9 +1129,6 @@ void MainWindow::DeleteLocalData() {
     }
     if (reset_stores_.transforms != nullptr) {
         (void)reset_stores_.transforms->Reload();
-    }
-    if (reset_stores_.notes != nullptr) {
-        (void)reset_stores_.notes->Reload();
     }
     if (reset_stores_.api_keys != nullptr) {
         reset_stores_.api_keys->Reload();
@@ -2678,7 +2664,7 @@ void MainWindow::DrawPrivacyPage(float scale) {
             delete_data_armed_ = true;
             focus_cancel_pending_ = true;
         }
-        ImGui::TextDisabled("Removes statistics, dictionary, snippets, transforms, notes, history "
+        ImGui::TextDisabled("Removes statistics, dictionary, snippets, transforms, history "
                             "and saved API keys. Settings are kept.");
     } else {
         // Esc cancels the named confirmation without touching any data;
@@ -2821,15 +2807,6 @@ void MainWindow::DrawTransformsPage(float scale) {
     ImGui::TextDisabled("Not available yet.");
 }
 
-void MainWindow::DrawScratchpadPage(float scale) {
-    if (scratchpad_page_) {
-        scratchpad_page_->Draw(scale, *current_palette_);
-        return;
-    }
-    DrawPageChrome("Scratchpad", "A scratch space for notes.", scale);
-    ImGui::TextDisabled("Not available yet.");
-}
-
 void MainWindow::DrawGeneralPage(float scale) {
     DrawPageChrome("General", "Everyday controls in one place.", scale);
     DrawRestartBanner(scale);
@@ -2916,18 +2893,6 @@ void MainWindow::DrawGeneralPage(float scale) {
                 ApplyAndSave();
             }
             ImGui::EndCombo();
-        }
-        lwf::ui::widgets::RowEnd(scale);
-    }
-    {
-        const bool flow_bar = settings_.GetBool("scratchpad_flow_bar");
-        lwf::ui::widgets::Row("##row_scratchpad_flow_bar", "Scratchpad bar",
-                              "Show the scratchpad bar on the mini window", 52.0f * scale, scale,
-                              *current_palette_);
-        if (lwf::ui::widgets::ToggleSwitch("##scratchpad_flow_bar", flow_bar, scale,
-                                           *current_palette_)) {
-            settings_.SetBool("scratchpad_flow_bar", !flow_bar);
-            ApplyAndSave();
         }
         lwf::ui::widgets::RowEnd(scale);
     }
