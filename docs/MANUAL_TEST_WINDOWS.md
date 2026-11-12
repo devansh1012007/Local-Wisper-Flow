@@ -495,10 +495,11 @@ Owed items recorded during T0-T15 (blocked on hardware/synthetic input):
    (BLOCKED until the event watcher is added: nothing in src/ currently
    creates or waits on `Local\LwfOpenSettingsEvent` — see the R-e-3 note.)
 7. HotkeyCopy and Insights stubs: the Insights "Download on mobile" pill
-   is a documented stub kept deliberately (T14 disposition); decide keep,
-   implement or remove. (The TryItOut banner button was removed with the
+   question is RESOLVED — the pill (with the rest of the card content) was
+   removed outright with the Insights two-card simplification (see item 27);
+   nothing to decide. (The TryItOut banner button was removed with the
    Transforms banner in followups-1; the TryItOut() method stays as a
-   unit-tested API.)
+   unit-tested API.) HotkeyCopy remains as-is.
 8. T13a live model download: real catalog download with progress, cancel
    mid-transfer, and quit mid-download (worker join without crash, partial
    file handled on the next start).
@@ -599,6 +600,18 @@ Packaging round (feat/portable-exe, 2026-11-12):
     MinGW/MSYS2 and double-click EchoFlow.exe: it runs, shows the welcome
     page, and can download the speech model. No DLL errors, no
     installation.
+
+Insights two-card simplification (2026-11-12):
+
+27. Insights page shows only the two averages: open Insights - exactly two
+    cards (WORDS SPOKEN PER MINUTE, WORDS WRITTEN PER MINUTE), no fixes /
+    total-words / desktop-usage / streak / calendar / gauge / mobile pill,
+    no month navigation. With fresh stats the cards show "—" plus the
+    first-minute hint. Dictate for a total of one minute or more (several
+    sessions are fine): both numbers appear; spoken is greater than or
+    equal to written (transcription adds time). Old stats.json (no
+    session_ms): written equals spoken. Live theme swap recolors both cards.
+    Settings > Privacy "Keep usage statistics" off → no new data recorded.
 
 ```
 [ ] PASS   [ ] FAIL   notes:

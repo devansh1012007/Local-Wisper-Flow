@@ -352,6 +352,10 @@ TEST_CASE("stats store records successful injection") {
     CHECK(snap.begin()->second.words_corrected == 0);
     CHECK(snap.begin()->second.dictionary_fixes == 0);
     CHECK(snap.begin()->second.speaking_ms == 120);
+    // The fake clock never advances during transcription, so the end-to-end
+    // session time equals the capture window here; the pin proves the engine
+    // records the post-injection clock read, not the release timestamp.
+    CHECK(snap.begin()->second.session_ms == 120);
     REQUIRE(snap.begin()->second.apps.find("unknown") != snap.begin()->second.apps.end());
     CHECK(snap.begin()->second.apps.at("unknown") == 2);
     std::filesystem::remove(path);

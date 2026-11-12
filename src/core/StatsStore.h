@@ -8,7 +8,12 @@
 
 struct DictationRecord {
     std::int64_t timestamp_local = 0;
+    // Mic-open capture window: hotkey press -> release (the speaking time).
     std::int64_t duration_ms = 0;
+    // End-to-end session: capture + transcription + text injection.
+    // Insights divides by this for the "words written per minute" average;
+    // 0 means "not tracked by this build" (legacy records).
+    std::int64_t session_ms = 0;
     std::string final_text;
     std::string raw_text;
     std::string app_profile;
@@ -20,7 +25,12 @@ struct DictationRecord {
 struct DayStats {
     std::int64_t words = 0;
     std::int64_t dictations = 0;
+    // Accumulated mic-open capture time (press -> release).
     std::int64_t speaking_ms = 0;
+    // Accumulated end-to-end session time (capture + transcription +
+    // injection). Absent in stats.json files written before this field
+    // existed; consumers fall back to speaking_ms there.
+    std::int64_t session_ms = 0;
     std::int64_t words_corrected = 0;
     std::int64_t dictionary_fixes = 0;
     std::map<std::string, std::int64_t> by_category;

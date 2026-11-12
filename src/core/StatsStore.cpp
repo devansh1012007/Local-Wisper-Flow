@@ -154,6 +154,10 @@ void StatsStore::Record(const DictationRecord& record) {
     }
     const std::string key = DateKey(ts);
     const std::int64_t duration = record.duration_ms < 0 ? 0 : record.duration_ms;
+    // The end-to-end session can never be shorter than the mic-open window
+    // (defensive against clock skew between the release and injection
+    // reads); a missing/legacy session_ms floors to the capture duration.
+    const std::int64_t session = record.session_ms > duration ? record.session_ms : duration;
     const std::int64_t corrected = record.words_corrected < 0 ? 0 : record.words_corrected;
     const std::int64_t fixes = record.dictionary_fixes < 0 ? 0 : record.dictionary_fixes;
     const std::string category = AppContextResolver::CategoryFor(record.process_name, "");
@@ -163,6 +167,7 @@ void StatsStore::Record(const DictationRecord& record) {
     day.words += words;
     day.dictations += 1;
     day.speaking_ms += duration;
+    day.session_ms += session;
     day.words_corrected += corrected;
     day.dictionary_fixes += fixes;
     day.by_category[category] += words;
@@ -231,6 +236,7 @@ void StatsStore::LoadLocked() {
         day.words = JsonNumber(*it, "words");
         day.dictations = JsonNumber(*it, "dictations");
         day.speaking_ms = JsonNumber(*it, "speaking_ms");
+        day.session_ms = JsonNumber(*it, "session_ms");
         day.words_corrected = JsonNumber(*it, "words_corrected");
         day.dictionary_fixes = JsonNumber(*it, "dictionary_fixes");
         if (day.words < 0) {
@@ -241,6 +247,9 @@ void StatsStore::LoadLocked() {
         }
         if (day.speaking_ms < 0) {
             day.speaking_ms = 0;
+        }
+        if (day.session_ms < 0) {
+            day.session_ms = 0;
         }
         if (day.words_corrected < 0) {
             day.words_corrected = 0;
@@ -283,6 +292,7 @@ bool StatsStore::PersistLocked() {
         day_json["words"] = entry.second.words;
         day_json["dictations"] = entry.second.dictations;
         day_json["speaking_ms"] = entry.second.speaking_ms;
+        day_json["session_ms"] = entry.second.session_ms;
         day_json["words_corrected"] = entry.second.words_corrected;
         day_json["dictionary_fixes"] = entry.second.dictionary_fixes;
         nlohmann::json categories = nlohmann::json::object();

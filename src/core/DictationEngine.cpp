@@ -669,9 +669,15 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
     const std::int64_t end_ms = now_ms > 0 ? now_ms : clock_.NowMs();
     const std::int64_t duration_ms = end_ms > capture_start_ms_ ? end_ms - capture_start_ms_ : 0;
     if (stats_ != nullptr) {
+        // End-to-end session time for the "words written per minute"
+        // average: capture window plus transcription plus injection. Read
+        // the clock here (post-injection), not the release timestamp.
+        const std::int64_t session_end_ms = clock_.NowMs();
         DictationRecord record;
         record.timestamp_local = 0;
         record.duration_ms = duration_ms;
+        record.session_ms =
+            session_end_ms > capture_start_ms_ ? session_end_ms - capture_start_ms_ : duration_ms;
         record.final_text = final_text;
         record.raw_text = raw;
         record.process_name = capture_app_.process_name;

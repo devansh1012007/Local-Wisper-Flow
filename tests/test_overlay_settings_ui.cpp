@@ -1258,16 +1258,16 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
     REQUIRE(static_cast<bool>(insights));
     const std::string insights_content((std::istreambuf_iterator<char>(insights)),
                                        std::istreambuf_iterator<char>());
+    // Insights simplification: the page is down to the two average cards
+    // (spoken / written words per minute); the heat legend, gauge and every
+    // other card left with the calendar, so no HeatColor use remains. The
+    // live-palette threading pattern stays.
     CHECK(insights_content.find("HeatPack") == std::string::npos);
-    CHECK(insights_content.find("HeatColor(level)") != std::string::npos);
-    // T10d: Insights threads the live palette (no Paper read), keeps the
-    // HeatColor data-viz fills, and carries no stub or card helper.
+    CHECK(insights_content.find("HeatColor") == std::string::npos);
     CHECK(insights_content.find("kLightPalette") == std::string::npos);
     CHECK(insights_content.find("Color(palette.bg)") != std::string::npos);
-    CHECK(insights_content.find("Pack(palette.border)") != std::string::npos);
     CHECK(insights_content.find("Color(palette.muted)") != std::string::npos);
     CHECK(insights_content.find("Pack(palette.text)") != std::string::npos);
-    CHECK(insights_content.find("Pack(palette.accent)") != std::string::npos);
     CHECK(insights_content.find("BeginCard(") == std::string::npos);
     CHECK(insights_content.find("kComingSoon") == std::string::npos);
     CHECK(insights_content.find("kTabVoice") == std::string::npos);
@@ -1280,11 +1280,12 @@ TEST_CASE("Phase 5 pages carry cursor Dummy compensation") {
     // "- ImGui::GetStyle().ItemSpacing.y" and then issues an empty
     // Dummy(0,0) so the following row advance stays exact (see
     // docs/PROGRESS.md IMG-001). Pin the pair so a later palette or
-    // cursor edit cannot silently drop the compensation.
+    // cursor edit cannot silently drop the compensation. (Insights left
+    // this list with the simplification: its two-card layout does no
+    // per-row cursor repositioning, so there is nothing to compensate.)
     const std::vector<std::string> page_sources = {
         "src/ui/pages/DictionaryPage.cpp",
         "src/ui/pages/SnippetsPage.cpp",
-        "src/ui/pages/InsightsPage.cpp",
         "src/ui/pages/TransformsPage.cpp",
     };
     for (const std::string& path : page_sources) {
