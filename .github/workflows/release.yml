@@ -1,0 +1,158 @@
+# Echo flow release workflow (docs/RELEASE.md steps 4-9).
+#
+# Tag-triggered (v*): builds the full Windows app, runs the test suite on
+# the same build, produces the portable zip + the online installer + the
+# full/offline installer, signs everything when signing secrets are
+# present, emits SHA256SUMS.txt + latest.json and publishes a GitHub
+# Release. The in-app update check reads latest.json from that release
+# (redirect-stable /releases/latest/download/latest.json URL).
+#
+# Signing is conditional: with the SIGNING_CERT_B64 (base64 of the PFX) and
+# SIGNING_CERT_PASSWORD secrets present, the exe and both installers are
+# Authenticode-signed (SHA-256, RFC 3161 timestamp). Without them the
+# release ships unsigned and SmartScreen warns - documented, not hidden.
+# The zero-cost path to real signing is the SignPath Foundation OSS
+# program (see docs/RELEASE.md "Code signing without paying").
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/_deps
+            build/llama-ext
+            build/llama-install
+            build/downloads
+          key: windows-deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'scripts/fetch_deps.ps1') }}
+
+      - name: Fetch dependencies (tarballs + grpc submodules at pinned SHAs)
+        run: pwsh scripts/fetch_deps.ps1
+
+      - name: Configure (phase 1)
+        run: |
+          $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DGRPC_URL=file://$ws/_deps-cache/grpc-v1.71.0-full.tar.gz" "-DLLAMA_URL=file://$ws/_deps-cache/llama-b10603.tar.gz"
+
+      - name: Build (phase 1, builds llama)
+        run: cmake --build build --config Release --target llama_ext -j 4
+
+      - name: Configure (phase 2)
+        run: |
+          $ws = $env:GITHUB_WORKSPACE -replace '\\','/'
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DGRPC_URL=file://$ws/_deps-cache/grpc-v1.71.0-full.tar.gz" "-DLLAMA_URL=file://$ws/_deps-cache/llama-b10603.tar.gz"
+
+      - name: Build (phase 2, full app)
+        run: cmake --build build --config Release -j 4
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package portable zip (import-table audit included)
+        run: pwsh scripts/package_windows.ps1
+
+      - name: Stage model weights for the full bundle (hash-verified)
+        run: pwsh scripts/prepare_full_bundle.ps1
+
+      - name: Compile installers (online + full)
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found - Inno Setup 6 missing on the runner image" }
+          & $iscc "/DAppVersion=$version" installer/lwf.iss
+          if ($LASTEXITCODE -ne 0) { throw "online installer compilation failed" }
+          & $iscc "/DAppVersion=$version" "/DFullBundle" installer/lwf.iss
+          if ($LASTEXITCODE -ne 0) { throw "full installer compilation failed" }
+
+      - name: Sign artifacts (skipped when signing secrets are absent)
+        env:
+          SIGNING_CERT_B64: ${{ secrets.SIGNING_CERT_B64 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        shell: pwsh
+        run: |
+          if (-not $env:SIGNING_CERT_B64 -or -not $env:SIGNING_CERT_PASSWORD) {
+            Write-Host "[sign] signing secrets not set - publishing UNSIGNED artifacts"
+            Write-Host "[sign] SmartScreen will warn ('More info' -> 'Run anyway')"
+            exit 0
+          }
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match 'x64' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if ($null -eq $signtool) { throw "signtool.exe not found in the Windows Kits" }
+          $pfx = Join-Path $env:RUNNER_TEMP "release.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_CERT_B64))
+          $targets = @(
+            "build/Release/EchoFlow.exe",
+            (Get-ChildItem dist -Filter "EchoFlowSetup-*-full.exe" | Select-Object -First 1).FullName,
+            (Get-ChildItem dist -Filter "EchoFlowSetup-*.exe" | Where-Object { $_.Name -notlike "*-full*" } | Select-Object -First 1).FullName
+          ) | Where-Object { $_ -and (Test-Path $_) }
+          foreach ($target in $targets) {
+            & $signtool.FullName sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
+              /f $pfx /p $env:SIGNING_CERT_PASSWORD $target
+            if ($LASTEXITCODE -ne 0) { throw "signing failed for $target" }
+            & $signtool.FullName verify /pa $target
+            if ($LASTEXITCODE -ne 0) { throw "signature verification failed for $target" }
+          }
+          Remove-Item -Force $pfx
+          Write-Host "[sign] signed: $($targets -join ', ')"
+
+      - name: Generate SHA256SUMS.txt and latest.json
+        shell: pwsh
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = $env:TAG -replace '^v', ''
+          $zip = Get-ChildItem dist -Filter "EchoFlow-$version-win64.zip" | Select-Object -First 1
+          $setupOnline = Get-ChildItem dist -Filter "EchoFlowSetup-$version.exe" | Select-Object -First 1
+          $setupFull = Get-ChildItem dist -Filter "EchoFlowSetup-$version-full.exe" | Select-Object -First 1
+          $base = "https://github.com/$($env:REPO)/releases/download/$($env:TAG)"
+          $lines = @()
+          foreach ($f in @($zip, $setupOnline, $setupFull)) {
+            if ($f) {
+              $hash = (Get-FileHash -Algorithm SHA256 $f.FullName).Hash.ToLowerInvariant()
+              $lines += "$hash  $($f.Name)"
+            }
+          }
+          $lines -join "`n" | Out-File -FilePath dist/SHA256SUMS.txt -Encoding ascii
+          $latest = [ordered]@{
+            version       = $version
+            released_at   = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            installer_url = if ($setupOnline) { "$base/$($setupOnline.Name)" } else { $null }
+            portable_url  = if ($zip) { "$base/$($zip.Name)" } else { $null }
+            full_installer_url = if ($setupFull) { "$base/$($setupFull.Name)" } else { $null }
+            installer_sha256   = if ($setupOnline) { (Get-FileHash -Algorithm SHA256 $setupOnline.FullName).Hash.ToLowerInvariant() } else { $null }
+            portable_sha256    = if ($zip) { (Get-FileHash -Algorithm SHA256 $zip.FullName).Hash.ToLowerInvariant() } else { $null }
+            notes_url     = "$base/RELEASE_NOTES.md"
+          }
+          $latest | ConvertTo-Json | Out-File -FilePath dist/latest.json -Encoding utf8
+          Write-Host "[release] SHA256SUMS.txt + latest.json generated"
+          Get-Content dist/latest.json
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $assets = @()
+          $assets += Get-ChildItem dist -Filter "EchoFlow-*.zip" | ForEach-Object { $_.FullName }
+          $assets += Get-ChildItem dist -Filter "EchoFlowSetup-*.exe" | ForEach-Object { $_.FullName }
+          $assets += "dist/SHA256SUMS.txt", "dist/latest.json"
+          gh release create $env:TAG $assets --title "Echo flow $($env:TAG)" `
+            --generate-notes --verify-tag
+        shell: pwsh
