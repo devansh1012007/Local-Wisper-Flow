@@ -617,3 +617,59 @@ Insights two-card simplification (2026-11-12):
 [ ] PASS   [ ] FAIL   notes:
 ```
 
+
+Followups-6 branding + icon (2026-11-13):
+
+28. Echo flow identity end-to-end: Explorer shows the app icon on the exe
+    tile (both Small icons and Large icons view), the Properties > Details
+    tab shows ProductName "Echo flow" and the build version, the title
+    bar/taskbar/Alt-Tab carry the icon, the tray icon shows the mark (tip
+    "Echo flow"). Legacy migration: with a pre-rename install's
+    %APPDATA%\LocalWisperFlow present, starting EchoFlow.exe renames it to
+    %APPDATA%\EchoFlow (log line "DataDir: migrated ..."), config/history/
+    dictionary survive, and the legacy Run autostart value moves to
+    EchoFlow. Uninstall (installer build): the uninstaller asks about data
+    and about models separately; answering "keep models" leaves
+    %APPDATA%\EchoFlow\models on disk. (Installer + tray are Windows-only;
+    build the installer with iscc installer/lwf.iss.)
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+
+Followups-6 Models page (2026-11-13):
+
+29. Top strip carries Models (between Profiles and Settings; Ctrl+8). The
+    page lists Speech models grouped by language (English, Multilingual,
+    Hinglish) and a Cleanup model section, each with size + license +
+    notes. Download streams a progress bar and is cancellable; on success
+    the model lands in %APPDATA%\EchoFlow\models\<name>, whisper_model_path
+    (or llm_model_path for the cleanup model) is set, the restart banner
+    appears and a restart activates the model. Set active switches models;
+    Delete removes the file (disabled for the active model); Download
+    again re-verifies a complete file via its SHA-256 (a file that fails
+    the hash re-downloads). Only one download runs at a time; the Speech
+    page and Welcome share the same progress state. models.json with an
+    empty url keeps the Download button inert (no crash).
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+
+Followups-6 update check (2026-11-13):
+
+30. Settings > General > Updates: shows the running version; "Check for
+    updates automatically" defaults OFF. With it off, no network request
+    happens at startup (verify in the log). Check now fetches
+    latest.json from the GitHub release (redirect URL); while checking the
+    button is disabled with "Checking...". When up to date: "You are on
+    the latest version." When a newer version exists: version text plus
+    Open download page (opens the browser on the release asset/page).
+    With the network cut, the error text appears and the app keeps
+    working. With the toggle ON, a fresh start (last check > 24 h ago)
+    performs exactly one check; toggling OFF stops future checks. The
+    check never downloads or runs anything by itself.
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```

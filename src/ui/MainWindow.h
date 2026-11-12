@@ -2,6 +2,7 @@
 
 #include "core/DictationFSM.h"
 #include "core/Onboarding.h"
+#include "core/VersionCheck.h"
 
 #include <atomic>
 #include <cstddef>
@@ -177,6 +178,18 @@ public:
         std::function<ModelListResult(IHttpTransport&, const std::string&)>;
     void SetModelsFetcher(ModelListFetcher fetcher);
 
+    // Remote update check (followups-6, manual + opt-in daily). The fetch
+    // is injected so src/ui stays free of the transport tree (F9 lint);
+    // main.cpp maps IHttpTransport::Get onto this shape. The worker runs
+    // off the UI thread, the latch result is consumed in RunOnce.
+    struct UpdateFetchResult {
+        bool ok = false;
+        std::string body;
+        std::string error;
+    };
+    using UpdateFetcher = std::function<UpdateFetchResult(const std::string& url)>;
+    void SetUpdateFetcher(UpdateFetcher fetcher);
+
     void OpenHistoryPage();
     void OpenProfilesPage();
     void OpenSettingsPrivacy();
@@ -264,6 +277,14 @@ private:
     void MicCheckRow(float scale);
     void BoolRow(const char* key, const char* label, const char* helper, float scale);
     void StringFieldRow(const char* key, TextField& field, const char* id, bool restart);
+    // Updates card (Settings > General): the Check-now button, the opt-in
+    // daily toggle and the verdict text. Called from DrawGeneralPage only.
+    void UpdatesCard(float scale);
+    // Spawns the update-check worker through the injected fetcher
+    // (StartUpdateCheck name is referenced by the RunOnce startup check
+    // and the Updates card; guarded by update_busy_). No-op without a
+    // fetcher.
+    void StartUpdateCheck();
 
     enum class SettingsTab { General, Speech, Cloud, Cleanup, Privacy, About };
 
@@ -355,6 +376,21 @@ private:
     bool openrouter_models_latch_ready_ = false;  // guarded by latch mutex
     ModelListResult openrouter_models_latch_;  // guarded by latch mutex
     std::thread openrouter_models_worker_;  // joined in ~MainWindow
+    // Update check (followups-6): same worker/latch pattern as the model
+    // list. update_busy_ is touched only on the UI thread; the worker only
+    // writes the latch. The consumed verdict feeds the General page card.
+    UpdateFetcher update_fetcher_;
+    std::atomic<bool> update_busy_{false};
+    std::mutex update_latch_mutex_;
+    bool update_latch_ready_ = false;  // guarded by latch mutex
+    UpdateFetchResult update_latch_;  // guarded by latch mutex
+    std::thread update_worker_;  // joined in ~MainWindow
+    bool update_result_ok_ = false;   // consumed verdict (UI thread)
+    bool update_result_available_ = false;
+    std::string update_result_version_;
+    std::string update_result_url_;
+    std::string update_result_error_;
+    bool update_startup_check_done_ = false;  // one opt-in daily check per run
     // Speech-model download (T13a): catalog-driven through the exe-dir
     // models.json (Q2 may leave url empty, in which case the control is
     // inert). The worker thread owns the synchronous transfer; progress

@@ -623,6 +623,30 @@ int main() {
             }
             return mapped;
         });
+        // Update check (followups-6): the same IHttpTransport seam, mapped
+        // onto MainWindow primitives. One GET of the redirect-stable
+        // latest.json per check; no telemetry, nothing sent beyond the URL.
+        full.SetUpdateFetcher([](const std::string& url) -> MainWindow::UpdateFetchResult {
+            MainWindow::UpdateFetchResult mapped;
+            lwf::UrlParts parts;
+            if (!lwf::SplitHttpsUrl(url, parts)) {
+                mapped.error = "update check: the update URL is not https";
+                return mapped;
+            }
+            HttpRequest request;
+            request.host = parts.host;
+            request.path = parts.path;
+            request.timeout_ms = 8000;
+            const HttpResponse response = http_client.Get(request);
+            if (response.status != 200) {
+                mapped.error = "update check: server answered HTTP " +
+                               std::to_string(response.status);
+                return mapped;
+            }
+            mapped.ok = true;
+            mapped.body.assign(response.body.begin(), response.body.end());
+            return mapped;
+        });
         full.SetDictionaryPage(
             std::make_unique<lwf::ui::pages::DictionaryPage>(dictionary_store, &dictionary));
         full.SetInsightsPage(std::make_unique<lwf::ui::insights::InsightsPage>(usage_stats));

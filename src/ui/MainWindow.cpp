@@ -190,6 +190,11 @@ MainWindow::~MainWindow() {
     if (mic_test_worker_.joinable()) {
         mic_test_worker_.join();
     }
+    // Update check worker caps the exit wait at the 8s transport timeout
+    // (same seam, same contract as the models fetch worker).
+    if (update_worker_.joinable()) {
+        update_worker_.join();
+    }
     Shutdown();
 }
 
@@ -415,6 +420,38 @@ void MainWindow::SetModelsFetcher(ModelListFetcher fetcher) {
     models_fetcher_ = std::move(fetcher);
 }
 
+void MainWindow::SetUpdateFetcher(UpdateFetcher fetcher) {
+    update_fetcher_ = std::move(fetcher);
+}
+
+void MainWindow::StartUpdateCheck() {
+    if (update_busy_.load() || !update_fetcher_) {
+        return;
+    }
+    update_busy_.store(true);
+    if (update_worker_.joinable()) {
+        update_worker_.join();
+    }
+    // The worker only calls the injected fetcher and writes the latch; the
+    // verdict (version compare + config write) happens on the UI thread in
+    // RunOnce. INVARIANT: update_busy_ is touched only on the UI thread.
+    update_worker_ = std::thread([this]() {
+        UpdateFetchResult result;
+        try {
+            result = update_fetcher_(lwf::kLatestJsonUrl);
+        } catch (const std::exception& e) {
+            result.ok = false;
+            result.error = e.what();
+        } catch (...) {
+            result.ok = false;
+            result.error = "update check failed";
+        }
+        std::lock_guard<std::mutex> latch_lock(update_latch_mutex_);
+        update_latch_ = result;
+        update_latch_ready_ = true;
+    });
+}
+
 bool MainWindow::FirstRunNeeded() const {
     return settings_.GetBool("first_run") || settings_.GetString("whisper_model_path").empty();
 }
@@ -473,6 +510,48 @@ void MainWindow::RunOnce(float) {
                     break;
             }
             download_busy_.store(false);
+        }
+    }
+
+    // Update check (followups-6): the worker fetches latest.json off the
+    // UI thread through the injected fetcher; the verdict is consumed here
+    // so it also lands when the window was hidden during the fetch. The
+    // opt-in daily check runs once per app run, never on the first frame
+    // (settings load order) and only when the user enabled it.
+    {
+        std::lock_guard<std::mutex> latch_lock(update_latch_mutex_);
+        if (update_latch_ready_) {
+            const UpdateFetchResult fetch = update_latch_;
+            update_latch_ready_ = false;
+            update_busy_.store(false);
+            if (!fetch.ok) {
+                update_result_ok_ = false;
+                update_result_error_ = fetch.error.empty() ? "the update check could not reach the server"
+                                                           : fetch.error;
+            } else {
+                const lwf::UpdateCheckResult verdict =
+                    lwf::EvaluateLatestJson(fetch.body, lwf::AppVersion());
+                settings_.SetDouble("update_last_check_s", lwf::EpochSecondsNow());
+                ApplyAndSave();
+                if (!verdict.ok) {
+                    update_result_ok_ = false;
+                    update_result_error_ = verdict.error;
+                } else {
+                    update_result_ok_ = true;
+                    update_result_error_.clear();
+                    update_result_available_ = verdict.update_available;
+                    update_result_version_ = verdict.latest_version;
+                    update_result_url_ = verdict.download_url;
+                }
+            }
+        }
+    }
+    if (!update_startup_check_done_ && update_fetcher_ && !update_busy_.load()) {
+        update_startup_check_done_ = true;
+        const double last_check_s = settings_.GetDouble("update_last_check_s");
+        const double now_s = lwf::EpochSecondsNow();
+        if (settings_.GetBool("update_check_enabled") && (now_s - last_check_s) >= 86400.0) {
+            StartUpdateCheck();
         }
     }
 
@@ -3087,7 +3166,69 @@ void MainWindow::DrawGeneralPage(float scale) {
     }
     ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 
+    UpdatesCard(scale);
+}
 
+void MainWindow::UpdatesCard(float scale) {
+    // Updates (followups-6): local version line, the opt-in daily check and
+    // the manual Check-now. The verdict text is always worded ("up to
+    // date" / "available" / error), never color-only. Privacy: a check is
+    // one anonymous GET of the catalog URL; the toggle defaults OFF and a
+    // check only ever runs after it was turned on (or on the manual
+    // button, which is an explicit user action).
+    ImGui::SetCursorPosX(16.0f * scale);
+    ImGui::PushFont(nullptr, metrics::font_card_title_px);
+    ImGui::TextUnformatted("Updates");
+    ImGui::PopFont();
+    {
+        bool auto_check = settings_.GetBool("update_check_enabled");
+        lwf::ui::widgets::Row("##card_general_updates", "Check for updates automatically",
+                              "Once a day, one anonymous request. Off by default.",
+                              52.0f * scale, scale, *current_palette_);
+        if (lwf::ui::widgets::ToggleSwitch("##update_check_enabled", auto_check, scale,
+                                           *current_palette_)) {
+            settings_.SetBool("update_check_enabled", !auto_check);
+            ApplyAndSave();
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        lwf::ui::widgets::Row("##row_update_check", "Version", nullptr, 248.0f * scale, scale,
+                              *current_palette_);
+        ImGui::TextDisabled("Echo flow %s", lwf::AppVersion());
+        ImGui::BeginDisabled(update_busy_.load() || !update_fetcher_);
+        if (ImGui::Button("Check now##check_updates")) {
+            StartUpdateCheck();
+        }
+        ImGui::EndDisabled();
+        if (update_busy_.load()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("Checking...");
+        }
+        if (!update_busy_.load()) {
+            if (!update_result_ok_) {
+                if (!update_result_error_.empty()) {
+                    ImGui::TextColored(Color(current_palette_->err), "%s",
+                                       update_result_error_.c_str());
+                }
+            } else if (update_result_available_) {
+                ImGui::TextColored(Color(current_palette_->ok),
+                                   "Echo flow %s is available.", update_result_version_.c_str());
+                if (ImGui::SmallButton("Open download page##open_update")) {
+#ifdef _WIN32
+                    // The exe's own ShellExecuteA decl (top of this file):
+                    // the verdict URL is https-only (EvaluateLatestJson
+                    // enforces the scheme) and comes from our release.
+                    ShellExecuteA(nullptr, "open", update_result_url_.c_str(), nullptr, nullptr, 1);
+#endif
+                }
+            } else {
+                ImGui::TextDisabled("You are on the latest version.");
+            }
+        }
+        lwf::ui::widgets::RowEnd(scale);
+    }
+    ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 }
 
 void MainWindow::DrawSettingsPage(float scale) {

@@ -78,6 +78,7 @@ set(LWF_CORE_SOURCES
     src/core/AudioGain.cpp
     src/core/CommandModeController.cpp
     src/core/ConfigManager.cpp
+    src/core/VersionCheck.cpp
     src/core/ConsentGate.cpp
     src/core/SttRouter.cpp
     src/stt/cloud/ClipSplitter.cpp
@@ -191,6 +192,7 @@ add_executable(lwf_tests
     tests/test_dictionary.cpp
     tests/test_dictionarystore.cpp
     tests/test_onboarding.cpp
+    tests/test_versioncheck.cpp
     tests/test_openrouter.cpp
     tests/test_overlay_settings_ui.cpp
     tests/test_resilience.cpp
