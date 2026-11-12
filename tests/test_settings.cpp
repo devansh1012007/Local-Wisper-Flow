@@ -332,3 +332,76 @@ TEST_CASE("volume slider commits live and posts a preview tone") {
     CHECK(call_span.find("VolumeRow();") != std::string::npos);
     CHECK(call_span.find("DoubleRow(\"sound_volume\"") == std::string::npos);
 }
+
+// Source pins (followups-4): the full app must launch WITHOUT a console
+// window and must run on machines that have no MinGW runtime installed.
+// lwf_tests cannot link the full app, so the two guarantees are pinned on
+// the build description and the fatal-error path is pinned on main.cpp.
+TEST_CASE("windows exe is a console-less GUI subsystem app") {
+    const std::string cmake_src = ReadSource("CMakeLists.txt");
+    REQUIRE_FALSE(cmake_src.empty());
+
+    // LWF_CONSOLE (debug escape hatch) defaults OFF and gates the property,
+    // so a plain build is always the GUI subsystem (CMake maps
+    // WIN32_EXECUTABLE to -mwindows on MinGW; the mingw-w64 runtime
+    // supplies the WinMain stub that calls main()).
+    CHECK(cmake_src.find("option(LWF_CONSOLE") != std::string::npos);
+    const std::size_t console_opt = cmake_src.find("option(LWF_CONSOLE");
+    REQUIRE(console_opt != std::string::npos);
+    const std::string console_span = cmake_src.substr(console_opt, 200);
+    CHECK(console_span.find(" OFF)") != std::string::npos);
+    CHECK(cmake_src.find("if(NOT LWF_CONSOLE)") != std::string::npos);
+    const std::size_t gate = cmake_src.find("if(NOT LWF_CONSOLE)");
+    REQUIRE(gate != std::string::npos);
+    const std::string gate_span = cmake_src.substr(gate, 400);
+    CHECK(gate_span.find("WIN32_EXECUTABLE TRUE") != std::string::npos);
+
+    // The GCC runtime is statically linked: a dynamically linked MinGW C++
+    // exe needs libstdc++-6.dll / libgcc_s_seh-1.dll next to it, which do
+    // not exist on a clean machine ("works here, not there").
+    CHECK(cmake_src.find("if(NOT MSVC)") != std::string::npos);
+    const std::size_t msvc_gate = cmake_src.find("if(NOT MSVC)");
+    REQUIRE(msvc_gate != std::string::npos);
+    const std::string msvc_span = cmake_src.substr(msvc_gate, 300);
+    CHECK(msvc_span.find("-static -static-libgcc -static-libstdc++") != std::string::npos);
+
+    // With no console, a fatal startup error must still reach the user:
+    // the catch-all shows a message box instead of an invisible cerr.
+    const std::string main_src = ReadSource("src/main.cpp");
+    REQUIRE_FALSE(main_src.empty());
+    const std::size_t fatal = main_src.find("Echo flow failed to start:");
+    REQUIRE(fatal != std::string::npos);
+    const std::string fatal_span = main_src.substr(fatal - 700, 900);
+    CHECK(fatal_span.find("MessageBoxA") != std::string::npos);
+    CHECK(fatal_span.find("lwf::Log::Error") != std::string::npos);
+}
+
+// Source pin (followups-4): the packaging script audits the import table
+// so a foreign-DLL regression fails at package time, and it ships the
+// exe-side payloads the app needs on a clean machine.
+TEST_CASE("packaging script audits dlls and ships the exe-side payloads") {
+    const std::string script = ReadSource("scripts/package_windows.ps1");
+    REQUIRE_FALSE(script.empty());
+
+    // The audit: parse objdump's "DLL Name:" lines and fail on anything
+    // outside the system whitelist.
+    CHECK(script.find("'DLL Name:'") != std::string::npos);
+    CHECK(script.find("$SystemDlls") != std::string::npos);
+    CHECK(script.find("kernel32") != std::string::npos);
+    CHECK(script.find("msvcrt") != std::string::npos);
+    // The MinGW runtime DLLs are named in the failure message so the
+    // regression is identifiable from the error alone.
+    CHECK(script.find("libstdc++-6.dll") != std::string::npos);
+    CHECK(script.find("non-system DLL") != std::string::npos);
+
+    // The exe renames to EchoFlow.exe and the first-run model catalog
+    // travels next to it (Onboarding reads GetExeDir()\models.json).
+    CHECK(script.find("EchoFlow.exe") != std::string::npos);
+    CHECK(script.find("models.json") != std::string::npos);
+    CHECK(script.find("Compress-Archive") != std::string::npos);
+    CHECK(script.find("win64.zip") != std::string::npos);
+
+    // The gitignored output dir is declared so the repo stays clean.
+    const std::string gitignore = ReadSource(".gitignore");
+    CHECK(gitignore.find("dist/") != std::string::npos);
+}

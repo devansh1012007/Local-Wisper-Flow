@@ -58,6 +58,19 @@ place. If `build/_deps/grpc-src` is stale or partial, clear `build/_deps/grpc-sr
 `build/_deps/grpc-build` and `build/_deps/grpc-subbuild` and re-run the configure
 before building.
 
+The Windows exe builds as a GUI-subsystem app (no console window; see
+`LWF_CONSOLE` to bring the console back for a debug build) with the GCC
+runtime statically linked, so the binary has no `libstdc++`/`libgcc`
+DLL tail. To share the app, package a portable zip:
+
+```sh
+powershell -ExecutionPolicy Bypass -File scripts/package_windows.ps1
+# -> dist/EchoFlow-<version>-win64.zip  (exe + models.json + README)
+```
+
+The script audits the exe's import table and fails if a non-system DLL
+reappears - that is the "works on my PC, not on theirs" guard.
+
 ## Models
 
 | Model | Used for | Where configured |

@@ -582,3 +582,25 @@ Audio diagnostics round 3 (fix/audio-diagnostics, 2026-11-12):
     missing/failed device reports "Could not open the microphone: ..."
     in red; the button is disabled while "Listening for 2 seconds..."
     shows; nothing is stored, logged or sent except the numeric level.
+
+Packaging round (feat/portable-exe, 2026-11-12):
+
+24. No console window: double-click the built EchoFlow.exe (or launch from
+    Explorer) - the app starts with NO black cmd window; the tray icon and
+    the app windows are the only visible surfaces. A debug build with
+    -DLWF_CONSOLE=ON still opens the console (stdout prints as before).
+25. Fatal errors stay visible without a console: with a deliberately broken
+    setup, the app shows an "Echo flow failed to start: ..." message box
+    (and writes the same text to the log) instead of silently exiting.
+26. Portable zip on a clean PC: `powershell -ExecutionPolicy Bypass -File
+    scripts/package_windows.ps1` builds, audits (fails on any non-system
+    DLL in the import table) and writes dist/EchoFlow-<version>-win64.zip
+    (EchoFlow.exe + models.json + README.txt). Unzip on a machine without
+    MinGW/MSYS2 and double-click EchoFlow.exe: it runs, shows the welcome
+    page, and can download the speech model. No DLL errors, no
+    installation.
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+

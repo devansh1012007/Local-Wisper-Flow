@@ -84,6 +84,14 @@
 
 #ifdef _WIN32
 extern "C" __declspec(dllimport) int __stdcall ShellExecuteA(void*, const char*, const char*, const char*, const char*, int);
+// Followups-4: the fatal box needs MessageBoxA without pulling the Win32
+// umbrella header into main.cpp (hygiene gate G4 confines it to src/os/
+// and the cloud HTTP client). In C++ mode mingw-w64 types HWND as
+// `struct HWND__*` (not void*), so the redeclaration spells the parameter
+// that way - it then matches winuser.h exactly whether some transitively
+// included header got there first or not.
+struct HWND__;
+extern "C" __declspec(dllimport) int __stdcall MessageBoxA(struct HWND__*, const char*, const char*, unsigned int);
 #endif
 
 namespace {
@@ -877,6 +885,15 @@ int main() {
     } catch (const std::exception& e) {
         lwf::Log::Error(std::string("fatal: ") + e.what());
         std::cerr << "Fatal: " << e.what() << std::endl;
+#ifdef _WIN32
+        // Followups-4: the full app is a GUI-subsystem executable (no
+        // console), so the cerr line above goes nowhere the user can see.
+        // Show the fatal text in a message box instead - without it a
+        // startup failure on a shared machine is indistinguishable from
+        // "the exe does nothing when I double-click it".
+        MessageBoxA(nullptr, (std::string("Echo flow failed to start:\n\n") + e.what()).c_str(),
+                    "Echo flow", 0x10u /* MB_ICONERROR */);
+#endif
         return 1;
     }
 }

@@ -19,6 +19,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(LWF_BUILD_FULL "Build the full app with whisper/llama/grpc/onnx providers" OFF)
+# Followups-4 ("cmd opens when I run the app"): the full app is a GUI
+# subsystem executable - no console window. Keep the console only for
+# debugging sessions where stdout/stderr on a terminal is wanted.
+option(LWF_CONSOLE "Attach a console window to the full app (debug builds)" OFF)
 if(WIN32)
     set(LWF_BUILD_FULL ON CACHE BOOL "" FORCE)
 endif()
@@ -380,6 +384,25 @@ if(LWF_BUILD_FULL)
         )
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/source/app.manifest")
             target_sources(local-wisper-flow PRIVATE source/app.manifest)
+        endif()
+        # Followups-4: GUI subsystem (no console window on double-click).
+        # CMake maps WIN32_EXECUTABLE to -mwindows on MinGW, and the mingw-w64
+        # runtime provides the WinMain stub that forwards to main(), so the
+        # plain main() keeps working. LWF_CONSOLE=ON restores the console for
+        # debug builds (-mconsole, i.e. the previous behaviour).
+        if(NOT LWF_CONSOLE)
+            set_target_properties(local-wisper-flow PROPERTIES WIN32_EXECUTABLE TRUE)
+        endif()
+        # Followups-4 ("share the exe, must work on other PCs"): statically
+        # link the GCC runtime. A dynamically linked MinGW C++ exe needs
+        # libstdc++-6.dll / libgcc_s_seh-1.dll (libwinpthread-1.dll for
+        # std::thread) next to it - none of which exist on a clean machine,
+        # which is the classic "works here, not there" failure. With -static
+        # the import table drops to system DLLs only (KERNEL32, msvcrt,
+        # USER32, ...). scripts/package_windows.ps1 audits this and fails the
+        # package if a foreign DLL reappears.
+        if(NOT MSVC)
+            target_link_options(local-wisper-flow PRIVATE -static -static-libgcc -static-libstdc++)
         endif()
         target_link_libraries(local-wisper-flow PRIVATE user32 wtsapi32 winhttp bcrypt shell32 advapi32 dwmapi)
 
