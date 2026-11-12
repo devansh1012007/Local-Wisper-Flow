@@ -29,6 +29,9 @@ jobs:
       - name: Hygiene checks
         run: sh scripts/check_hygiene.sh
 
+      - name: Licence checks
+        run: sh scripts/check_licenses.sh
+
       - name: Configure (phase 1)
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
