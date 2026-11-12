@@ -21,6 +21,7 @@
 #include "core/UiBus.h"
 #include "os/DataDir.h"
 #include "os/FileDialogs.h"
+#include "os/WindowStyles.h"
 #include "os/WindowsDownloader.h"
 #include "ui/pages/DictionaryPage.h"
 #include "ui/pages/InsightsPage.h"
@@ -226,6 +227,13 @@ bool MainWindow::Init() {
     glfwSetWindowSizeLimits(window_, static_cast<int>(metrics::full_min_w * dpi_scale_),
                             static_cast<int>(metrics::full_min_h * dpi_scale_), GLFW_DONT_CARE,
                             GLFW_DONT_CARE);
+
+#ifdef _WIN32
+    // Exe icon (assets/app.rc, resource id 1) on the title bar, taskbar and
+    // Alt-Tab. Works while the window is still hidden; the Explorer tile
+    // picks the same resource directly from the exe.
+    WindowStyles::ApplyAppIcon(glfwGetWin32Window(window_));
+#endif
 
     // Center on the primary work area so the first open feels deliberate.
     int win_w = 0;

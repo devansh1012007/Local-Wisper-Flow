@@ -39,7 +39,7 @@ sections below only list what needs real Windows.
    `cmake --build build --config Release` (two-phase configure: re-run cmake after
    the first build finishes so llama links).
 2. Put `ggml-base.en.bin` next to the exe or set `whisper_model_path`.
-3. Launch `local-wisper-flow.exe`. Hold the hotkey, speak one sentence, release.
+3. Launch `EchoFlow.exe`. Hold the hotkey, speak one sentence, release.
 
 Expected: transcript cleaned by LLM is pasted into the focused app, FSM lines appear
 in the log, dashboard still renders.

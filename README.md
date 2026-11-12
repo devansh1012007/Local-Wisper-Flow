@@ -5,9 +5,11 @@ lands in whatever app you are typing in. Whisper speech-to-text and an
 optional local LLM run on this machine; a cloud STT provider is available
 behind an explicit consent gate (see "Cloud speech-to-text" below).
 
-The app presents itself as "Echo flow" (window title, wordmark, tray); the
-repository, data directory and registry identifiers keep the LocalWisperFlow
-spelling so existing installs keep their config and history.
+The app presents itself as "Echo flow" everywhere user-visible, and ships as
+`EchoFlow.exe` (with the exe icon + VERSIONINFO from assets/). Data lives in
+`%APPDATA%\EchoFlow` - a first start renames a pre-existing
+`%APPDATA%\LocalWisperFlow` directory so old installs keep their config,
+dictionary and history. The repository keeps its historical name.
 
 - **Press-to-talk dictation** with VAD-gated capture, a mini overlay badge and
   a full window with top-strip navigation (Dear ImGui).

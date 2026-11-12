@@ -39,9 +39,9 @@ if ($LASTEXITCODE -ne 0) {
     throw "build failed (exit $LASTEXITCODE). Run scripts/build_retry.ps1 first if the two-phase llama configure is not done yet."
 }
 
-$Exe = Join-Path $Build "local-wisper-flow.exe"
+$Exe = Join-Path $Build "EchoFlow.exe"
 if (-not (Test-Path $Exe)) {
-    throw "built exe not found at $Exe"
+    throw "built exe not found at $Exe (the CMake target is still local-wisper-flow; its OUTPUT_NAME is EchoFlow)"
 }
 
 # ---------- version ----------
@@ -62,7 +62,7 @@ if ($null -eq $Objdump) {
     throw "objdump not found - run from the MSYS2 MinGW shell where the toolchain lives"
 }
 
-Write-Host "[package] auditing import table of local-wisper-flow.exe ..."
+Write-Host "[package] auditing import table of EchoFlow.exe ..."
 $dump = & $Objdump.Source -p $Exe
 $dlls = @($dump | Select-String 'DLL Name:' | ForEach-Object {
     if ($_.Line -match 'DLL Name:\s*(\S+)') { $Matches[1] } })
@@ -117,11 +117,11 @@ download the speech model (about 150 MB) - an internet connection is
 needed once. After that everything runs offline on this machine.
 
 What is stored, and where:
-  %APPDATA%\LocalWisperFlow\
+  %APPDATA%\EchoFlow\
       config.json     settings
       logs\           log files
       history.jsonl   dictation history (if enabled)
-      models\         downloaded speech model
+      models\         downloaded speech and language models
 
 Hold the push-to-talk hotkey and speak; release to type. Right-click the
 tray icon for settings and to quit. If Windows SmartScreen warns about an

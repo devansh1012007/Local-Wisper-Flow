@@ -309,7 +309,7 @@ void RunEngine(MiniaudioCapture& audio, IInferenceProvider& stt, ITextInjector& 
 
 int main() {
     try {
-        SingleInstance instance("LwfSingleInstanceMutex");
+        SingleInstance instance("EchoFlowSingleInstanceMutex");
         if (!instance.IsFirstInstance()) {
             instance.SignalOpenSettings();
             std::cout << "Another instance is already running." << std::endl;

@@ -7,6 +7,12 @@ namespace WindowStyles {
 // it when the badge needs hover or click interaction.
 void ApplyOverlayStyles(void* hwnd);
 
+// Loads the exe's embedded icon resource (id 1, assets/app.rc) and sets it
+// on the window via WM_SETICON for both the small (title bar, taskbar) and
+// big (Alt-Tab) sizes. No-op without the resource - the system default
+// icon stays. Safe on any top-level window.
+void ApplyAppIcon(void* hwnd);
+
 // Enables or disables mouse click-through (WS_EX_TRANSPARENT) on the Mini
 // badge window. When disabled the window receives normal mouse events.
 void SetOverlayPassThrough(void* hwnd, bool pass_through);

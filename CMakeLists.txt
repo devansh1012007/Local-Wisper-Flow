@@ -14,6 +14,15 @@ endif()
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING
     "Compat shim: vendored deps declare pre-3.5 minimums which CMake >= 4 rejects")
 
+# Echo flow Windows resources (exe icon + VERSIONINFO). Generated from
+# assets/app.rc.in so FileVersion/ProductVersion come from project(VERSION)
+# - the single version source (docs/RELEASE.md). The .rc references the
+# icon by absolute path (RC quoted paths resolve relative to the .rc file,
+# and the generated file lives in the build dir).
+set(LWF_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+configure_file("${LWF_ASSETS_DIR}/app.rc.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/EchoFlow.rc" @ONLY)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -137,6 +146,10 @@ target_link_libraries(lwf_core PUBLIC nlohmann_json::nlohmann_json miniaudio)
 
 add_executable(local-wisper-flow src/main.cpp src/os/ActiveWindow.cpp src/os/CrashHandler.cpp src/os/DataDir.cpp src/os/WindowStyles.cpp)
 target_link_libraries(local-wisper-flow PRIVATE lwf_core)
+# Branding (followups-6): ship as EchoFlow.exe. The CMake target keeps the
+# historical local-wisper-flow name - scripts, CI and docs build the target
+# name; only the produced binary is renamed.
+set_target_properties(local-wisper-flow PROPERTIES OUTPUT_NAME EchoFlow)
 
 enable_testing()
 
@@ -385,6 +398,11 @@ if(LWF_BUILD_FULL)
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/source/app.manifest")
             target_sources(local-wisper-flow PRIVATE source/app.manifest)
         endif()
+        # Exe icon + VERSIONINFO (followups-6): Explorer uses the first icon
+        # resource for the exe tile; the tray and the window/taskbar (via
+        # WindowStyles::ApplyAppIcon -> WM_SETICON) load resource id 1.
+        enable_language(RC)
+        target_sources(local-wisper-flow PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/EchoFlow.rc")
         # Followups-4: GUI subsystem (no console window on double-click).
         # CMake maps WIN32_EXECUTABLE to -mwindows on MinGW, and the mingw-w64
         # runtime provides the WinMain stub that forwards to main(), so the

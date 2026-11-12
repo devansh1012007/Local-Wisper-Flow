@@ -6,12 +6,22 @@ opt-in cloud STT path behind a consent gate. Reconstructed rule sheet: the
 original was lost with the dev-environment reset; the paragraphs below are
 recovered verbatim from the S9 documentation patch where noted.
 
-- Branding (followups-2): the app's user-visible name is "Echo flow" (wordmark,
-  window title, tray, About, crash/log headers). Internal identifiers - repo
-  name, data dir `%APPDATA%\LocalWisperFlow`, registry run value, window class
-  names, HTTP user agent - deliberately keep the LocalWisperFlow spelling so
-  existing installs keep their config and data. The installer is not renamed
-  yet (user decision).
+- Branding (followups-6, user decision 2026-11-13 — supersedes followups-2):
+  the app is "Echo flow" everywhere user-visible (wordmark, window title,
+  tray, About, crash/log headers) AND in the shipped artifacts: exe
+  `EchoFlow.exe` (CMake target keeps `local-wisper-flow`; OUTPUT_NAME is
+  EchoFlow), installer `EchoFlowSetup-<version>.exe` with AppId
+  D47CF84B-737B-43E1-B3DC-F3278C5B429A and install dir
+  `%LOCALAPPDATA%\Programs\EchoFlow`, data dir `%APPDATA%\EchoFlow` (one-time
+  rename migration from `%APPDATA%\LocalWisperFlow` in src/os/DataDir.cpp,
+  legacy location kept when the rename fails), registry Run value `EchoFlow`
+  (legacy `LocalWisperFlow` value copied over and deleted on start, see
+  WindowsTray.cpp `MigrateLegacyRunKey`; the installer also deletes it on
+  install), single-instance mutex `EchoFlowSingleInstanceMutex`. Only the
+  repo name and the historical PROGRESS rows keep the LocalWisperFlow
+  spelling. The exe icon + VERSIONINFO live in assets/ (app.ico, app.rc.in
+  configured into EchoFlow.rc; icon resource id 1 is loaded by
+  WindowStyles::ApplyAppIcon -> WM_SETICON and WindowsTray.cpp).
 - Default transforms (followups-2): nothing is seeded. TransformStore starts
   with ten empty slots, no entry is `built_in`, and Load drops legacy
   built_in-flagged entries (the retired Polish / Prompt Engineer) from

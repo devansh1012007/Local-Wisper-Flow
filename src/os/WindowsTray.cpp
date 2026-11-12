@@ -27,7 +27,11 @@ constexpr int kMenuAutostart = 1005;
 constexpr int kMenuQuit = 1006;
 
 constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr wchar_t kRunValue[] = L"LocalWisperFlow";
+constexpr wchar_t kRunValue[] = L"EchoFlow";
+// Pre-rename value written by earlier builds/installers. Migrated once per
+// start (see Autostart::MigrateLegacyRunKey) so an existing autostart entry
+// keeps working after the rename to EchoFlow.
+constexpr wchar_t kLegacyRunValue[] = L"LocalWisperFlow";
 
 }
 
@@ -149,21 +153,44 @@ bool SetEnabled(bool enabled) {
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_SET_VALUE, &key) != ERROR_SUCCESS) {
         return false;
     }
-    LRESULT result = enabled
-                               ? RegSetValueExW(key, kRunValue, 0, REG_SZ,
-                                                reinterpret_cast<const BYTE*>(L"\""),
-                                                0)
-                               : RegDeleteValueW(key, kRunValue);
-    if (enabled && result == ERROR_SUCCESS) {
+    LRESULT result;
+    if (enabled) {
         wchar_t path[MAX_PATH]{};
         GetModuleFileNameW(nullptr, path, MAX_PATH);
         std::wstring command = L"\"" + std::wstring(path) + L"\"";
         result = RegSetValueExW(key, kRunValue, 0, REG_SZ,
                                 reinterpret_cast<const BYTE*>(command.c_str()),
                                 static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)));
+    } else {
+        result = RegDeleteValueW(key, kRunValue);
+        if (result == ERROR_FILE_NOT_FOUND) {
+            result = ERROR_SUCCESS;
+        }
     }
     RegCloseKey(key);
     return result == ERROR_SUCCESS;
+}
+
+// One-time carry-over: an autostart entry written under the legacy
+// LocalWisperFlow value name points at the same exe path this build uses.
+// Copy it to the EchoFlow value and drop the legacy name, so disabling
+// autostart (which deletes only the new name) actually removes it.
+void MigrateLegacyRunKey() {
+    HKEY key = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_QUERY_VALUE | KEY_SET_VALUE,
+                      &key) != ERROR_SUCCESS) {
+        return;
+    }
+    BYTE buffer[MAX_PATH * 2]{};
+    DWORD size = sizeof(buffer);
+    DWORD type = 0;
+    if (RegQueryValueExW(key, kLegacyRunValue, nullptr, &type, buffer, &size) == ERROR_SUCCESS &&
+        type == REG_SZ &&
+        RegQueryValueExW(key, kRunValue, nullptr, &type, nullptr, nullptr) == ERROR_FILE_NOT_FOUND) {
+        RegSetValueExW(key, kRunValue, 0, REG_SZ, buffer, size);
+    }
+    RegDeleteValueW(key, kLegacyRunValue);
+    RegCloseKey(key);
 }
 
 }
@@ -195,10 +222,21 @@ void WindowsTray::Start() {
         data.uID = kIconId;
         data.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
         data.uCallbackMessage = kWmTrayIcon;
-        LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1));
-        data.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));
+        // The exe's embedded icon (assets/app.rc, resource id 1) at the
+        // tray's small size; fall back to the generic application icon when
+        // the resource is missing (e.g. a core-only developer build).
+        data.hIcon = static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr),
+                                                   MAKEINTRESOURCEW(1), IMAGE_ICON,
+                                                   GetSystemMetrics(SM_CXSMICON),
+                                                   GetSystemMetrics(SM_CYSMICON),
+                                                   LR_DEFAULTCOLOR));
+        if (data.hIcon == nullptr) {
+            data.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));
+        }
         wcscpy_s(data.szTip, L"Echo flow");
         Shell_NotifyIconW(NIM_ADD, &data);
+
+        Autostart::MigrateLegacyRunKey();
 
         UINT taskbar_created = RegisterWindowMessageW(L"TaskbarCreated");
 
