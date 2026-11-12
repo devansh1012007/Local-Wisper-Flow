@@ -352,9 +352,10 @@ hardware. All of R replaces the old dashboard/settings/wizard windows.
 ### R-d: first run
 1. Delete `%APPDATA%\LocalWisperFlow\config.json` (or set first_run=true and
    clear whisper_model_path), relaunch.
-2. The full window opens on Welcome: mic test (bar moves), microphone
-   settings button opens ms-settings, hotkey chord capture, model list with
-   unverified warnings, finish lands on Home.
+2. The full window opens on Welcome: intro paragraph, the current
+   push-to-talk chord (read-only), the model list with unverified warnings
+   and the Download/Browse row, and Get started lands on Home. (The 4-step
+   mic-test wizard was retired in followups-1.)
 3. Relaunch: no Welcome; window stays hidden until opened.
 
 ### R-e: regression basics
@@ -388,7 +389,9 @@ Do them on a Windows machine at 100%, 125% and 150% DPI.
 1. Idle badge: after the attention dwell, the frame cost drops to nothing
    (no swap until hover/drag/state change); hovering wakes it.
 2. Idle alphas readable on a dark desktop (0.55 idle / 1.0 active); attention
-   message text legible at 13 px; badge 250 px wide.
+   message text legible at 13 px. Normal badge hugs the icons (38x48 at
+   100% DPI, 58 wide with the scratchpad note); Attention expands to 250 px
+   wide and shrinks back after the dwell (followups-1).
 
 ### R2-d: DPI scaling
 1. Repeat R and R2 at 100%, 125%, 150% DPI. No double-scaled text, no
@@ -491,14 +494,36 @@ Owed items recorded during T0-T15 (blocked on hardware/synthetic input):
    SignalOpenSettings; verify the first instance raises the Full window.
    (BLOCKED until the event watcher is added: nothing in src/ currently
    creates or waits on `Local\LwfOpenSettingsEvent` — see the R-e-3 note.)
-7. HotkeyCopy and Insights stubs: the TryItOut polish slot "1" and the
-   Insights "Download on mobile" pill are documented stubs kept deliberately
-   (T14 disposition); decide keep, implement or remove.
+7. HotkeyCopy and Insights stubs: the Insights "Download on mobile" pill
+   is a documented stub kept deliberately (T14 disposition); decide keep,
+   implement or remove. (The TryItOut banner button was removed with the
+   Transforms banner in followups-1; the TryItOut() method stays as a
+   unit-tested API.)
 8. T13a live model download: real catalog download with progress, cancel
    mid-transfer, and quit mid-download (worker join without crash, partial
    file handled on the next start).
 9. Capture reruns owed from T0.5: 150% and 200% DPI captures, and the
    Listening and Thinking states.
+
+Followups-1 additions (ops/ui-followups-1, 2026-11-12):
+
+10. Live knobs: change Settings > General Volume, Speech max-recording and
+    hands-free-silence sliders; the next dictation tone/timeout follows the
+    new values without a restart (shared LoadEngineSettings in main.cpp).
+11. Banners gone: Transforms, Snippets and Scratchpad pages open without
+    their page-top banners; Scratchpad "Start new note" lives in the Recents
+    toolbar; Transforms shows no "Turn on Opt in" strip when opted out.
+12. Built-in transform edits visible: edit Polish's prompt; the card
+    subtitle shows the real prompt ("Restore default" returns the stock
+    copy). The "Create your own" card is centered.
+13. Mini badge extent: normal badge hugs the dot (plus note icon when the
+    Flow Bar toggle is on); an attention error expands it to show the
+    message and it shrinks back after the dwell; drag persistence still
+    clamps inside the work area at 100/150/200% DPI.
+14. Switch tracks: the toggle track reads as filled gray in Graphite AND
+    Paper (border token); the square knob keeps on/off state.
+15. Welcome: no 4-step wizard; model row still downloads/browses; Get
+    started lands on Home and clears first_run.
 
 ```
 [ ] PASS   [ ] FAIL   notes:

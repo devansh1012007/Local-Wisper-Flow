@@ -117,7 +117,13 @@ inline constexpr float space_xs = 4.0f;   // hairline gaps inside rows
 inline constexpr float space_s = 8.0f;    // inside cards
 inline constexpr float space_m = 16.0f;   // card padding, rail gaps
 inline constexpr float space_l = 24.0f;   // between groups
-inline constexpr float space_xl = 32.0f;  // page padding
+inline constexpr float space_xl = 32.0f;  // page padding (vertical)
+
+// Followups D8: the page's left/right gutter. Wider than space_xl so page
+// content breathes against the window edge; the top strip uses the same
+// token so the wordmark aligns with the page content below it. Vertical
+// page padding stays space_xl.
+inline constexpr float page_gutter = 48.0f;
 
 inline constexpr float radius_control = 6.0f;   // buttons, inputs, chips
 inline constexpr float radius_card = 10.0f;     // cards, windows
@@ -145,12 +151,19 @@ inline constexpr float full_default_h = 640.0f;
 inline constexpr float full_min_w = 760.0f;
 inline constexpr float full_min_h = 520.0f;
 
-// Mini badge. Quarter-size dot with a tiny status label under it; the window
-// still reserves room below the dot for the attention hover message. The
-// badge stays semi-transparent so it never blocks the desktop behind it.
+// Mini badge. Quarter-size dot with a tiny status label under it. The
+// window hugs the icons (followups D6): the normal extent is the dot, the
+// optional scratchpad note and the status strip, each with ring_pad
+// clearance for the listening ring; the attention state expands the window
+// to the message reserve below the dot. The badge stays semi-transparent so
+// it never blocks the desktop behind it.
 inline constexpr float mini_dot = 22.0f;             // was 44: 1/4 of the area
-inline constexpr float mini_message_w = 250.0f;      // was 140
-inline constexpr float mini_message_h = 48.0f;       // was 96
+inline constexpr float mini_ring_pad = 8.0f;   // clearance around the dot (listening ring)
+inline constexpr float mini_status_h = 18.0f;  // status word strip under the dot
+inline constexpr float mini_note = 16.0f;      // scratchpad note icon
+inline constexpr float mini_note_gap = 4.0f;   // dot-to-note gap
+inline constexpr float mini_message_w = 250.0f;      // attention expansion width
+inline constexpr float mini_message_h = 48.0f;       // attention message reserve under the dot
 inline constexpr float mini_margin = 16.0f;  // above the taskbar
 inline constexpr float mini_hover_inflate = 10.0f;  // hit zone around the dot
 inline constexpr float mini_idle_alpha = 0.55f;     // badge opacity when idle (mockup: 55%)

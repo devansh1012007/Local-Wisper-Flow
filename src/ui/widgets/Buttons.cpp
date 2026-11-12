@@ -147,10 +147,12 @@ bool ToggleSwitch(const char* id, bool value, float scale, const lwf::ui::Palett
     if (ImGui::IsItemFocused()) {
         DrawFocusRing(p, ImVec2(p.x + w, p.y + h), scale, palette);
     }
-    // Hairline track (1 px outline, transparent fill) + square knob sized
-    // from the status-square token. On-state: filled accent square (the
-    // square is the color carrier); off-state: muted hairline square. The
-    // 52x32 hit box, EnableNav and focus ring are unchanged.
+    // Gray track (followups D9): filled with the palette border token -- a
+    // neutral gray in BOTH themes (Graphite 0x2A2D31, Paper 0xE2E2DF) --
+    // plus the 1 px hairline outline. The square knob stays the state
+    // carrier: filled accent square when on, muted hairline square when
+    // off. The 52x32 hit box, EnableNav and focus ring are unchanged.
+    draw.AddRectFilled(p, ImVec2(p.x + w, p.y + h), Pack(palette.border));
     draw.AddRect(p, ImVec2(p.x + w, p.y + h), Pack(palette.border), 0.0f, 0, 1.0f * scale);
     const float knob = metrics::status_square * scale;
     const float pad = 4.0f * scale;

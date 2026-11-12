@@ -376,8 +376,18 @@ TEST_CASE("mini badge alphas meet the mockup contrast floors") {
     // mockup violation and must fail the test, not slide by as headroom.)
     CHECK(metrics::mini_idle_alpha == 0.55f);
     CHECK(metrics::mini_active_alpha == 1.0f);
-    // The window reserves room for the attention message at the wider width.
+    // The attention expansion keeps the wider message reserve.
     CHECK(metrics::mini_message_w == 250.0f);
+    // Followups D6: the normal window hugs the icons — dot + optional note
+    // + status strip with ring_pad clearance (38x48 without the note at
+    // 1.0 scale; the attention state expands to 250 wide).
+    CHECK(metrics::mini_dot == 22.0f);
+    CHECK(metrics::mini_ring_pad == 8.0f);
+    CHECK(metrics::mini_status_h == 18.0f);
+    CHECK(metrics::mini_note == 16.0f);
+    CHECK(metrics::mini_note_gap == 4.0f);
+    CHECK(2.0f * metrics::mini_ring_pad + metrics::mini_dot == 38.0f);
+    CHECK(metrics::mini_ring_pad + metrics::mini_dot + metrics::mini_status_h == 48.0f);
     // "Saved" dwell (mockup motion table: 1.5 s).
     CHECK(metrics::saved_dwell == 1.5f);
 }
@@ -1169,9 +1179,8 @@ TEST_CASE("F9 widget sweep pins toggle, link, and popup invariants") {
                                          std::istreambuf_iterator<char>());
     CHECK(transforms_content.find("kCardRadius") == std::string::npos);
     CHECK(transforms_content.find("studio_metrics::radius_card * scale") != std::string::npos);
-    // T10c: the link hover pair rides the live palette (was Paper-locked).
-    CHECK(transforms_content.find("hovered ? palette.text : palette.accent") !=
-          std::string::npos);
+    // T10c link-hover pair retired with the banner's TextLink (D3); the
+    // live palette stays pinned by the rows below.
     CHECK(transforms_content.find("kLightPalette") == std::string::npos);
     CHECK(transforms_content.find("Color(palette.err), \"%s\", edit_error_.c_str()") !=
           std::string::npos);
@@ -2630,12 +2639,12 @@ TEST_CASE("T9 Welcome onboarding ruled rows and step-3 download pin") {
     // step 3 wires Download on the ONE shared worker with the Speech tab
     // (same catalog rule, same spawn gate, same latch in RunOnce — no
     // second worker, no Speech id reuse, so the T13a Speech pins stay
-    // green). Step-2 history is untouched: the hotkey mirror lives in
-    // SetLearnedHotkey (SetDetectedHotkey is dead API, left for T14) and
-    // the Finish focus arm stays the only Welcome page_focus_pending_
-    // site. Span-scoped DrawWelcomePage..EOF (Welcome is the last
-    // function in the file) so lookalike strings elsewhere cannot satisfy
-    // these pins by accident.
+    // green). Step-2 history is untouched: the learn flow lives in
+    // SetLearnedHotkey (the dead SetDetectedHotkey API was removed with the
+    // retired wizard, followups D7) and the Get-started focus arm stays the
+    // only Welcome page_focus_pending_ site. Span-scoped
+    // DrawWelcomePage..EOF (Welcome is the last function in the file) so
+    // lookalike strings elsewhere cannot satisfy these pins by accident.
     const std::string content = ReadSource("src/ui/MainWindow.cpp");
     REQUIRE_FALSE(content.empty());
     const std::size_t welcome = content.find("void MainWindow::DrawWelcomePage");
@@ -2650,24 +2659,25 @@ TEST_CASE("T9 Welcome onboarding ruled rows and step-3 download pin") {
         }
         return count;
     };
-    // Subtitle mismatch fixed: Four present, Three absent (writer-vs-reader
-    // symmetry — the step labels still say 1..4 of 4 below).
-    CHECK(welcome_src.find("\"Four small steps and you are dictating.\"") != std::string::npos);
-    CHECK(welcome_src.find("Three small steps") == std::string::npos);
-    // Step labels and Welcome copy byte-identical (F9-clean sentences only).
-    CHECK(welcome_src.find("Step 1 of 4 - microphone test.") != std::string::npos);
-    CHECK(welcome_src.find("Step 2 of 4 - press your push-to-talk chord now.") != std::string::npos);
-    CHECK(welcome_src.find("Step 3 of 4 - models.") != std::string::npos);
-    CHECK(welcome_src.find("Step 4 of 4 - try it.") != std::string::npos);
-    CHECK(welcome_src.find("Speak now; the bar should move.") != std::string::npos);
-    CHECK(welcome_src.find("Waiting for a chord...") != std::string::npos);
-    CHECK(welcome_src.find("You can also learn a chord later from the Home page.") !=
+    // Followups D7: the four-step test wizard is retired. The page keeps
+    // the model machinery and gains a one-action Get started; the step
+    // labels and the wizard-only copy must not come back.
+    CHECK(welcome_src.find("\"Dictation from this computer, in one hotkey.\"") !=
           std::string::npos);
+    CHECK(welcome_src.find("Four small steps") == std::string::npos);
+    CHECK(welcome_src.find("Step 1 of 4") == std::string::npos);
+    CHECK(welcome_src.find("Step 2 of 4") == std::string::npos);
+    CHECK(welcome_src.find("Step 3 of 4") == std::string::npos);
+    CHECK(welcome_src.find("Step 4 of 4") == std::string::npos);
+    CHECK(welcome_src.find("Speak now; the bar should move.") == std::string::npos);
+    CHECK(welcome_src.find("Waiting for a chord...") == std::string::npos);
+    CHECK(welcome_src.find("Skip (I have models)") == std::string::npos);
+    CHECK(welcome_src.find("Hold the push-to-talk hotkey, speak, and release.") !=
+          std::string::npos);
+    CHECK(welcome_src.find("Get started") != std::string::npos);
     CHECK(welcome_src.find("unverified file") != std::string::npos);
     CHECK(welcome_src.find("Files are verified against the listed SHA-256 checksums.") !=
           std::string::npos);
-    CHECK(welcome_src.find("Skip (I have models)") != std::string::npos);
-    CHECK(welcome_src.find("Hold the hotkey and read a sentence aloud.") != std::string::npos);
     // Ruled rows with the live palette; the two tall sections stay blocks.
     CHECK(welcome_src.find("widgets::Row(") != std::string::npos);
     CHECK(welcome_src.find("widgets::RowEnd(") != std::string::npos);
@@ -2724,25 +2734,25 @@ TEST_CASE("T9 Welcome onboarding ruled rows and step-3 download pin") {
     REQUIRE_FALSE(header.empty());
     CHECK(count_occurrences(header, "Onboarding::DownloadModel download_model_") == 1);
     CHECK(count_occurrences(header, "std::thread download_worker_") == 1);
-    // Step-2 history untouched: no StartLearnHotkey inside Welcome (the
-    // live writer is SetLearnedHotkey in main.cpp, which mirrors
-    // hotkey_ptt into detected_hotkey_); the dead SetDetectedHotkey API
-    // stays for the T14 sweep.
+    // Step-2 history: no StartLearnHotkey inside Welcome. The chord-detect
+    // API (SetDetectedHotkey + detected_hotkey_) was dead once the wizard's
+    // step 2 was retired (followups D7) and is removed; SetLearnedHotkey
+    // stays for the Home/Settings learn flows.
     CHECK(welcome_src.find("StartLearnHotkey") == std::string::npos);
     CHECK(welcome_src.find("SetDetectedHotkey") == std::string::npos);
+    CHECK(content.find("void MainWindow::SetDetectedHotkey") == std::string::npos);
+    CHECK(content.find("detected_hotkey_") == std::string::npos);
     const std::size_t learned = content.find("void MainWindow::SetLearnedHotkey");
     REQUIRE(learned != std::string::npos);
     const std::string learned_rest =
         content.substr(learned, content.find("void MainWindow::SetRecorderError", learned) - learned);
-    CHECK(learned_rest.find("target_key == \"hotkey_ptt\"") != std::string::npos);
-    CHECK(learned_rest.find("detected_hotkey_ = chord;") != std::string::npos);
-    CHECK(content.find("void MainWindow::SetDetectedHotkey") != std::string::npos);
+    CHECK(learned_rest.find("target_key == \"hotkey_handsfree\"") != std::string::npos);
     // Finish semantics byte-identical: first_run off + save + single focus
     // arm (the global double-arm invariant at the strip stays green).
     CHECK(count_occurrences(content, "page_focus_pending_ = true") == 2);
     CHECK(count_occurrences(welcome_src, "page_focus_pending_ = true") == 1);
     CHECK(welcome_src.find("SetBool(\"first_run\", false)") != std::string::npos);
-    CHECK(welcome_src.find("SetString(\"hotkey_ptt\"") != std::string::npos);
+    CHECK(welcome_src.find("GetString(\"hotkey_ptt\"") != std::string::npos);
     CHECK(welcome_src.find("SetString(\"whisper_model_path\"") != std::string::npos);
     // Save count preserved (step-2 accept + Finish, plus the download
     // skip path mirroring Speech).

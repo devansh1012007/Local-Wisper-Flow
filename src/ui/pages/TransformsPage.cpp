@@ -35,7 +35,6 @@ using lwf::ui::Pack;
 constexpr float kCardPadding = 20.0f;
 constexpr float kCardGap = 16.0f;
 constexpr float kCardHeight = 172.0f;
-constexpr float kLinkUnderlineGap = 2.0f;
 
 std::string KeyLabel(ImGuiKey key) {
     if (key >= ImGuiKey_A && key <= ImGuiKey_Z) {
@@ -111,47 +110,10 @@ float KeycapRowWidth(const std::vector<std::string>& tokens, float scale) {
     return width;
 }
 
-bool TextLink(const char* id, const char* label, float scale, const lwf::ui::Palette& palette) {
-    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-    const ImVec2 text_size = ImGui::CalcTextSize(label);
-    ImGui::PopFont();
-    const ImVec2 pos = ImGui::GetCursorScreenPos();
-    const bool pressed = ImGui::InvisibleButton(id, text_size, ImGuiButtonFlags_EnableNav);
-    const bool hovered = ImGui::IsItemHovered();
-    const bool focused = ImGui::IsItemFocused();
-    ImDrawList& draw = *ImGui::GetWindowDrawList();
-    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-    draw.AddText(pos, Pack(hovered ? palette.text : palette.accent), label);
-    ImGui::PopFont();
-    if (focused) {
-        draw.AddRect(ImVec2(pos.x - 2.0f * scale, pos.y - 2.0f * scale),
-                     ImVec2(pos.x + text_size.x + 2.0f * scale, pos.y + text_size.y + 2.0f * scale),
-                     Pack(palette.accent), 2.0f * scale, 0, 2.0f * scale);
-    }
-    if (hovered) {
-        const float y = pos.y + text_size.y + kLinkUnderlineGap * scale;
-        draw.AddLine(ImVec2(pos.x, y), ImVec2(pos.x + text_size.x, y),
-                     Pack(palette.accent), 1.0f * scale);
-    }
-    return pressed;
-}
-
-void DrawBannerBox(const ImVec2& pos, float width, float height, float scale,
-                   const lwf::ui::Palette& palette) {
-    ImDrawList& draw = *ImGui::GetWindowDrawList();
-    const ImVec2 bottom(pos.x + width, pos.y + height);
-    draw.AddRectFilledMultiColor(pos, bottom, Pack(palette.surface),
-                                 Pack(palette.border), Pack(palette.border),
-                                 Pack(palette.surface));
-    draw.AddRect(pos, bottom, Pack(palette.border), studio_metrics::radius_banner * scale,
-                 0, 1.0f * scale);
-}
-
 }
 
 void TransformsPage::Draw(float scale, const Palette& palette) {
     DrawHeader(scale, palette);
-    DrawBanner(scale, palette);
     DrawMyTransforms(scale, palette);
     DrawGrid(scale, palette);
     DrawEditor(scale, palette);
@@ -215,73 +177,6 @@ void TransformsPage::DrawHeader(float scale, const Palette& palette) {
         }
     }
     ImGui::SetCursorScreenPos(ImVec2(start.x, title_max.y + 16.0f * scale));
-}
-
-void TransformsPage::DrawBanner(float scale, const Palette& palette) {
-    const float pad = kCardPadding * scale;
-    const float avail = ImGui::GetContentRegionAvail().x;
-    if (!OptIn()) {
-        const ImVec2 pos = ImGui::GetCursorScreenPos();
-        const float h = 48.0f * scale;
-        ImGui::Dummy(ImVec2(avail, h));
-        DrawBannerBox(pos, avail, h, scale, palette);
-        ImGui::SetCursorScreenPos(ImVec2(pos.x + pad, pos.y + (h - 18.0f * scale) * 0.5f));
-        ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-        ImGui::TextColored(Color(palette.muted), "%s", transforms::kOptInOffBanner);
-        ImGui::PopFont();
-        ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + h + 16.0f * scale));
-        return;
-    }
-    if (!banner_open_) {
-        return;
-    }
-    float headline_h = 0.0f;
-    float body_h = 0.0f;
-    {
-        ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
-        headline_h = ImGui::CalcTextSize(transforms::kBannerHeadline).y;
-        ImGui::PopFont();
-        ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-        const float body_w = ImGui::CalcTextSize(transforms::kBannerBody).x;
-        const float inner = std::max(avail - pad * 2.0f, 1.0f);
-        std::size_t lines = 1;
-        while (static_cast<float>(lines) * inner < body_w) {
-            ++lines;
-        }
-        body_h = ImGui::CalcTextSize(transforms::kBannerBody).y *
-                 static_cast<float>(lines);
-        ImGui::PopFont();
-    }
-    const float h = pad + headline_h + 6.0f * scale + body_h + 12.0f * scale +
-                    40.0f * scale + pad;
-    const ImVec2 pos = ImGui::GetCursorScreenPos();
-    ImGui::Dummy(ImVec2(avail, h));
-    DrawBannerBox(pos, avail, h, scale, palette);
-    ImGui::SetCursorScreenPos(ImVec2(pos.x + pad, pos.y + pad));
-    ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
-    ImGui::TextUnformatted(transforms::kBannerHeadline);
-    ImGui::PopFont();
-    ImGui::SetCursorScreenPos(ImVec2(pos.x + pad, pos.y + pad + headline_h + 6.0f * scale));
-    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-    ImGui::PushTextWrapPos(pos.x + avail - pad);
-    ImGui::TextUnformatted(transforms::kBannerBody);
-    ImGui::PopTextWrapPos();
-    ImGui::PopFont();
-    ImGui::SetCursorScreenPos(
-        ImVec2(pos.x + pad, pos.y + pad + headline_h + 6.0f * scale + body_h + 12.0f * scale));
-    if (widgets::LightButton("transforms_try", "Try it out", scale, palette)) {
-        TryItOut();
-    }
-    ImGui::SameLine(0.0f, studio_metrics::gap_block * scale);
-    if (TextLink("transforms_how", "How it works", scale, palette)) {
-        how_modal_.Open();
-    }
-    const float hit = studio_metrics::hit_size * scale;
-    ImGui::SetCursorScreenPos(ImVec2(pos.x + avail - hit - 8.0f * scale, pos.y + 8.0f * scale));
-    if (widgets::IconButton("transforms_banner_close", "x", scale, palette)) {
-        banner_open_ = false;
-    }
-    ImGui::SetCursorScreenPos(ImVec2(pos.x, pos.y + h + 16.0f * scale));
 }
 
 void TransformsPage::DrawMyTransforms(float scale, const Palette& palette) {
@@ -429,12 +324,36 @@ void TransformsPage::DrawCreateCard(float width, float height, float scale,
     ImGui::BeginChild("transforms_card_create", ImVec2(width, height), ImGuiChildFlags_Borders);
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
+    // Followups D5: the create card's three lines are centered both ways so
+    // the empty slot reads as one calm invitation instead of a left column.
+    const float inner_w = ImGui::GetContentRegionAvail().x;
+    const float inner_h = height - 2.0f * kCardPadding * scale;
+    ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
+    const float glyph_h = ImGui::GetTextLineHeight();
+    const float glyph_w = ImGui::CalcTextSize("+").x;
+    ImGui::PopFont();
+    ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
+    const float title_h = ImGui::GetTextLineHeight();
+    const float title_w = ImGui::CalcTextSize("Create your own").x;
+    ImGui::PopFont();
+    ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
+    const float sub_h = ImGui::GetTextLineHeight();
+    const float sub_w = ImGui::CalcTextSize("Upload your own prompt").x;
+    ImGui::PopFont();
+    const float gap = studio_metrics::gap_compact * scale;
+    const float block_h = glyph_h + gap + title_h + gap + sub_h;
+    float y = kCardPadding * scale + std::max(0.0f, (inner_h - block_h) * 0.5f);
+    ImGui::SetCursorPos(ImVec2(kCardPadding * scale + std::max(0.0f, (inner_w - glyph_w) * 0.5f), y));
     ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
     ImGui::TextUnformatted("+");
     ImGui::PopFont();
+    y += glyph_h + gap;
+    ImGui::SetCursorPos(ImVec2(kCardPadding * scale + std::max(0.0f, (inner_w - title_w) * 0.5f), y));
     ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
     ImGui::TextUnformatted("Create your own");
     ImGui::PopFont();
+    y += title_h + gap;
+    ImGui::SetCursorPos(ImVec2(kCardPadding * scale + std::max(0.0f, (inner_w - sub_w) * 0.5f), y));
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
     ImGui::TextColored(Color(palette.muted), "%s", "Upload your own prompt");
     ImGui::PopFont();

@@ -92,6 +92,26 @@ namespace {
 
 constexpr std::uint32_t kSampleRate = 16000;
 
+// Maps every engine-facing config key onto EngineSettings. Single source
+// for BOTH the startup wiring and the ApplySettings drain, so a slider
+// changed in Settings applies live. History: the drain used to re-list a
+// subset of keys and silently skipped sound_volume, max_recording_ms and
+// hands_free_silence_ms — those knobs stayed at their startup values until
+// the app restarted ("volume knob is not dynamic" report).
+EngineSettings LoadEngineSettings(const SettingsStore& store) {
+    EngineSettings settings;
+    settings.min_hold_ms = store.GetInt("min_hold_ms");
+    settings.max_recording_ms = store.GetInt("max_recording_ms");
+    settings.hands_free_silence_ms = store.GetInt("hands_free_silence_ms");
+    settings.quiet_speech_boost = store.GetBool("quiet_speech_boost");
+    settings.sound_enabled = store.GetBool("sound_enabled");
+    settings.sound_volume = store.GetDouble("sound_volume");
+    settings.streaming_stt = store.GetBool("streaming_stt");
+    settings.streaming_min_segment_ms = store.GetInt("streaming_min_segment_ms");
+    settings.streaming_pause_ms = store.GetInt("streaming_pause_ms");
+    return settings;
+}
+
 // Single-slot attention message written by the engine thread and drained by
 // the main loop. Keeps every UI call on the main thread.
 class AttentionBox {
@@ -542,16 +562,9 @@ int main() {
         ToneGenerator::TonePlayer tone_player;
         WindowsSelectionCapture selection_capture;
         CommandModeController command_controller(selection_capture, llm, injector);
-        EngineSettings settings;
-        settings.min_hold_ms = config.Store().GetInt("min_hold_ms");
-        settings.max_recording_ms = config.Store().GetInt("max_recording_ms");
-        settings.hands_free_silence_ms = config.Store().GetInt("hands_free_silence_ms");
-        settings.quiet_speech_boost = config.Store().GetBool("quiet_speech_boost");
-        settings.sound_enabled = config.Store().GetBool("sound_enabled");
-        settings.sound_volume = config.Store().GetDouble("sound_volume");
-        settings.streaming_stt = config.Store().GetBool("streaming_stt");
-        settings.streaming_min_segment_ms = config.Store().GetInt("streaming_min_segment_ms");
-        settings.streaming_pause_ms = config.Store().GetInt("streaming_pause_ms");
+        // Startup and the ApplySettings drain share LoadEngineSettings so no
+        // knob can go stale between the two paths (see its comment).
+        EngineSettings settings = LoadEngineSettings(config.Store());
 
         DictationFSM fsm;
         fsm.SetTransitionListener([](State, Trigger, State current) {
@@ -717,12 +730,10 @@ int main() {
                             hotkey.UpdateBindings(bindings);
                             transforms.SetHotkeyBindings(bindings);
                         }
-                        settings.min_hold_ms = config.Store().GetInt("min_hold_ms");
-                        settings.quiet_speech_boost = config.Store().GetBool("quiet_speech_boost");
-                        settings.sound_enabled = config.Store().GetBool("sound_enabled");
-                        settings.streaming_stt = config.Store().GetBool("streaming_stt");
-                        settings.streaming_min_segment_ms = config.Store().GetInt("streaming_min_segment_ms");
-                        settings.streaming_pause_ms = config.Store().GetInt("streaming_pause_ms");
+                        // Full reload through the shared mapper: every
+                        // engine-facing knob (volume, record limits, silence
+                        // timeout, ...) applies live, not just the old subset.
+                        settings = LoadEngineSettings(config.Store());
                         engine.SetSettings(settings);
                         spoken.SetAggressive(config.Store().GetBool("spoken_commands_aggressive"));
                         snippets.SetMode(config.Store().GetString("snippet_mode"));

@@ -137,7 +137,6 @@ public:
 
     // Fed from the main loop.
     void SetLastTranscript(const std::string& text);
-    void SetDetectedHotkey(const std::string& chord);
     void SetLearnedHotkey(const std::string& target_key, const std::string& chord);
     void SetRecorderError(const std::string& target_key, const std::string& message);
     void SetDictionaryPage(std::unique_ptr<lwf::ui::pages::DictionaryPage> page);
@@ -273,7 +272,6 @@ private:
 
     Page page_ = Page::Home;
     SettingsTab settings_tab_ = SettingsTab::General;
-    int welcome_step_ = 1;
     bool restart_needed_ = false;
     float saved_until_ = -1.0f;
     float copied_until_ = -1.0f;  // "Copied" dwell after Copy; reset on new transcript
@@ -290,7 +288,6 @@ private:
     bool theme_pending_ = false;
 
     std::string last_transcript_;
-    std::string detected_hotkey_;
     std::unique_ptr<lwf::ui::pages::DictionaryPage> dictionary_page_;
     std::unique_ptr<lwf::ui::pages::HistoryPage> history_page_;
     std::unique_ptr<lwf::ui::pages::ProfilesPage> profiles_page_;

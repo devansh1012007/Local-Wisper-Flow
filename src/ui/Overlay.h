@@ -72,6 +72,12 @@ public:
 
 private:
     void ApplyWindowGeometry();
+    // Followups D6: design-px window extent for the current state. Normal
+    // states hug the icons (dot + optional note + status strip, ring_pad
+    // clearance); Attention expands to the message reserve. All geometry
+    // sites (Init, ApplyWindowGeometry, UpdateDrag clamp) share this so the
+    // sizes can never drift apart again.
+    void ComputeWindowExtent(int* width, int* height) const;
     void DrawBadge();
     void DrawMic(ImDrawList& draw, const ImVec2& center, float scale, ImU32 color,
                  bool filled) const;

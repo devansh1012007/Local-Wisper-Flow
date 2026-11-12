@@ -74,11 +74,14 @@ bool Overlay::Init() {
     glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
-    // The window is wider and taller than the dot so the attention hover
-    // message fits below it; everything outside the dot stays transparent.
-    const int window_w = static_cast<int>(metrics::mini_message_w * scale_x);
-    const int window_h =
-        static_cast<int>((metrics::mini_dot + metrics::mini_message_h) * scale_y);
+    // Followups D6: the window hugs the icons (dot + optional note + status
+    // strip). The attention state re-applies the expanded extent through
+    // ApplyWindowGeometry; everything outside the icons stays transparent.
+    int design_w = 0;
+    int design_h = 0;
+    ComputeWindowExtent(&design_w, &design_h);
+    const int window_w = static_cast<int>(static_cast<float>(design_w) * scale_x);
+    const int window_h = static_cast<int>(static_cast<float>(design_h) * scale_y);
     window_ = glfwCreateWindow(window_w, window_h, "lwf-mini", nullptr, nullptr);
     if (window_ == nullptr) {
         return false;
@@ -173,6 +176,9 @@ void Overlay::SetState(OverlayModel::PillState state, const std::string& message
     // SECURITY: none (no auth path) — but the badge must repaint, and the
     // idle early-out must not swallow a dwell/fade restart.
     dirty_ = true;
+    // The window extent depends on the state (Attention expands for the
+    // message; leaving Attention shrinks back), so re-apply the geometry.
+    ApplyWindowGeometry();
 }
 
 void Overlay::PushLevel(float level) {
@@ -248,6 +254,8 @@ void Overlay::SetScratchpadVisible(bool visible) {
     }
     scratchpad_visible_ = visible;
     dirty_ = true;
+    // The note icon changes the hugged width; re-apply the geometry.
+    ApplyWindowGeometry();
 }
 
 void Overlay::SetScratchpadActivateHandler(std::function<void()> handler) {
@@ -258,13 +266,38 @@ bool Overlay::Visible() const {
     return state_ != OverlayModel::PillState::Hidden;
 }
 
+void Overlay::ComputeWindowExtent(int* width, int* height) const {
+    // Design pixels; callers scale once by dpi_scale_.
+    const bool expanded =
+        state_ == OverlayModel::PillState::Attention && !message_.empty();
+    if (expanded) {
+        // Attention expands to the message reserve under the dot (the box
+        // spans the window width; same reserve as the pre-D6 badge).
+        *width = static_cast<int>(metrics::mini_message_w);
+        *height = static_cast<int>(metrics::mini_ring_pad + metrics::mini_dot +
+                                   metrics::mini_message_h);
+        return;
+    }
+    float w = 2.0f * metrics::mini_ring_pad + metrics::mini_dot;
+    if (scratchpad_visible_) {
+        w += metrics::mini_note_gap + metrics::mini_note;
+    }
+    *width = static_cast<int>(w);
+    // One top pad only: the status strip carries the bottom edge, so the
+    // hugged height stays tight (ring_pad + dot + status strip).
+    *height = static_cast<int>(metrics::mini_ring_pad + metrics::mini_dot +
+                               metrics::mini_status_h);
+}
+
 void Overlay::ApplyWindowGeometry() {
     if (window_ == nullptr) {
         return;
     }
-    const int window_w = static_cast<int>(metrics::mini_message_w * dpi_scale_);
-    const int window_h =
-        static_cast<int>((metrics::mini_dot + metrics::mini_message_h) * dpi_scale_);
+    int design_w = 0;
+    int design_h = 0;
+    ComputeWindowExtent(&design_w, &design_h);
+    const int window_w = static_cast<int>(static_cast<float>(design_w) * dpi_scale_);
+    const int window_h = static_cast<int>(static_cast<float>(design_h) * dpi_scale_);
     OverlayModel::Rect position;
     if (has_saved_position_) {
         position =
@@ -272,8 +305,7 @@ void Overlay::ApplyWindowGeometry() {
     } else {
         // Design pixels in, scaled once inside PillPosition (the old call
         // passed pre-scaled pixels and scaled them a second time).
-        position = OverlayModel::PillPosition(work_area_, metrics::mini_message_w,
-                                              metrics::mini_dot + metrics::mini_message_h,
+        position = OverlayModel::PillPosition(work_area_, design_w, design_h,
                                               metrics::mini_margin, dpi_scale_);
     }
     glfwSetWindowPos(window_, position.x, position.y);
@@ -338,23 +370,28 @@ void Overlay::RenderFrame(float delta_seconds) {
         int poll_win_w = 0;
         glfwGetWindowPos(window_, &poll_win_x, &poll_win_y);
         glfwGetWindowSize(window_, &poll_win_w, nullptr);
-        const float poll_dot = metrics::mini_dot * static_cast<float>(dpi_scale_);
-        const int poll_dot_px = static_cast<int>(poll_dot);
-        const int poll_dot_min_x =
-            (poll_win_w - poll_dot_px) / 2;
-        const int poll_inflate = static_cast<int>(metrics::mini_hover_inflate *
-                                                  static_cast<float>(dpi_scale_));
+        const float poll_scale = static_cast<float>(dpi_scale_);
+        const int poll_pad_px = static_cast<int>(metrics::mini_ring_pad * poll_scale);
+        const int poll_dot_px = static_cast<int>(metrics::mini_dot * poll_scale);
+        // Followups D6: the dot is anchored top-left at ring_pad (it was
+        // horizontally centered when the window carried the message
+        // reserve at all times); the poll must mirror DrawBadge's geometry.
+        const int poll_dot_min_x = poll_pad_px;
+        const int poll_dot_min_y = poll_pad_px;
+        const int poll_inflate = static_cast<int>(metrics::mini_hover_inflate * poll_scale);
         const bool poll_near = WindowStyles::IsCursorInsideRect(
-            poll_win_x + poll_dot_min_x, poll_win_y, poll_dot_px, poll_dot_px,
-            poll_inflate);
+            poll_win_x + poll_dot_min_x, poll_win_y + poll_dot_min_y,
+            poll_dot_px, poll_dot_px, poll_inflate);
         const bool poll_hover_dot = WindowStyles::IsCursorInsideRect(
-            poll_win_x + poll_dot_min_x, poll_win_y, poll_dot_px, poll_dot_px, 0);
+            poll_win_x + poll_dot_min_x, poll_win_y + poll_dot_min_y,
+            poll_dot_px, poll_dot_px, 0);
         bool poll_note_hover = false;
         if (scratchpad_visible_) {
-            const int poll_note_px = static_cast<int>(16.0f * static_cast<float>(dpi_scale_));
-            const int poll_note_gap = static_cast<int>(4.0f * static_cast<float>(dpi_scale_));
+            const int poll_note_px = static_cast<int>(metrics::mini_note * poll_scale);
+            const int poll_note_gap = static_cast<int>(metrics::mini_note_gap * poll_scale);
             const int poll_note_min_x = poll_dot_min_x + poll_dot_px + poll_note_gap;
-            const int poll_note_min_y = (poll_dot_px - poll_note_px) / 2;
+            const int poll_note_min_y =
+                poll_dot_min_y + (poll_dot_px - poll_note_px) / 2;
             poll_note_hover = WindowStyles::IsCursorInsideRect(poll_win_x + poll_note_min_x, poll_win_y + poll_note_min_y, poll_note_px, poll_note_px, 0);
         }
         const bool poll_button_down = WindowStyles::LeftMouseButtonDown();
@@ -435,11 +472,12 @@ void Overlay::DrawBadge() {
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
 
-    const ImVec2 display = ImGui::GetIO().DisplaySize;
-    // The dot sits at the top of the window; the space below it carries the
-    // tiny status label and the attention hover message.
-    const ImVec2 dot_min((display.x - dot) * 0.5f, 0.0f);
-    const ImVec2 dot_max(dot_min.x + dot, dot);
+    // The dot sits at the top-left with ring_pad clearance (followups D6:
+    // the window hugs the icons, so the dot is no longer horizontally
+    // centered); the space below it carries the tiny status label, and the
+    // attention expansion carries the hover message.
+    const ImVec2 dot_min(metrics::mini_ring_pad * scale, metrics::mini_ring_pad * scale);
+    const ImVec2 dot_max(dot_min.x + dot, dot_min.y + dot);
     const ImVec2 center((dot_min.x + dot_max.x) * 0.5f, (dot_min.y + dot_max.y) * 0.5f);
     const float radius = dot * 0.5f;
 
@@ -454,8 +492,9 @@ void Overlay::DrawBadge() {
         static_cast<int>(dot), static_cast<int>(dot), static_cast<int>(metrics::mini_hover_inflate * scale));
     bool near_note = false;
     if (scratchpad_visible_) {
-        const float note_size = 16.0f * scale;
-        const ImVec2 note_min(dot_max.x + 4.0f * scale, dot_min.y + (dot - note_size) * 0.5f);
+        const float note_size = metrics::mini_note * scale;
+        const ImVec2 note_min(dot_max.x + metrics::mini_note_gap * scale,
+                              dot_min.y + (dot - note_size) * 0.5f);
         near_note = WindowStyles::IsCursorInsideRect(win_x + static_cast<int>(note_min.x), win_y + static_cast<int>(note_min.y), static_cast<int>(note_size), static_cast<int>(note_size), 0);
     }
     const bool near_interactive = near_dot || near_note;
@@ -476,8 +515,9 @@ void Overlay::DrawBadge() {
     UpdateDrag(near_dot);
 
     if (scratchpad_visible_) {
-        const float note_size = 16.0f * scale;
-        const ImVec2 note_min(dot_max.x + 4.0f * scale, dot_min.y + (dot - note_size) * 0.5f);
+        const float note_size = metrics::mini_note * scale;
+        const ImVec2 note_min(dot_max.x + metrics::mini_note_gap * scale,
+                              dot_min.y + (dot - note_size) * 0.5f);
         ImGui::SetCursorScreenPos(note_min);
         const bool note_pressed = ImGui::InvisibleButton("##note", ImVec2(note_size, note_size));
         if (note_pressed && on_scratchpad_activate_) {
@@ -505,8 +545,9 @@ void Overlay::DrawBadge() {
     draw.AddCircle(center, radius, Pack(current_palette_->border, badge_alpha), 0, 1.0f * scale);
 
     if (scratchpad_visible_) {
-        const float note_px = 16.0f * scale;
-        const ImVec2 note_min(dot_max.x + 4.0f * scale, dot_min.y + (dot - note_px) * 0.5f);
+        const float note_px = metrics::mini_note * scale;
+        const ImVec2 note_min(dot_max.x + metrics::mini_note_gap * scale,
+                              dot_min.y + (dot - note_px) * 0.5f);
         const ImVec2 note_max(note_min.x + note_px, note_min.y + note_px);
         draw.AddRectFilled(note_min, note_max, Pack(current_palette_->surface, badge_alpha), 4.0f * scale);
         draw.AddRect(note_min, note_max, Pack(current_palette_->border, badge_alpha), 4.0f * scale, 0, 1.0f * scale);
@@ -654,9 +695,11 @@ void Overlay::UpdateDrag(bool near_dot) {
                                std::abs(cursor_x - drag_cursor_origin_x_) +
                                    std::abs(cursor_y - drag_cursor_origin_y_));
     if (drag_travel_px_ > kDragClickThresholdPx) {
-        const int window_w = static_cast<int>(metrics::mini_message_w * dpi_scale_);
-        const int window_h =
-            static_cast<int>((metrics::mini_dot + metrics::mini_message_h) * dpi_scale_);
+        int design_w = 0;
+        int design_h = 0;
+        ComputeWindowExtent(&design_w, &design_h);
+        const int window_w = static_cast<int>(static_cast<float>(design_w) * dpi_scale_);
+        const int window_h = static_cast<int>(static_cast<float>(design_h) * dpi_scale_);
         const OverlayModel::Rect position = OverlayModel::ClampPosition(
             work_area_, drag_win_origin_x_ + cursor_x - drag_cursor_origin_x_,
             drag_win_origin_y_ + cursor_y - drag_cursor_origin_y_, window_w, window_h);
@@ -670,9 +713,11 @@ void Overlay::UpdateDrag(bool near_dot) {
     if (!WindowStyles::LeftMouseButtonDown()) {
         if (drag_travel_px_ > kDragClickThresholdPx) {
             if (on_position_persist_) {
-                const int window_w = static_cast<int>(metrics::mini_message_w * dpi_scale_);
-                const int window_h =
-                    static_cast<int>((metrics::mini_dot + metrics::mini_message_h) * dpi_scale_);
+                int design_w = 0;
+                int design_h = 0;
+                ComputeWindowExtent(&design_w, &design_h);
+                const int window_w = static_cast<int>(static_cast<float>(design_w) * dpi_scale_);
+                const int window_h = static_cast<int>(static_cast<float>(design_h) * dpi_scale_);
                 const OverlayModel::Rect position = OverlayModel::ClampPosition(
                     work_area_, drag_win_origin_x_ + cursor_x - drag_cursor_origin_x_,
                     drag_win_origin_y_ + cursor_y - drag_cursor_origin_y_, window_w, window_h);

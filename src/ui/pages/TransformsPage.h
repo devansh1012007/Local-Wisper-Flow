@@ -37,11 +37,9 @@ private:
 
 namespace transforms {
 
-inline constexpr const char* kOptInOffBanner = "Turn on Opt in to use transforms.";
-inline constexpr const char* kBannerHeadline = "Select a few words. Press a shortcut. Done.";
-inline constexpr const char* kBannerBody =
-    "Transforms rewrite text you have selected, on your device. Nothing you select leaves this "
-    "computer.";
+// Followups D3/D4: the page-top hero banner and the opted-out notice strip
+// were removed; the header's Opt-in toggle is the single affordance. The
+// How-it-works copy stays (the header "i" button opens the modal).
 inline constexpr const char* kHowItWorksBody =
     "1. Select the text you want to change. 2. Press the transform shortcut. 3. Review the change "
     "with the diff shortcut.";
@@ -265,10 +263,14 @@ inline std::string TruncateCodePoints(const std::string& text, std::size_t limit
 }
 
 inline std::string CardDescription(const TransformStore::Entry& entry) {
-    if (entry.slot == 1) {
+    // Followups D5: the built-in friendly copy shows only while the stored
+    // prompt is still the shipped default; an edited Polish / Prompt
+    // Engineer surfaces its real prompt like any custom card, so an edit is
+    // visible on the grid (edits always took effect at run time).
+    if (entry.slot == 1 && entry.prompt == TransformStore::DefaultPolishPrompt()) {
         return kPolishCardCopy;
     }
-    if (entry.slot == 2) {
+    if (entry.slot == 2 && entry.prompt == TransformStore::DefaultPromptEngineerPrompt()) {
         return kPromptEngineerCardCopy;
     }
     return TruncateCodePoints(CollapseWhitespace(entry.prompt), kCardSubtitleLimit);
@@ -637,14 +639,6 @@ public:
         return true;
     }
 
-    void SetBannerOpen(bool open) {
-        banner_open_ = open;
-    }
-
-    bool BannerOpen() const {
-        return banner_open_;
-    }
-
     void OpenHowItWorks() {
         how_modal_.Open();
     }
@@ -671,7 +665,6 @@ public:
 
 private:
     void DrawHeader(float scale, const Palette& palette);
-    void DrawBanner(float scale, const Palette& palette);
     void DrawMyTransforms(float scale, const Palette& palette);
     void DrawGrid(float scale, const Palette& palette);
     void DrawCard(const TransformStore::Entry& entry, float width, float height, float scale,
@@ -719,7 +712,6 @@ private:
     std::string edit_error_;
     char name_buffer_[256] = {};
     char prompt_buffer_[8192] = {};
-    bool banner_open_ = true;
     widgets::Modal reset_modal_;
     widgets::Sheet editor_sheet_;
     widgets::Modal diff_modal_;

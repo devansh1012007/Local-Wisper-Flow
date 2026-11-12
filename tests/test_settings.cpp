@@ -216,3 +216,44 @@ TEST_CASE("data dir honors LWF_HOME override") {
     unsetenv("LWF_HOME");
 #endif
 }
+
+// Source pin (followups D1): the startup wiring and the ApplySettings drain
+// must BOTH build EngineSettings through the one shared LoadEngineSettings
+// mapper. The drain used to re-list a key subset, so the Volume,
+// max-recording and hands-free-silence knobs kept their startup values until
+// restart — every knob in Settings must apply live.
+TEST_CASE("main wiring shares LoadEngineSettings between startup and the ApplySettings drain") {
+    std::ifstream file("src/main.cpp");
+    REQUIRE(static_cast<bool>(file));
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    const std::string source = buffer.str();
+    REQUIRE_FALSE(source.empty());
+
+    // The mapper exists and covers the three keys the old drain skipped.
+    const std::size_t loader = source.find("EngineSettings LoadEngineSettings(");
+    REQUIRE(loader != std::string::npos);
+    const std::string loader_span =
+        source.substr(loader, source.find('}', loader) - loader);
+    CHECK(loader_span.find("sound_volume") != std::string::npos);
+    CHECK(loader_span.find("max_recording_ms") != std::string::npos);
+    CHECK(loader_span.find("hands_free_silence_ms") != std::string::npos);
+
+    // Both call sites go through the mapper.
+    std::size_t calls = 0;
+    for (std::size_t pos = source.find("LoadEngineSettings(config.Store())");
+         pos != std::string::npos;
+         pos = source.find("LoadEngineSettings(config.Store())", pos + 1)) {
+        ++calls;
+    }
+    CHECK(calls == 2);
+
+    // The drain no longer hand-lists keys (a re-listed subset is how the
+    // knobs went stale in the first place).
+    const std::size_t drain = source.find("case UiCommandType::ApplySettings:");
+    REQUIRE(drain != std::string::npos);
+    const std::string drain_span = source.substr(drain, 900);
+    CHECK(drain_span.find("settings = LoadEngineSettings(config.Store());") != std::string::npos);
+    CHECK(drain_span.find("settings.sound_volume =") == std::string::npos);
+    CHECK(drain_span.find("settings.min_hold_ms =") == std::string::npos);
+}
