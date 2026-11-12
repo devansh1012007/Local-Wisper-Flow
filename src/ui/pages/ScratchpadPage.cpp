@@ -119,8 +119,19 @@ void ScratchpadPage::DrawHeader(float scale, const lwf::ui::Palette& palette) {
                         controls_y + pill_h + 4.0f * scale),
                  Pack(palette.muted), helper);
     ImGui::PopFont();
+    // Followups-2: the mini window's note icon is removable in place
+    // (right-click), so surface the gesture next to the toggle that adds it.
+    float hint_h = 0.0f;
+    if (flow_on) {
+        ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
+        const float hint_y = origin.y + title_h + 18.0f * scale;
+        ImGui::SetCursorScreenPos(ImVec2(origin.x, hint_y));
+        ImGui::TextDisabled("The mini window shows a note icon. Right-click it to remove.");
+        hint_h = (ImGui::GetItemRectMax().y - hint_y) + 4.0f * scale;
+        ImGui::PopFont();
+    }
     ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + title_h));
-    ImGui::Dummy(ImVec2(0.0f, pill_h + 18.0f * scale));
+    ImGui::Dummy(ImVec2(0.0f, pill_h + 18.0f * scale + hint_h));
 }
 
 void ScratchpadPage::DrawRecents(float scale, const lwf::ui::Palette& palette) {

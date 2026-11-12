@@ -525,6 +525,28 @@ Followups-1 additions (ops/ui-followups-1, 2026-11-12):
 15. Welcome: no 4-step wizard; model row still downloads/browses; Get
     started lands on Home and clears first_run.
 
+Followups-2 additions (fix/ui-followups-2, 2026-11-12) — item 12 is
+superseded by 18 (the built-ins are gone entirely):
+
+16. Volume sample: dragging the Volume slider plays a short sample tone at
+    the dragged amplitude while you drag (throttled) and once more on
+    release; with Sound off nothing plays. The next dictation start/stop
+    tone uses the new volume.
+17. Echo flow name: the top-left wordmark, window title, tray tooltip,
+    About row and crash/log headers read "Echo flow"; the data dir, registry
+    run value and window class still read LocalWisperFlow (config and
+    history survive the upgrade).
+18. No default transforms: a fresh profile (or the migrated existing one)
+    shows an empty Transforms grid — Polish and Prompt Engineer are gone
+    (load drops legacy built_in entries, warns in the log); Create New can
+    fill any slot 1-10; Delete works on every slot; the reset modal says
+    every slot ends up empty.
+19. Mini window scratchpad icon removal: with the Flow Bar toggle on,
+    right-click the note icon in the mini window — the icon disappears and
+    the badge re-hugs to the dot-only width; the Scratchpad page toggle
+    adds it back (the header shows the right-click hint while the icon is
+    on).
+
 ```
 [ ] PASS   [ ] FAIL   notes:
 ```

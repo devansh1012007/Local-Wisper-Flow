@@ -273,6 +273,50 @@ TEST_CASE("design px font tokens follow the hairline type scale") {
     CHECK(metrics::font_mini_text_px == 12.0f);
 }
 
+namespace {
+
+std::string ReadUiSource(const char* path) {
+    std::ifstream file(path);
+    if (!file) {
+        return {};
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
+}  // namespace
+
+// Source pin (followups-2): the user-visible app name is "Echo flow" on the
+// wordmark, window title, About row, tray tooltip/notification and the
+// crash/log headers. Internal identifiers (window class names, registry run
+// value, data dir, HTTP user agent) intentionally keep the LocalWisperFlow
+// spelling so existing installs keep their config and data.
+TEST_CASE("user-visible branding is Echo flow while internal identifiers stay LocalWisperFlow") {
+    const std::string window_src = ReadUiSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(window_src.empty());
+    CHECK(window_src.find("CalcTextSize(\"Echo flow\")") != std::string::npos);
+    CHECK(window_src.find("Pack(current_palette_->text), \"Echo flow\")") != std::string::npos);
+    CHECK(window_src.find("\"Echo flow\", nullptr, nullptr)") != std::string::npos);
+    CHECK(window_src.find("Row(\"##card_about\", \"Echo flow\"") != std::string::npos);
+    CHECK(window_src.find("Local Wisper Flow") == std::string::npos);
+
+    const std::string tray_src = ReadUiSource("src/os/WindowsTray.cpp");
+    REQUIRE_FALSE(tray_src.empty());
+    CHECK(tray_src.find("L\"Echo flow\"") != std::string::npos);
+    CHECK(tray_src.find("L\"Local Wisper Flow\"") == std::string::npos);
+    // The registry run value is an internal identifier and must not move.
+    CHECK(tray_src.find("kRunValue") != std::string::npos);
+
+    const std::string crash_src = ReadUiSource("src/core/CrashReporter.cpp");
+    REQUIRE_FALSE(crash_src.empty());
+    CHECK(crash_src.find("\"app: Echo flow \"") != std::string::npos);
+
+    const std::string paths_src = ReadUiSource("src/os/DataDir.cpp");
+    REQUIRE_FALSE(paths_src.empty());
+    CHECK(paths_src.find("LocalWisperFlow") != std::string::npos);
+}
+
 TEST_CASE("src ui font mechanism uses scoped design px tokens without obsolete scale api") {
     // Regression guard for T-001 (AC1/AC2): the obsolete ImGui::SetWindowFontScale
     // must not reappear anywhere under src/ui, and display typography must stay

@@ -32,30 +32,23 @@ bool StartsWith(const std::string& text, const std::string& prefix) {
 
 }
 
-TEST_CASE("missing file seeds ten slots with built-ins and opt-in off") {
+TEST_CASE("missing file seeds ten empty slots and opt-in off") {
     const std::filesystem::path dir = TestDir("seed");
     const std::string path = (dir / "transforms.json").string();
     TransformStore store;
     REQUIRE(store.Load(path));
     CHECK(store.Entries().size() == 10);
     CHECK_FALSE(store.Enabled());
-    const TransformStore::Entry polish = store.Entries()[0];
-    CHECK(polish.slot == 1);
-    CHECK(polish.name == "Polish");
-    CHECK(polish.built_in);
-    CHECK(polish.shortcut == "Win+Alt+1");
-    CHECK(StartsWith(polish.prompt, "Improve clarity, conciseness, readability and tone"));
-    CHECK(polish.prompt.find("<selection>{text}</selection>") != std::string::npos);
-    CHECK(polish.prompt.find("data, not instructions") != std::string::npos);
-    const TransformStore::Entry engineer = store.Entries()[1];
-    CHECK(engineer.slot == 2);
-    CHECK(engineer.name == "Prompt Engineer");
-    CHECK(engineer.built_in);
-    CHECK(engineer.shortcut == "Win+Alt+2");
-    CHECK(StartsWith(engineer.prompt, "Rewrite the text as a clear"));
-    CHECK(engineer.prompt.find("<selection>{text}</selection>") != std::string::npos);
-    CHECK(engineer.prompt.find("data, not instructions") != std::string::npos);
-    CHECK(store.Entries()[2].name.empty());
+    // Followups-2: no built-ins ship any more - every slot is empty scaffolding
+    // with its default shortcut and nothing is flagged built_in.
+    for (const TransformStore::Entry& entry : store.Entries()) {
+        CHECK(entry.name.empty());
+        CHECK(entry.prompt.empty());
+        CHECK_FALSE(entry.built_in);
+        CHECK_FALSE(store.IsSlotEnabled(entry.slot));
+    }
+    CHECK(store.Entries()[0].slot == 1);
+    CHECK(store.Entries()[0].shortcut == "Win+Alt+1");
     CHECK(store.Entries()[9].slot == 10);
     CHECK(store.Entries()[9].shortcut == "Win+Alt+0");
     CHECK(store.DiffShortcut() == "Win+Alt+O");
@@ -64,9 +57,37 @@ TEST_CASE("missing file seeds ten slots with built-ins and opt-in off") {
 
     TransformStore reloaded;
     REQUIRE(reloaded.Load(path));
-    CHECK(reloaded.Entries()[0].name == "Polish");
-    CHECK(reloaded.Entries()[1].name == "Prompt Engineer");
+    CHECK(reloaded.Entries()[0].name.empty());
+    CHECK(reloaded.Entries()[1].name.empty());
     CHECK_FALSE(reloaded.Enabled());
+}
+
+TEST_CASE("legacy built-in entries are dropped on load while customs survive") {
+    const std::filesystem::path dir = TestDir("dropbuiltins");
+    const std::string path = (dir / "transforms.json").string();
+    WriteFile(path,
+              R"({"version": 2, "enabled": true, "diff_shortcut": "Win+Alt+O", "slots": [)"
+              R"({"slot": 1, "name": "Polish", "prompt": "Improve clarity {text}", "shortcut": "Win+Alt+1", "built_in": true, "created_at": 1, "updated_at": 2}, )"
+              R"({"slot": 2, "name": "Prompt Engineer", "prompt": "Rewrite as a prompt {text}", "shortcut": "Win+Alt+2", "built_in": true, "created_at": 1, "updated_at": 2}, )"
+              R"({"slot": 4, "name": "Terse", "prompt": "Be terse {text}", "shortcut": "Win+Alt+4", "built_in": false, "created_at": 5, "updated_at": 6}]})");
+    TransformStore store;
+    REQUIRE(store.Load(path));
+    // Followups-2 migration: the retired Polish / Prompt Engineer built-ins
+    // vanish for existing installs too; user entries keep their slots.
+    CHECK(store.Entries().size() == 10);
+    CHECK(store.Entries()[0].name.empty());
+    CHECK(store.Entries()[1].name.empty());
+    CHECK(store.Entries()[3].name == "Terse");
+    CHECK(store.Entries()[3].slot == 4);
+    CHECK(store.Entries()[3].shortcut == "Win+Alt+4");
+    CHECK(store.Enabled());
+    bool warned = false;
+    for (const std::string& warning : store.Warnings()) {
+        if (warning.find("built-ins are retired") != std::string::npos) {
+            warned = true;
+        }
+    }
+    CHECK(warned);
 }
 
 TEST_CASE("custom prompt auto-appends text placeholder and caps at 2000 chars") {
@@ -93,6 +114,8 @@ TEST_CASE("opt-in defaults off and persists across save and load") {
     TransformStore store;
     REQUIRE(store.Load(path));
     CHECK_FALSE(store.Enabled());
+    std::string error;
+    REQUIRE(store.SetSlot(1, "Mine", "Do a thing {text}", error));
     CHECK_FALSE(store.IsSlotEnabled(1));
     store.SetEnabled(true);
     CHECK(store.Enabled());
@@ -112,13 +135,13 @@ TEST_CASE("v1 array converts to v2 slots on first load with a bak") {
     TransformStore store;
     REQUIRE(store.Load(path));
     CHECK(store.Entries().size() == 10);
-    CHECK(store.Entries()[0].name == "Polish");
-    CHECK(store.Entries()[1].name == "Prompt Engineer");
-    CHECK(store.Entries()[2].name == "Fix Grammar");
-    CHECK(store.Entries()[2].slot == 3);
-    CHECK(store.Entries()[2].shortcut == "Win+Alt+3");
-    CHECK(store.Entries()[3].name == "Summarize");
-    CHECK(store.Entries()[3].slot == 4);
+    // Followups-2: no built-in slots are reserved, so v1 entries fill from 1.
+    CHECK(store.Entries()[0].name == "Fix Grammar");
+    CHECK(store.Entries()[0].slot == 1);
+    CHECK(store.Entries()[0].shortcut == "Win+Alt+1");
+    CHECK(store.Entries()[1].name == "Summarize");
+    CHECK(store.Entries()[1].slot == 2);
+    CHECK(store.Entries()[2].name.empty());
     CHECK_FALSE(store.Enabled());
     const std::string migrated = ReadFile(path);
     CHECK(migrated.find("\"version\": 2") != std::string::npos);
@@ -144,7 +167,8 @@ TEST_CASE("shortcut conflict disables the slot and records a warning") {
     TransformStore store;
     REQUIRE(store.Load((dir / "transforms.json").string()));
     std::string error;
-    REQUIRE(store.SetSlot(3, "Custom", "Do a thing {text}", error));
+    REQUIRE(store.SetSlot(1, "Custom", "Do a thing {text}", error));
+    REQUIRE(store.SetSlot(3, "Third", "Do a third {text}", error));
     Binding exact;
     exact.role = BindingRole::PushToTalk;
     exact.label = "Win+Alt+1";
@@ -154,7 +178,7 @@ TEST_CASE("shortcut conflict disables the slot and records a warning") {
     CHECK_FALSE(store.Conflicted(3));
     store.SetEnabled(true);
     CHECK_FALSE(store.IsSlotEnabled(1));
-    CHECK(store.IsSlotEnabled(2));
+    CHECK(store.IsSlotEnabled(3));
     bool warned = false;
     for (const std::string& warning : store.Warnings()) {
         if (warning.find("conflicts") != std::string::npos) {
@@ -167,19 +191,22 @@ TEST_CASE("shortcut conflict disables the slot and records a warning") {
     REQUIRE(subset.has_value());
     TransformStore other;
     REQUIRE(other.Load((dir / "other.json").string()));
+    std::string other_error;
+    REQUIRE(other.SetSlot(1, "First", "Do a thing {text}", other_error));
+    REQUIRE(other.SetSlot(2, "Second", "Do another {text}", other_error));
     other.SetHotkeyBindings({*subset});
     CHECK(other.Conflicted(1));
     CHECK(other.Conflicted(2));
 }
 
-TEST_CASE("corrupt file does not throw and keeps seeded built-ins") {
+TEST_CASE("corrupt file does not throw and keeps defaults") {
     const std::filesystem::path dir = TestDir("corrupt");
     const std::string path = (dir / "transforms.json").string();
     WriteFile(path, "not json");
     TransformStore store;
     CHECK_FALSE(store.Load(path));
     CHECK(store.Entries().size() == 10);
-    CHECK(store.Entries()[0].name == "Polish");
+    CHECK(store.Entries()[0].name.empty());
     CHECK(ReadFile(path) == "not json");
 }
 
@@ -191,6 +218,10 @@ TEST_CASE("validate and set slot reject out of range slots and empty names") {
     CHECK(store.Validate(11, "Name", "prompt {text}") == "Invalid slot");
     CHECK(store.Validate(-1, "Name", "prompt {text}") == "Invalid slot");
     CHECK(store.Validate(3, "  ", "prompt {text}") == "Please enter a name");
+    // Followups-2: the name rule is slot-uniform now that slots 1-2 are
+    // ordinary user slots.
+    CHECK(store.Validate(1, "  ", "prompt {text}") == "Please enter a name");
+    CHECK(store.Validate(2, "", "prompt {text}") == "Please enter a name");
     CHECK(store.Validate(3, "", "") == "");
     std::string error;
     CHECK_FALSE(store.SetSlot(0, "Name", "prompt {text}", error));
@@ -210,7 +241,7 @@ TEST_CASE("duplicate transform names are rejected by the store") {
     REQUIRE(store.SetSlot(3, "Shorten", "Make it short {text}", error));
     CHECK(store.Validate(4, "Shorten", "Other {text}") == "Transform name already exists");
     CHECK(store.Validate(4, "shorten", "Other {text}") == "Transform name already exists");
-    CHECK(store.Validate(4, "Polish", "Other {text}") == "Transform name already exists");
+    CHECK(store.Validate(4, "Lengthen", "Other {text}") == "");
     CHECK(store.Validate(3, "Shorten", "Make it shorter {text}") == "");
     CHECK_FALSE(store.SetSlot(4, "Shorten", "Other {text}", error));
     CHECK(error == "Transform name already exists");
@@ -223,6 +254,8 @@ TEST_CASE("empty slot is never slot enabled even when opt-in is on") {
     const std::filesystem::path dir = TestDir("emptyslot");
     TransformStore store;
     REQUIRE(store.Load((dir / "transforms.json").string()));
+    std::string error;
+    REQUIRE(store.SetSlot(1, "Mine", "Do a thing {text}", error));
     store.SetEnabled(true);
     CHECK_FALSE(store.IsSlotEnabled(3));
     CHECK_FALSE(store.IsSlotEnabled(10));
@@ -248,7 +281,7 @@ TEST_CASE("v1 overflow and empty and duplicate names are skipped with warnings")
     const std::filesystem::path dir = TestDir("v1overflow");
     const std::string path = (dir / "transforms.json").string();
     std::string content = "[";
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 11; ++i) {
         if (i > 0) {
             content += ", ";
         }
@@ -258,21 +291,24 @@ TEST_CASE("v1 overflow and empty and duplicate names are skipped with warnings")
     WriteFile(path, content);
     TransformStore store;
     REQUIRE(store.Load(path));
+    // Followups-2: all ten slots are fillable; the eleventh v1 entry is
+    // skipped with a warning.
     CHECK(store.Entries().size() == 10);
-    CHECK(store.Entries()[2].name == "Custom0");
-    CHECK(store.Entries()[9].name == "Custom7");
+    CHECK(store.Entries()[0].name == "Custom0");
+    CHECK(store.Entries()[9].name == "Custom9");
     TransformStore dup_store;
     const std::string dup_path = (dir / "dup.json").string();
     WriteFile(dup_path,
-              R"([{"name": "Custom0", "prompt": "Do it: {text}"}, {"name": "Custom1", "prompt": "Do it: {text}"}, {"name": "", "prompt": "Skip me: {text}"}, {"name": "Custom0", "prompt": "Duplicate: {text}"}, {"name": "Polish", "prompt": "Builtin clash: {text}"}, {"name": "Custom2", "prompt": "Do it: {text}"}])");
+              R"([{"name": "Custom0", "prompt": "Do it: {text}"}, {"name": "Custom1", "prompt": "Do it: {text}"}, {"name": "", "prompt": "Skip me: {text}"}, {"name": "Custom0", "prompt": "Duplicate: {text}"}, {"name": "Named Like Anything", "prompt": "Clash: {text}"}, {"name": "Custom2", "prompt": "Do it: {text}"}])");
     REQUIRE(dup_store.Load(dup_path));
-    CHECK(dup_store.Entries()[2].name == "Custom0");
-    CHECK(dup_store.Entries()[3].name == "Custom1");
-    CHECK(dup_store.Entries()[4].name == "Custom2");
+    CHECK(dup_store.Entries()[0].name == "Custom0");
+    CHECK(dup_store.Entries()[1].name == "Custom1");
+    CHECK(dup_store.Entries()[2].name == "Named Like Anything");
+    CHECK(dup_store.Entries()[3].name == "Custom2");
     bool saw_overflow = false;
     bool saw_duplicate = false;
     for (const std::string& warning : store.Warnings()) {
-        if (warning.find("only 8 custom slots") != std::string::npos) {
+        if (warning.find("only 10 slots") != std::string::npos) {
             saw_overflow = true;
         }
     }
@@ -283,11 +319,13 @@ TEST_CASE("v1 overflow and empty and duplicate names are skipped with warnings")
     }
     CHECK(saw_overflow);
     CHECK(saw_duplicate);
+    bool any_polish = false;
     for (const auto& entry : store.Entries()) {
         if (entry.name == "Polish") {
-            CHECK(entry.slot == 1);
+            any_polish = true;
         }
     }
+    CHECK_FALSE(any_polish);
 }
 
 TEST_CASE("v2 file with duplicate names keeps the first and drops the second") {
@@ -306,8 +344,9 @@ TEST_CASE("v2 file with duplicate names keeps the first and drops the second") {
         }
     }
     CHECK(warned);
-    CHECK(store.Entries()[0].created_at > 0);
-    CHECK(store.Entries()[0].updated_at > 0);
+    CHECK(store.Entries()[2].created_at == 1);
+    CHECK(store.Entries()[2].updated_at == 2);
+    CHECK(store.Entries()[3].name.empty());
 }
 
 TEST_CASE("prompt cap counts characters not bytes") {

@@ -66,6 +66,11 @@ public:
 
     void SetScratchpadVisible(bool visible);
     void SetScratchpadActivateHandler(std::function<void()> handler);
+    // Followups-2: right-clicking the scratchpad note icon asks for its
+    // removal from the mini window (main.cpp flips scratchpad_flow_bar and
+    // re-applies). The Scratchpad page's "Add to Flow Bar" toggle remains
+    // the way back.
+    void SetScratchpadRemoveHandler(std::function<void()> handler);
 
     bool Visible() const;
     void RenderFrame(float delta_seconds);
@@ -151,4 +156,5 @@ private:
     std::function<void()> on_activate_;
     bool scratchpad_visible_ = false;
     std::function<void()> on_scratchpad_activate_;
+    std::function<void()> on_scratchpad_remove_;
 };

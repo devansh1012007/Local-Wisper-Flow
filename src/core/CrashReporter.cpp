@@ -25,7 +25,7 @@ std::string CrashReporter::WriteCrashReport(const std::string& logs_dir,
         (std::filesystem::path(logs_dir) / ("crash-" + std::to_string(now_ms) + ".txt")).string();
 
     std::ostringstream out;
-    out << "app: Local Wisper Flow " << AppVersion() << "\n";
+    out << "app: Echo flow " << AppVersion() << "\n";
     out << "exception: " << exception_code << "\n";
     out << "fsm_state: " << fsm_state << "\n";
     if (!detail.empty()) {

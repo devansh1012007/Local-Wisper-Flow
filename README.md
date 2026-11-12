@@ -1,9 +1,13 @@
-# Local Wisper Flow
+# Echo flow (repo: Local-Wisper-Flow)
 
 Local-first voice dictation for Windows. Hold a hotkey, speak, and the text
 lands in whatever app you are typing in. Whisper speech-to-text and an
 optional local LLM run on this machine; a cloud STT provider is available
 behind an explicit consent gate (see "Cloud speech-to-text" below).
+
+The app presents itself as "Echo flow" (window title, wordmark, tray); the
+repository, data directory and registry identifiers keep the LocalWisperFlow
+spelling so existing installs keep their config and history.
 
 - **Press-to-talk dictation** with VAD-gated capture, a mini overlay badge and
   a full window with top-strip navigation (Dear ImGui).
@@ -17,10 +21,10 @@ behind an explicit consent gate (see "Cloud speech-to-text" below).
 ## Requirements
 
 - Windows 10/11 (the GUI app) or any Linux for the core build and tests.
-- CMake >= 3.16, a C++17 toolchain (MSVC 2022 on Windows), network access on
-  the first configure for FetchContent deps (nlohmann/json, doctest, and -
-  with `LWF_BUILD_FULL=ON` - llama.cpp, whisper.cpp, miniaudio, gRPC, GLFW,
-  Dear ImGui).
+- CMake >= 3.16, a C++17 toolchain (MSVC 2022 on Windows for CI; MinGW GCC via
+  MSYS2 on the dev box), network access on the first configure for FetchContent
+  deps (nlohmann/json, doctest, and - with `LWF_BUILD_FULL=ON` - llama.cpp,
+  whisper.cpp, miniaudio, gRPC, GLFW, Dear ImGui).
 - Full build extras: whisper `ggml` model, optional Qwen GGUF for cleanup,
   optional ONNX Runtime for the Silero VAD gate.
 
@@ -36,14 +40,23 @@ ctest --test-dir build
 
 Windows full app (two-phase configure: the first configure builds llama.cpp
 via ExternalProject; re-run configure afterwards so the installed llama/ggml
-package is picked up):
+package is picked up). The dev box builds with the MinGW Makefiles generator
+(MSYS2 MinGW); the gRPC FetchContent URL must point at the full, submodule
+complete tarball:
 
 ```sh
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DGRPC_URL=file://C:/Users/devan/AppData/Local/Temp/grpc-full.tar.gz
+cmake --build build -j4
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DGRPC_URL=file://C:/Users/devan/AppData/Local/Temp/grpc-full.tar.gz
+cmake --build build -j4
 ```
+
+If `build/` was previously configured with a different generator (for example the
+Visual Studio generator used by CI), delete `build/CMakeCache.txt` and
+`build/CMakeFiles` before reconfiguring - CMake refuses to switch generators in
+place. If `build/_deps/grpc-src` is stale or partial, clear `build/_deps/grpc-src`,
+`build/_deps/grpc-build` and `build/_deps/grpc-subbuild` and re-run the configure
+before building.
 
 ## Models
 

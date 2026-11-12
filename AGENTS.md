@@ -6,6 +6,18 @@ opt-in cloud STT path behind a consent gate. Reconstructed rule sheet: the
 original was lost with the dev-environment reset; the paragraphs below are
 recovered verbatim from the S9 documentation patch where noted.
 
+- Branding (followups-2): the app's user-visible name is "Echo flow" (wordmark,
+  window title, tray, About, crash/log headers). Internal identifiers - repo
+  name, data dir `%APPDATA%\LocalWisperFlow`, registry run value, window class
+  names, HTTP user agent - deliberately keep the LocalWisperFlow spelling so
+  existing installs keep their config and data. The installer is not renamed
+  yet (user decision).
+- Default transforms (followups-2): nothing is seeded. TransformStore starts
+  with ten empty slots, no entry is `built_in`, and Load drops legacy
+  built_in-flagged entries (the retired Polish / Prompt Engineer) from
+  existing transforms.json files. All slots are user slots (Create New fills
+  the first empty one, Delete clears any). v1 arrays convert from slot 1.
+
 ## Build and gates
 
 ```sh
@@ -13,6 +25,24 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
 ctest --test-dir build
 ```
+
+Local dev box (Windows, MSYS2 MinGW) - the VS generator is not installed here, so the
+build dir must be configured with the MinGW Makefiles generator (a VS-era cache, e.g.
+`CMAKE_GENERATOR=Visual Studio 18 2026`, makes every build fail with "could not find any
+instance of Visual Studio"):
+
+```sh
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DGRPC_URL=file://C:/Users/devan/AppData/Local/Temp/grpc-full.tar.gz
+cmake --build build -j4
+```
+
+- If `build/CMakeCache.txt` + `build/CMakeFiles` hold a foreign generator, delete both and
+  re-run the configure above (CMake refuses to switch generators in place).
+- gRPC full-tarball: `-DGRPC_URL=file://C:/Users/devan/AppData/Local/Temp/grpc-full.tar.gz` (the
+  re-tarred full tarball, copy of `_deps-cache/grpc-v1.71.0-full.tar.gz`). If
+  `build/_deps/grpc-src` is stale/partial, clear `build/_deps/grpc-src`,
+  `build/_deps/grpc-build` and `build/_deps/grpc-subbuild`, then re-run configure before
+  building.
 
 - `LWF_BUILD_FULL=ON` (forced on Windows) builds whisper/llama/miniaudio
   and gRPC and links the real providers. Windows always builds full.
@@ -64,7 +94,8 @@ ctest --test-dir build
   submodules and dies in `cmake/cares.cmake`. Recipe: download tag tarball + inject
   submodule sources at their pinned SHAs into
   `third_party/{cares/cares,boringssl-with-bazel,abseil-cpp,protobuf,re2,zlib}`, re-tar,
-  pass via `-DGRPC_URL=file://...`. Also needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`
+  pass via `-DGRPC_URL=file://...` (locally: `-DGRPC_URL=file://C:/Users/devan/AppData/Local/Temp/grpc-full.tar.gz`,
+  the re-tarred full tarball copied from `_deps-cache/grpc-v1.71.0-full.tar.gz`). Also needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`
   (CMake 4 vs old dep minimums), `protobuf_INSTALL=OFF`, `utf8_range_ENABLE_INSTALL=OFF`.
   Stub generation uses in-tree `protoc` + `grpc_cpp_plugin` targets into
   `build/generated/`, compiled as `lwf_proto`.

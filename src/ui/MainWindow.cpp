@@ -214,7 +214,7 @@ bool MainWindow::Init() {
 
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     window_ = glfwCreateWindow(std::min(want_w, area_w), std::min(want_h, area_h),
-                               "Local Wisper Flow", nullptr, nullptr);
+                               "Echo flow", nullptr, nullptr);
     if (window_ == nullptr) {
         return false;
     }
@@ -623,7 +623,7 @@ void MainWindow::DrawTopStrip(float scale) {
     // Wordmark at the design size until real fonts land, vertically centred
     // in the strip. It reserves its slot so the items region can size off it.
     ImGui::PushFont(nullptr, metrics::font_wordmark_px);
-    const ImVec2 wordmark_size = ImGui::CalcTextSize("Local Wisper Flow");
+    const ImVec2 wordmark_size = ImGui::CalcTextSize("Echo flow");
     ImGui::PopFont();
     const ImVec2 strip_origin = ImGui::GetCursorScreenPos();
     ImGui::Dummy(ImVec2(wordmark_size.x, strip_h));
@@ -631,7 +631,7 @@ void MainWindow::DrawTopStrip(float scale) {
         ImDrawList& draw = *ImGui::GetWindowDrawList();
         ImGui::PushFont(nullptr, metrics::font_wordmark_px);
         draw.AddText(ImVec2(strip_origin.x, strip_origin.y + (strip_h - wordmark_size.y) * 0.5f),
-                     Pack(current_palette_->text), "Local Wisper Flow");
+                     Pack(current_palette_->text), "Echo flow");
         ImGui::PopFont();
     }
 
@@ -1020,8 +1020,40 @@ void MainWindow::DoubleRow(const char* key, const char* id, float min_value, flo
     float value = static_cast<float>(settings_.GetDouble(key));
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::SliderFloat(id, &value, min_value, max_value, format);
+    // Followups-2 D1: commit while dragging, not only on release. The store
+    // always holds the dragged value, so a missed deactivate event (focus
+    // loss mid-release, alt-tab) can never roll the knob back, and any
+    // later ApplySettings drain picks the value up even without one.
+    if (ImGui::IsItemEdited()) {
+        settings_.SetDouble(key, static_cast<double>(value));
+    }
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         settings_.SetDouble(key, static_cast<double>(value));
+        ApplyAndSave();
+    }
+}
+
+void MainWindow::VolumeRow() {
+    // Followups-2 D1: the volume knob commits live (DoubleRow semantics)
+    // and additionally asks for a short sample tone at the dragged
+    // amplitude, throttled so a continuous drag does not queue a tone per
+    // frame. The final sample on release doubles as confirmation that the
+    // knob took effect without waiting for the next dictation.
+    float value = static_cast<float>(settings_.GetDouble("sound_volume"));
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::SliderFloat("##sound_volume", &value, 0.0f, 1.0f, "volume %.2f");
+    if (ImGui::IsItemEdited()) {
+        settings_.SetDouble("sound_volume", static_cast<double>(value));
+        const float now = static_cast<float>(ImGui::GetTime());
+        if (now >= tone_preview_until_) {
+            tone_preview_until_ = now + 0.25f;
+            bus_.PostCommand(UiCommandType::PreviewTone, std::to_string(value));
+        }
+    }
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        settings_.SetDouble("sound_volume", static_cast<double>(value));
+        tone_preview_until_ = static_cast<float>(ImGui::GetTime()) + 0.25f;
+        bus_.PostCommand(UiCommandType::PreviewTone, std::to_string(value));
         ApplyAndSave();
     }
 }
@@ -2686,7 +2718,7 @@ void MainWindow::DrawAboutPage(float scale) {
     // shows "Not set" (the DrawHotkeyChips empty-read precedence). The
     // cancel chord's schema default is "Escape", shown as stored.
     {
-        lwf::ui::widgets::Row("##card_about", "Local Wisper Flow", nullptr, 248.0f * scale, scale,
+        lwf::ui::widgets::Row("##card_about", "Echo flow", nullptr, 248.0f * scale, scale,
                               *current_palette_);
         ImGui::Text("%s", lwf::AppVersion());
         lwf::ui::widgets::RowEnd(scale);
@@ -2839,7 +2871,7 @@ void MainWindow::DrawGeneralPage(float scale) {
     {
         lwf::ui::widgets::Row("##row_sound_volume", "Volume", nullptr, 248.0f * scale, scale,
                               *current_palette_);
-        DoubleRow("sound_volume", "##sound_volume", 0.0f, 1.0f, "volume %.2f");
+        VolumeRow();
         lwf::ui::widgets::RowEnd(scale);
     }
     ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));

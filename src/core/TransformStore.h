@@ -48,8 +48,6 @@ public:
     bool SetSlot(const Entry& entry, std::string& error);
 
     static std::string DefaultShortcutForSlot(int slot);
-    static std::string DefaultPolishPrompt();
-    static std::string DefaultPromptEngineerPrompt();
     static std::string EnsureTextPlaceholder(std::string prompt);
     static bool ShortcutsConflict(const std::string& shortcut,
                                   const std::vector<Binding>& bindings);
