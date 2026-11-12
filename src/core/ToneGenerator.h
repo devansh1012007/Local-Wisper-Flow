@@ -33,4 +33,9 @@ ToneSpec StartTone();
 ToneSpec StopTone();
 ToneSpec ErrorTone();
 
+// Volume-slider sample (followups-3 D1): deliberately longer and lower than
+// the 60 ms start/stop blips so the dragged amplitude is clearly audible on
+// laptop speakers. Same fade envelope as the other presets.
+ToneSpec PreviewTone();
+
 }

@@ -78,6 +78,33 @@ int MatchMicDeviceIndex(const std::vector<std::string>& names, const std::string
     return 0;
 }
 
+MicTestStatus MicTestStatusFor(double peak) {
+    // Same 0.005 floor as the engine's silent-mic gate (DictationEngine
+    // StopAndTranscribe), so the check and the dictation path agree on what
+    // "silent" means; 0.05 marks recordings that work but will transcribe
+    // poorly without a boost.
+    if (peak < 0.005) {
+        return MicTestStatus::Silent;
+    }
+    if (peak < 0.05) {
+        return MicTestStatus::Quiet;
+    }
+    return MicTestStatus::Good;
+}
+
+const char* MicTestAdvice(MicTestStatus status) {
+    switch (status) {
+        case MicTestStatus::Good:
+            return "Working - the microphone picked up your voice.";
+        case MicTestStatus::Quiet:
+            return "Quiet - raise the microphone level in your sound settings.";
+        case MicTestStatus::Silent:
+            return "Silent - the microphone is muted, disabled or the wrong one. "
+                   "Pick another device and test again.";
+    }
+    return "";
+}
+
 int MatchModelIndex(const std::vector<std::string>& fetched, const std::string& selected) {
     // INVARIANT: no sentinel entry exists in this combo, so "no match" is -1
     // and the caller layers its synthetic entry on top of this result.

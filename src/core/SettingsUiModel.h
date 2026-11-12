@@ -32,6 +32,18 @@ std::string ValidateLanguage(const std::string& code);
 // "System default" string, otherwise names[index - 1].
 int MatchMicDeviceIndex(const std::vector<std::string>& names, const std::string& selected);
 
+// Microphone check verdict (followups-3, "mic is not working" report).
+// Maps the raw PCM peak of a short test recording onto a user-facing status
+// + advice line. Pure logic so the thresholds are unit-testable; the probe
+// itself (open device, record ~2 s) lives in MainWindow's worker thread.
+//   peak < 0.005  -> Silent  (muted, disabled, or the wrong device)
+//   peak < 0.05   -> Quiet   (works, but gain is low in the OS mixer)
+//   otherwise     -> Good
+// The copy stays level-only: never audio, never a transcript.
+enum class MicTestStatus { Good, Quiet, Silent };
+MicTestStatus MicTestStatusFor(double peak);
+const char* MicTestAdvice(MicTestStatus status);
+
 // Cleanup-model lookup (Settings > Cleanup). Returns the index i into the
 // FETCHED list with fetched[i] == selected, or -1 when there is no such entry:
 //   selected == ""            -> -1 (nothing set)

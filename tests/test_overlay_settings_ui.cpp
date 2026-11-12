@@ -1821,6 +1821,72 @@ TEST_CASE("microphone picker index maps stored value to the combo entry") {
     CHECK(SettingsUiModel::MatchMicDeviceIndex(names, "mic a") == 0);
 }
 
+TEST_CASE("microphone check verdict thresholds match the engine silent gate") {
+    // Followups-3 ("mic is not working"): the check must agree with the
+    // engine's silent-mic floor (0.005) so "the check says working" and
+    // "dictation says no sound recorded" cannot both happen for the same
+    // level. 0.05 marks usable-but-quiet.
+    CHECK(SettingsUiModel::MicTestStatusFor(0.0) == SettingsUiModel::MicTestStatus::Silent);
+    CHECK(SettingsUiModel::MicTestStatusFor(0.004) == SettingsUiModel::MicTestStatus::Silent);
+    CHECK(SettingsUiModel::MicTestStatusFor(0.005) == SettingsUiModel::MicTestStatus::Quiet);
+    CHECK(SettingsUiModel::MicTestStatusFor(0.049) == SettingsUiModel::MicTestStatus::Quiet);
+    CHECK(SettingsUiModel::MicTestStatusFor(0.05) == SettingsUiModel::MicTestStatus::Good);
+    CHECK(SettingsUiModel::MicTestStatusFor(1.0) == SettingsUiModel::MicTestStatus::Good);
+    // Every status has non-empty advice and the copy stays level-only.
+    for (const SettingsUiModel::MicTestStatus status :
+         {SettingsUiModel::MicTestStatus::Good, SettingsUiModel::MicTestStatus::Quiet,
+          SettingsUiModel::MicTestStatus::Silent}) {
+        const char* advice = SettingsUiModel::MicTestAdvice(status);
+        REQUIRE(advice != nullptr);
+        CHECK(advice[0] != '\0');
+        CHECK(std::string(advice).find('!') == std::string::npos);
+    }
+}
+
+TEST_CASE("speech page gains the in-app microphone check") {
+    // Followups-3: lwf_tests does not link ImGui or open audio devices, so
+    // the check is guarded lexically: the card exists on the Speech page
+    // under the level meter, the probe runs on a worker thread with a
+    // mutex latch (UI thread never blocks), the worker is joined in the
+    // destructor, and the probe constructs its own throwaway capture
+    // instead of touching the engine's instance.
+    const std::string content = ReadSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(content.empty());
+    CHECK(content.find("MicCheckRow(scale);") != std::string::npos);
+    CHECK(content.find("\"##card_mic_check\"") != std::string::npos);
+    CHECK(content.find("\"Test microphone##mic_test\"") != std::string::npos);
+    CHECK(content.find("MiniaudioCapture probe(16000, 1, device)") != std::string::npos);
+    CHECK(content.find("mic_test_worker_ = std::thread") != std::string::npos);
+    CHECK(content.find("mic_test_latch_mutex_") != std::string::npos);
+    // Placement: after the level meter card, before the Language card.
+    const std::size_t level_card = content.find("\"##card_mic_level\"");
+    REQUIRE(level_card != std::string::npos);
+    const std::size_t check_call = content.find("MicCheckRow(scale);", level_card);
+    REQUIRE(check_call != std::string::npos);
+    const std::size_t language_card = content.find("\"Language\"", check_call);
+    REQUIRE(language_card != std::string::npos);
+    CHECK(check_call < language_card);
+    // Destructor joins the worker so a test in flight cannot outlive the
+    // window (the dtor already joins the models and download workers).
+    const std::size_t dtor = content.find("MainWindow::~MainWindow()");
+    REQUIRE(dtor != std::string::npos);
+    const std::string dtor_span = content.substr(dtor, 2200);
+    CHECK(dtor_span.find("mic_test_worker_.joinable()") != std::string::npos);
+    CHECK(dtor_span.find("mic_test_worker_.join()") != std::string::npos);
+    // Busy guard: the button must not spawn a second probe mid-test and a
+    // re-test joins the finished worker instead of overwriting a joinable
+    // thread (which would terminate the app).
+    const std::size_t row = content.find("void MainWindow::MicCheckRow(float scale)");
+    REQUIRE(row != std::string::npos);
+    const std::string row_span = content.substr(row, 5200);
+    CHECK(row_span.find("mic_test_busy_.exchange(true)") != std::string::npos);
+    CHECK(row_span.find("mic_test_worker_.joinable()") != std::string::npos);
+    CHECK(row_span.find("ImGui::BeginDisabled()") != std::string::npos);
+    // The verdict comes from the shared pure model, not ad-hoc thresholds.
+    CHECK(row_span.find("SettingsUiModel::MicTestStatusFor(mic_test_peak_)") != std::string::npos);
+    CHECK(row_span.find("SettingsUiModel::MicTestAdvice(status)") != std::string::npos);
+}
+
 TEST_CASE("speech page microphone picker replaces the dead free-text row") {
     // lwf_tests does not link ImGui, so the picker wiring is guarded
     // lexically: the card sits between the model and level cards on the

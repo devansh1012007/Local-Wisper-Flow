@@ -282,14 +282,28 @@ TEST_CASE("volume slider commits live and posts a preview tone") {
     REQUIRE_FALSE(main_src.empty());
 
     // The PreviewTone drain clamps the payload and honours the sound toggle.
+    // Followups-3: the sample is the distinct 160 ms PreviewTone ding (the
+    // 60 ms start blip was easy to miss entirely at low volume) and a dead
+    // output endpoint is surfaced once instead of failing silently.
     const std::size_t preview = main_src.find("case UiCommandType::PreviewTone:");
     REQUIRE(preview != std::string::npos);
-    const std::string preview_span = main_src.substr(preview, 1100);
+    const std::string preview_span = main_src.substr(preview, 1700);
     CHECK(preview_span.find("std::stod(command.payload)") != std::string::npos);
     CHECK(preview_span.find("std::clamp(preview_volume, 0.0, 1.0)") != std::string::npos);
     CHECK(preview_span.find("GetBool(\"sound_enabled\")") != std::string::npos);
-    CHECK(preview_span.find("tone_player.Play(ToneGenerator::StartTone(), preview_volume)") !=
+    CHECK(preview_span.find("tone_player.Play(ToneGenerator::PreviewTone(), preview_volume)") !=
           std::string::npos);
+    CHECK(preview_span.find("ToneGenerator::StartTone(), preview_volume") == std::string::npos);
+
+    // Followups-3 D1: the main loop surfaces a dead output endpoint once per
+    // run (TonePlayer::DeviceFailed), so a machine with no working output
+    // device no longer presents as "the volume slider does nothing".
+    const std::size_t drain = main_src.find("tone_player.DeviceFailed()");
+    REQUIRE(drain != std::string::npos);
+    const std::string drain_span = main_src.substr(drain, 500);
+    CHECK(drain_span.find("attention.Set(") != std::string::npos);
+    CHECK(drain_span.find("tone_failure_surfaced = true") != std::string::npos);
+    CHECK(main_src.find("bool tone_failure_surfaced = false") != std::string::npos);
 
     const std::string window_src = ReadSource("src/ui/MainWindow.cpp");
     REQUIRE_FALSE(window_src.empty());

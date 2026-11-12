@@ -562,3 +562,23 @@ exists:
 ```
 [ ] PASS   [ ] FAIL   notes:
 ```
+
+Audio diagnostics round 3 (fix/audio-diagnostics, 2026-11-12):
+
+21. Volume preview audible: with Sound on, drag the Volume slider in
+    Settings > General — a distinct 160 ms middle-C ding plays at the
+    dragged amplitude while dragging (throttled) and once more on release;
+    at 0.00 it is silent, at 1.00 clearly louder. (The old sample was the
+    60 ms start blip, easy to miss entirely.)
+22. Dead output endpoint surfaces: with no output device available (or a
+    disabled one), the first tone request raises a one-shot notice on the
+    mini badge ("Sound effects are unavailable...") and the log records
+    "TonePlayer: playback device init failed: <reason>"; with a working
+    device restored, tones resume without restarting the app.
+23. Microphone check verdict: Settings > Speech > Microphone check —
+    "Test microphone" records 2 seconds from the selected device (no
+    restart needed, even mid-dictation on Windows) and reports Working
+    (green) with the peak percent, Quiet (amber) or Silent (red); a
+    missing/failed device reports "Could not open the microphone: ..."
+    in red; the button is disabled while "Listening for 2 seconds..."
+    shows; nothing is stored, logged or sent except the numeric level.

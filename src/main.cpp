@@ -676,6 +676,8 @@ int main() {
         State previous_state = State::IDLE;
         auto done_flash_until = std::chrono::steady_clock::time_point{};
         const auto done_flash_duration = std::chrono::milliseconds(600);
+        // Followups-3 D1: one-shot latch for the dead-output-endpoint notice.
+        bool tone_failure_surfaced = false;
         while (!quit.load()) {
             glfwPollEvents();
 
@@ -753,6 +755,10 @@ int main() {
                         // immediate sample at the dragged amplitude so the
                         // change is audible on the spot (the next dictation
                         // tone uses it too, via the ApplySettings drain).
+                        // Followups-3 D1: the sample is the distinct 160 ms
+                        // middle-C ding (PreviewTone), not the 60 ms start
+                        // blip - short blips at low volume were easy to miss
+                        // entirely, which read as "the slider does nothing".
                         {
                             double preview_volume = 0.0;
                             try {
@@ -762,7 +768,7 @@ int main() {
                             }
                             preview_volume = std::clamp(preview_volume, 0.0, 1.0);
                             if (config.Store().GetBool("sound_enabled")) {
-                                tone_player.Play(ToneGenerator::StartTone(), preview_volume);
+                                tone_player.Play(ToneGenerator::PreviewTone(), preview_volume);
                             }
                         }
                         break;
@@ -807,6 +813,19 @@ int main() {
             status.enabled = config.Store().GetBool("dictation_enabled");
             ui_bus.PublishStatus(status);
             overlay.PushLevel(audio.AudioLevel());
+
+            // Followups-3 D1: a dead output endpoint used to drop every tone
+            // with no trace, presenting exactly as "the volume slider does
+            // nothing". TonePlayer flags the failure once a tone has been
+            // requested; surface it once per run on the mini badge and stop
+            // checking (no spam while it stays broken).
+            if (!tone_failure_surfaced && tone_player.DeviceFailed()) {
+                tone_failure_surfaced = true;
+                attention.Set(
+                    "Sound effects are unavailable - no working output device. "
+                    "The volume slider will have no effect until one is connected.");
+                lwf::Log::Error("tone device failed: sound effects disabled for this run");
+            }
 
             // Mini badge state, derived here so the engine thread never
             // touches the UI. Attention beats the done flash, which beats

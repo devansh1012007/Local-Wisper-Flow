@@ -9,6 +9,7 @@
 #include "core/HotkeyBinding.h"
 #include "core/InjectionException.h"
 #include "core/Languages.h"
+#include "core/Log.h"
 #include "core/Onboarding.h"
 #include "core/PersonalDictionary.h"
 #include "core/SettingsStore.h"
@@ -181,6 +182,12 @@ MainWindow::~MainWindow() {
     download_cancelled_.store(true);
     if (download_worker_.joinable()) {
         download_worker_.join();
+    }
+    // Followups-3: the mic check worker caps the exit wait at its fixed 2 s
+    // recording window (plus device teardown), same contract as the models
+    // fetch worker above.
+    if (mic_test_worker_.joinable()) {
+        mic_test_worker_.join();
     }
     Shutdown();
 }
@@ -1045,6 +1052,102 @@ void MainWindow::VolumeRow() {
         tone_preview_until_ = static_cast<float>(ImGui::GetTime()) + 0.25f;
         bus_.PostCommand(UiCommandType::PreviewTone, std::to_string(value));
         ApplyAndSave();
+    }
+}
+
+void MainWindow::MicCheckRow(float scale) {
+    // Followups-3 ("mic is not working" report): a 2 s probe of the SELECTED
+    // capture device on a throwaway MiniaudioCapture, so "the device is
+    // silent/broken" is separable from "the dictation wiring is broken" and
+    // the user gets a definitive answer without restarting or dictating.
+    // Latch first: the worker finished when the latch flipped, so a re-test
+    // can safely join the (already finished) previous worker.
+    {
+        std::lock_guard<std::mutex> lock(mic_test_latch_mutex_);
+        if (mic_test_latch_ready_) {
+            mic_test_latch_ready_ = false;
+            mic_test_opened_ = mic_test_latch_opened_;
+            mic_test_peak_ = mic_test_latch_peak_;
+            mic_test_error_ = mic_test_latch_error_;
+            mic_test_busy_.store(false);
+        }
+    }
+    const bool busy = mic_test_busy_.load();
+    lwf::ui::widgets::Row("##card_mic_check", "Microphone check",
+                          "Records 2 seconds from the selected device. Nothing is stored.",
+                          150.0f * scale, scale, *current_palette_);
+    if (busy) {
+        ImGui::BeginDisabled();
+    }
+    if (ImGui::Button("Test microphone##mic_test")) {
+        if (!mic_test_busy_.exchange(true)) {
+            if (mic_test_worker_.joinable()) {
+                mic_test_worker_.join();  // finished: the latch was consumed
+            }
+            const std::string device = settings_.GetString("mic_device");
+            mic_test_worker_ = std::thread([this, device] {
+                bool opened = false;
+                double peak = 0.0;
+                std::string error;
+                try {
+                    // Fresh probe instance for the selected device: no restart
+                    // needed, and on Windows WASAPI shared mode it can run
+                    // alongside the engine's capture of the same endpoint.
+                    MiniaudioCapture probe(16000, 1, device);
+                    probe.Start();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+                    probe.Stop();
+                    const std::vector<float> pcm = probe.GetRecordedAudio();
+                    for (float sample : pcm) {
+                        peak = std::max(peak, static_cast<double>(std::fabs(sample)));
+                    }
+                    opened = true;
+                    // Privacy: only the level leaves the probe - no audio is
+                    // stored, logged or sent (same policy as the engine's
+                    // silent-mic gate).
+                    char line[96];
+                    std::snprintf(line, sizeof(line), "mic check: peak %.5f over %zu samples",
+                                  peak, pcm.size());
+                    lwf::Log::Info(line);
+                } catch (const std::exception& e) {
+                    error = e.what();
+                    lwf::Log::Warning(std::string("mic check failed: ") + e.what());
+                }
+                std::lock_guard<std::mutex> latch_lock(mic_test_latch_mutex_);
+                mic_test_latch_ready_ = true;
+                mic_test_latch_opened_ = opened;
+                mic_test_latch_peak_ = peak;
+                mic_test_latch_error_ = error;
+            });
+        }
+    }
+    if (busy) {
+        ImGui::EndDisabled();
+    }
+    lwf::ui::widgets::RowEnd(scale);
+
+    // Verdict line under the row (mirrors the model-error pattern used by
+    // the model-path card above).
+    if (busy) {
+        ImGui::TextColored(Color(current_palette_->muted), "Listening for 2 seconds...");
+    } else if (!mic_test_error_.empty()) {
+        ImGui::TextColored(Color(current_palette_->err), "Could not open the microphone: %s",
+                           mic_test_error_.c_str());
+    } else if (mic_test_opened_) {
+        const SettingsUiModel::MicTestStatus status =
+            SettingsUiModel::MicTestStatusFor(mic_test_peak_);
+        char verdict[192];
+        std::snprintf(verdict, sizeof(verdict), "%s Peak %.0f%%.",
+                      SettingsUiModel::MicTestAdvice(status), mic_test_peak_ * 100.0);
+        std::uint32_t color = current_palette_->text;
+        if (status == SettingsUiModel::MicTestStatus::Silent) {
+            color = current_palette_->err;
+        } else if (status == SettingsUiModel::MicTestStatus::Quiet) {
+            color = current_palette_->warn;
+        } else {
+            color = current_palette_->ok;
+        }
+        ImGui::TextColored(Color(color), "%s", verdict);
     }
 }
 
@@ -1960,6 +2063,11 @@ void MainWindow::DrawSpeechPage(float scale) {
                      Pack(current_palette_->border), metrics::radius_control * scale);
         ImGui::Dummy(ImVec2(meter_w, meter_h));
         lwf::ui::widgets::RowEnd(scale);
+    }
+    {
+        // Followups-3: in-app mic probe - see MicCheckRow. Lives right under
+        // the level meter so "the bar does not move" has a next step.
+        MicCheckRow(scale);
     }
     ImGui::Dummy(ImVec2(0.0f, metrics::space_m * scale));
 

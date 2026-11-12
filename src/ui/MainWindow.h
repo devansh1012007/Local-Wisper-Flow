@@ -246,6 +246,9 @@ private:
     void DoubleRow(const char* key, const char* id, float min_value, float max_value,
                    const char* format);
     void VolumeRow();
+    // Microphone check card (Settings > Speech): spawns the 2 s probe worker
+    // and renders the button + verdict. Called from DrawSpeechPage only.
+    void MicCheckRow(float scale);
     void BoolRow(const char* key, const char* label, const char* helper, float scale);
     void StringFieldRow(const char* key, TextField& field, const char* id, bool restart);
 
@@ -365,4 +368,27 @@ private:
     // called per frame; mic_devices_loaded_ latches the one enumeration.
     std::vector<std::string> mic_devices_;
     bool mic_devices_loaded_ = false;
+
+    // Microphone check (followups-3, "mic is not working" report): a 2 s
+    // probe on a throwaway MiniaudioCapture instance for the SELECTED device
+    // (no restart needed), so "device is silent" is separable from "engine
+    // wiring is broken". The worker opens its own device - on Windows WASAPI
+    // shared mode two clients may hold the same endpoint, so it is safe to
+    // run while the engine captures - and writes only the PCM peak plus an
+    // error string into the mutex-guarded latch. Privacy: the level is the
+    // only thing that leaves the probe (no audio is stored, logged or sent).
+    // INVARIANT: mic_test_busy_ is touched only on the UI thread (set on
+    // spawn, cleared on consume); the worker never touches ImGui, settings
+    // or the store.
+    std::atomic<bool> mic_test_busy_{false};
+    std::mutex mic_test_latch_mutex_;
+    bool mic_test_latch_ready_ = false;       // guarded by latch mutex
+    bool mic_test_latch_opened_ = false;      // guarded by latch mutex
+    double mic_test_latch_peak_ = 0.0;        // guarded by latch mutex
+    std::string mic_test_latch_error_;        // guarded by latch mutex
+    std::thread mic_test_worker_;             // joined in ~MainWindow
+    // Consumed verdict (UI thread only): set when the latch is taken.
+    bool mic_test_opened_ = false;
+    double mic_test_peak_ = 0.0;
+    std::string mic_test_error_;
 };

@@ -44,4 +44,11 @@ ToneSpec ErrorTone() {
     return {220.0, 150, 1.0};
 }
 
+ToneSpec PreviewTone() {
+    // 523.25 Hz is middle C: a soft "ding" that cannot be confused with the
+    // start (880) / stop (660) / error (220) blips, and 160 ms is long enough
+    // to judge loudness at low amplitudes (60 ms was easy to miss entirely).
+    return {523.25, 160, 1.0};
+}
+
 }
