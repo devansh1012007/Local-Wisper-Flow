@@ -41,6 +41,7 @@
 #include "core/SttRouter.h"
 #include "core/UiBus.h"
 #include "core/UnavailableProviders.h"
+#include "core/VersionCheck.h"
 #include "llm/LocalLlamaProvider.h"
 #include "llm/OpenRouterModels.h"
 #include "llm/OpenRouterProvider.h"
