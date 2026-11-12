@@ -1,5 +1,6 @@
 #include "core/ConfigManager.h"
 
+#include <algorithm>
 #include <iostream>
 #include <string>
 
@@ -312,7 +313,7 @@ int main() {
 
         const std::string data_dir = GetDataDir();
         lwf::Log::Init(data_dir + "\\logs");
-        lwf::Log::Info(std::string("Local Wisper Flow ") + lwf::AppVersion() +
+        lwf::Log::Info(std::string("Echo flow ") + lwf::AppVersion() +
                        " starting, data dir " + data_dir);
 
         static std::atomic<int> g_fsm_diag{0};
@@ -683,6 +684,13 @@ int main() {
             overlay.SetScratchpadActivateHandler([&ui_bus] {
                 ui_bus.PostCommand(UiCommandType::OpenScratchpad);
             });
+            // Followups-2: right-click on the note icon removes it from the
+            // mini window; the Scratchpad page's flow-bar toggle adds it back.
+            overlay.SetScratchpadRemoveHandler([&config, &ui_bus] {
+                config.Store().SetBool("scratchpad_flow_bar", false);
+                config.Save();
+                ui_bus.PostCommand(UiCommandType::ApplySettings);
+            });
         } else {
             lwf::Log::Error("mini badge init failed; continuing without it");
         }
@@ -774,6 +782,24 @@ int main() {
                             scratchpad_editor.OpenNewNote();
                         } else {
                             scratchpad_editor.OpenNote(command.payload);
+                        }
+                        break;
+                    case UiCommandType::PreviewTone:
+                        // Followups-2 D1: the Volume slider asks for an
+                        // immediate sample at the dragged amplitude so the
+                        // change is audible on the spot (the next dictation
+                        // tone uses it too, via the ApplySettings drain).
+                        {
+                            double preview_volume = 0.0;
+                            try {
+                                preview_volume = std::stod(command.payload);
+                            } catch (const std::exception&) {
+                                preview_volume = 0.0;
+                            }
+                            preview_volume = std::clamp(preview_volume, 0.0, 1.0);
+                            if (config.Store().GetBool("sound_enabled")) {
+                                tone_player.Play(ToneGenerator::StartTone(), preview_volume);
+                            }
                         }
                         break;
                 }
@@ -881,7 +907,7 @@ int main() {
 int main() {
     try {
         ConfigManager config("config.json");
-        std::cout << "Local Wisper Flow core build: hotkey=" << config.HotkeyCode()
+        std::cout << "Echo flow core build: hotkey=" << config.HotkeyCode()
                   << " model=" << config.WhisperModelPath()
                   << " stt_provider=" << config.SttProvider()
                   << " stt_consent=" << (config.SttConsentAccepted() ? "true" : "false")

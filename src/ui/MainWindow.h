@@ -255,6 +255,7 @@ private:
                 const char* format);
     void DoubleRow(const char* key, const char* id, float min_value, float max_value,
                    const char* format);
+    void VolumeRow();
     void BoolRow(const char* key, const char* label, const char* helper, float scale);
     void StringFieldRow(const char* key, TextField& field, const char* id, bool restart);
 
@@ -274,6 +275,7 @@ private:
     SettingsTab settings_tab_ = SettingsTab::General;
     bool restart_needed_ = false;
     float saved_until_ = -1.0f;
+    float tone_preview_until_ = -1.0f;  // Volume-row sample throttle (Followups-2 D1)
     float copied_until_ = -1.0f;  // "Copied" dwell after Copy; reset on new transcript
     bool page_focus_pending_ = false;  // restore keyboard focus after switch/re-show
     double dpi_scale_ = 1.0;

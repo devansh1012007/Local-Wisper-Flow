@@ -184,6 +184,36 @@ TEST_CASE("scratchpad overlay button wakes the badge and routes the command") {
     CHECK(uibus_h.find("OpenScratchpad") != std::string::npos);
 }
 
+// Source pin (followups-2): right-clicking the note icon removes it from the
+// mini window without a trip to the Scratchpad page. The removal flips
+// scratchpad_flow_bar off, saves, and re-applies through the same drain that
+// the page toggle uses, so the window re-hugs to the dot-only extent.
+TEST_CASE("mini window note icon is removable with a right click") {
+    const std::string overlay_h = ReadSource("src/ui/Overlay.h");
+    REQUIRE_FALSE(overlay_h.empty());
+    CHECK(overlay_h.find("SetScratchpadRemoveHandler") != std::string::npos);
+    CHECK(overlay_h.find("on_scratchpad_remove_") != std::string::npos);
+
+    const std::string overlay_cpp = ReadSource("src/ui/Overlay.cpp");
+    REQUIRE_FALSE(overlay_cpp.empty());
+    CHECK(overlay_cpp.find("SetScratchpadRemoveHandler") != std::string::npos);
+    CHECK(overlay_cpp.find("ImGui::IsItemClicked(1) && on_scratchpad_remove_") != std::string::npos);
+
+    const std::string main_cpp = ReadSource("src/main.cpp");
+    REQUIRE_FALSE(main_cpp.empty());
+    const std::size_t wiring = main_cpp.find("SetScratchpadRemoveHandler");
+    REQUIRE(wiring != std::string::npos);
+    const std::string wiring_span = main_cpp.substr(wiring, 400);
+    CHECK(wiring_span.find("SetBool(\"scratchpad_flow_bar\", false)") != std::string::npos);
+    CHECK(wiring_span.find("config.Save()") != std::string::npos);
+    CHECK(wiring_span.find("UiCommandType::ApplySettings") != std::string::npos);
+
+    // The Scratchpad page surfaces the gesture next to the flow-bar toggle.
+    const std::string page_cpp = ReadSource("src/ui/pages/ScratchpadPage.cpp");
+    REQUIRE_FALSE(page_cpp.empty());
+    CHECK(page_cpp.find("Right-click it to remove") != std::string::npos);
+}
+
 TEST_CASE("scratchpad flow bar key defaults off and persists") {
     const std::string dir = TestDir("cfg");
     const std::string cfg = (std::filesystem::path(dir) / "config.json").string();

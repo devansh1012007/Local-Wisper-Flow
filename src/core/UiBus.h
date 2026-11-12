@@ -17,6 +17,7 @@ enum class UiCommandType {
     Quit,
     StartTransform,
     OpenScratchpad,
+    PreviewTone,
 };
 
 struct UiCommand {

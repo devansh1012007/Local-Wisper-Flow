@@ -64,6 +64,10 @@ struct TransformFixture {
     std::unique_ptr<DictationEngine> engine;
 
     explicit TransformFixture(bool enabled) {
+        // Followups-2: no built-ins are seeded any more, so the fixture owns
+        // its slot-1 transform like a user would.
+        std::string error;
+        store.SetSlot(1, "Test Polish", "Improve the text {text}", error);
         store.SetEnabled(enabled);
         engine = MakeEngine(h);
         engine->SetTransformStore(&store);
@@ -602,6 +606,9 @@ TEST_CASE("transform hung llm times out and engine keeps processing") {
 TEST_CASE("transform without llm or capture reports model missing") {
     Harness h;
     TransformStore store;
+    // Followups-2: nothing is seeded, so the test fills slot 1 itself.
+    std::string error;
+    REQUIRE(store.SetSlot(1, "Test Polish", "Improve the text {text}", error));
     store.SetEnabled(true);
     auto engine = MakeEngine(h);
     engine->SetTransformStore(&store);

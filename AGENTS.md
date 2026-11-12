@@ -6,6 +6,18 @@ opt-in cloud STT path behind a consent gate. Reconstructed rule sheet: the
 original was lost with the dev-environment reset; the paragraphs below are
 recovered verbatim from the S9 documentation patch where noted.
 
+- Branding (followups-2): the app's user-visible name is "Echo flow" (wordmark,
+  window title, tray, About, crash/log headers). Internal identifiers - repo
+  name, data dir `%APPDATA%\LocalWisperFlow`, registry run value, window class
+  names, HTTP user agent - deliberately keep the LocalWisperFlow spelling so
+  existing installs keep their config and data. The installer is not renamed
+  yet (user decision).
+- Default transforms (followups-2): nothing is seeded. TransformStore starts
+  with ten empty slots, no entry is `built_in`, and Load drops legacy
+  built_in-flagged entries (the retired Polish / Prompt Engineer) from
+  existing transforms.json files. All slots are user slots (Create New fills
+  the first empty one, Delete clears any). v1 arrays convert from slot 1.
+
 ## Build and gates
 
 ```sh

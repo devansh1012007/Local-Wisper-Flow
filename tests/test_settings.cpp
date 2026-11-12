@@ -257,3 +257,64 @@ TEST_CASE("main wiring shares LoadEngineSettings between startup and the ApplySe
     CHECK(drain_span.find("settings.sound_volume =") == std::string::npos);
     CHECK(drain_span.find("settings.min_hold_ms =") == std::string::npos);
 }
+
+namespace {
+
+std::string ReadSource(const char* path) {
+    std::ifstream file(path);
+    if (!file) {
+        return {};
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
+}  // namespace
+
+// Source pin (followups-2 D1): the volume knob must commit WHILE the slider
+// moves (a missed deactivate event can no longer roll the value back) and the
+// row must ask for an immediate sample tone so the change is audible on the
+// spot. The engine half of the chain is pinned behaviourally in
+// test_tone_volume_live.cpp.
+TEST_CASE("volume slider commits live and posts a preview tone") {
+    const std::string main_src = ReadSource("src/main.cpp");
+    REQUIRE_FALSE(main_src.empty());
+
+    // The PreviewTone drain clamps the payload and honours the sound toggle.
+    const std::size_t preview = main_src.find("case UiCommandType::PreviewTone:");
+    REQUIRE(preview != std::string::npos);
+    const std::string preview_span = main_src.substr(preview, 1100);
+    CHECK(preview_span.find("std::stod(command.payload)") != std::string::npos);
+    CHECK(preview_span.find("std::clamp(preview_volume, 0.0, 1.0)") != std::string::npos);
+    CHECK(preview_span.find("GetBool(\"sound_enabled\")") != std::string::npos);
+    CHECK(preview_span.find("tone_player.Play(ToneGenerator::StartTone(), preview_volume)") !=
+          std::string::npos);
+
+    const std::string window_src = ReadSource("src/ui/MainWindow.cpp");
+    REQUIRE_FALSE(window_src.empty());
+
+    // The Volume row is its own control: live commit while edited plus a
+    // throttled sample, and the same commit + final sample on release.
+    const std::size_t row = window_src.find("void MainWindow::VolumeRow()");
+    REQUIRE(row != std::string::npos);
+    const std::string row_span = window_src.substr(row, 1200);
+    CHECK(row_span.find("ImGui::SliderFloat(\"##sound_volume\"") != std::string::npos);
+    CHECK(row_span.find("if (ImGui::IsItemEdited())") != std::string::npos);
+    CHECK(row_span.find("SetDouble(\"sound_volume\"") != std::string::npos);
+    CHECK(row_span.find("UiCommandType::PreviewTone") != std::string::npos);
+    CHECK(row_span.find("tone_preview_until_") != std::string::npos);
+
+    // DoubleRow gained the same live-commit guard for every other knob.
+    const std::size_t double_row = window_src.find("void MainWindow::DoubleRow(");
+    REQUIRE(double_row != std::string::npos);
+    const std::string double_span = window_src.substr(double_row, 900);
+    CHECK(double_span.find("if (ImGui::IsItemEdited())") != std::string::npos);
+
+    // The General page routes the Volume row through the new control.
+    const std::size_t call_site = window_src.find("Row(\"##row_sound_volume\"");
+    REQUIRE(call_site != std::string::npos);
+    const std::string call_span = window_src.substr(call_site, 400);
+    CHECK(call_span.find("VolumeRow();") != std::string::npos);
+    CHECK(call_span.find("DoubleRow(\"sound_volume\"") == std::string::npos);
+}

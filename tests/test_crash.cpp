@@ -32,7 +32,7 @@ TEST_CASE("crash report contains version exception code fsm state and log tail")
                                                                   "access violation while injecting");
     REQUIRE_FALSE(path.empty());
     const std::string content = ReadFile(path);
-    CHECK(content.find("Local Wisper Flow 0.1.0") != std::string::npos);
+    CHECK(content.find("Echo flow 0.1.0") != std::string::npos);
     CHECK(content.find("0xC0000005") != std::string::npos);
     CHECK(content.find("fsm_state: 3") != std::string::npos);
     CHECK(content.find("access violation while injecting") != std::string::npos);

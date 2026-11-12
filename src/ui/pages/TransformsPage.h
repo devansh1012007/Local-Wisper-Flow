@@ -44,9 +44,10 @@ inline constexpr const char* kHowItWorksBody =
     "1. Select the text you want to change. 2. Press the transform shortcut. 3. Review the change "
     "with the diff shortcut.";
 inline constexpr const char* kD5SelectionTag = "<selection>{text}</selection>";
-inline constexpr const char* kPolishCardCopy = "Improve clarity and conciseness";
-inline constexpr const char* kPromptEngineerCardCopy = "Constructs optimal prompts";
-inline constexpr int kMaxCustomCards = 8;
+// Followups-2: the shipped Polish / Prompt Engineer built-ins are
+// retired with their card copy; every card is a user transform now,
+// so all ten slots are creatable.
+inline constexpr int kMaxCustomCards = 10;
 inline constexpr std::size_t kCardSubtitleLimit = 60;
 
 inline std::string TrimCopy(const std::string& text) {
@@ -263,23 +264,15 @@ inline std::string TruncateCodePoints(const std::string& text, std::size_t limit
 }
 
 inline std::string CardDescription(const TransformStore::Entry& entry) {
-    // Followups D5: the built-in friendly copy shows only while the stored
-    // prompt is still the shipped default; an edited Polish / Prompt
-    // Engineer surfaces its real prompt like any custom card, so an edit is
-    // visible on the grid (edits always took effect at run time).
-    if (entry.slot == 1 && entry.prompt == TransformStore::DefaultPolishPrompt()) {
-        return kPolishCardCopy;
-    }
-    if (entry.slot == 2 && entry.prompt == TransformStore::DefaultPromptEngineerPrompt()) {
-        return kPromptEngineerCardCopy;
-    }
+    // Followups-2: with the built-ins retired every card shows its real
+    // prompt, truncated to the subtitle limit.
     return TruncateCodePoints(CollapseWhitespace(entry.prompt), kCardSubtitleLimit);
 }
 
 inline int CountCustoms(const std::vector<TransformStore::Entry>& entries) {
     int count = 0;
     for (const TransformStore::Entry& entry : entries) {
-        if (entry.slot > 2 && !TrimCopy(entry.name).empty()) {
+        if (!TrimCopy(entry.name).empty()) {
             ++count;
         }
     }
@@ -320,7 +313,7 @@ inline std::string BuildChord(bool win, bool ctrl, bool alt, bool shift,
 
 inline std::string FirstEmptyCustomSlot(const std::vector<TransformStore::Entry>& entries) {
     for (const TransformStore::Entry& entry : entries) {
-        if (entry.slot > 2 && TrimCopy(entry.name).empty()) {
+        if (TrimCopy(entry.name).empty()) {
             return std::to_string(entry.slot);
         }
     }
@@ -331,7 +324,6 @@ inline std::string FirstEmptyCustomSlot(const std::vector<TransformStore::Entry>
 
 struct ResetPreview {
     int customs_deleted = 0;
-    bool restores_built_ins = true;
 };
 
 class TransformsPage {
@@ -373,7 +365,7 @@ public:
     std::vector<TransformStore::Entry> Cards() {
         std::vector<TransformStore::Entry> cards;
         for (const TransformStore::Entry& entry : store_.Entries()) {
-            if (entry.slot <= 2 || !transforms::TrimCopy(entry.name).empty()) {
+            if (!transforms::TrimCopy(entry.name).empty()) {
                 cards.push_back(entry);
             }
         }
@@ -507,20 +499,8 @@ public:
     }
 
     bool DeleteEdit() {
-        if (!IsEditing() || editing_slot_ <= 2) {
-            return false;
-        }
-        std::string set_error;
-        if (!store_.SetSlot(editing_slot_, "", "", set_error)) {
-            edit_error_ = set_error;
-            return false;
-        }
-        store_.Save();
-        CloseEditor();
-        return true;
-    }
-
-    bool ReturnToDefault() {
+        // Followups-2: every slot is a user slot, so Delete works
+        // everywhere (the slot-1/2 guard went with the built-ins).
         if (!IsEditing()) {
             return false;
         }
@@ -572,7 +552,6 @@ public:
     ResetPreview ResetPlan() {
         ResetPreview plan;
         plan.customs_deleted = CountCustoms();
-        plan.restores_built_ins = true;
         return plan;
     }
 
@@ -618,19 +597,10 @@ public:
         diff_modal_.Close();
     }
 
-    // Banner "Try it out" shortcut: fixed polish slot (slot 1), kept
-    // byte-identical for the existing polish pin. Per-card Run buttons go
-    // through RunSlot(entry.slot) for their real slot.
-    bool TryItOut() {
-        if (bus_ == nullptr) {
-            return false;
-        }
-        bus_->PostCommand(UiCommandType::StartTransform, "1");
-        return true;
-    }
-
     // T10c per-slot Run path: posts the caller's real slot so
     // engine.RequestTransform(N) reaches slot N (main.cpp stoi consumer).
+    // (The retired banner's fixed-slot TryItOut helper went away with
+    // the built-ins in followups-2: slot 1 is a user slot now.)
     bool RunSlot(int slot) {
         if (bus_ == nullptr) {
             return false;

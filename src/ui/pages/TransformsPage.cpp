@@ -192,13 +192,13 @@ void TransformsPage::DrawMyTransforms(float scale, const Palette& palette) {
         ImGui::PopFont();
     }
     ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
-    const float reset_w = ImGui::CalcTextSize("Reset to defaults").x + 32.0f * scale;
+    const float reset_w = ImGui::CalcTextSize("Reset all").x + 32.0f * scale;
     ImGui::PopFont();
     const float avail = ImGui::GetContentRegionAvail().x;
     float cursor_x = start.x + avail - reset_w -
                      (ShowCreateCard() ? (studio_metrics::gap_section * scale + create_w) : 0.0f);
     ImGui::SetCursorScreenPos(ImVec2(cursor_x, start.y));
-    if (widgets::OutlinePill("transforms_reset", "Reset to defaults", true, scale, palette)) {
+    if (widgets::OutlinePill("transforms_reset", "Reset all", true, scale, palette)) {
         reset_modal_.Open();
     }
     ImGui::SameLine(0.0f, studio_metrics::gap_section * scale);
@@ -296,7 +296,8 @@ void TransformsPage::DrawCard(const TransformStore::Entry& entry, float width, f
     // hover/click, and the overlay covers the rest of the card. Run is
     // anchored to the card's bottom edge.
     // Reserve exactly the LightButton height (40px tokens; not hit_size).
-    // Run is disabled while opted out (TryItOut is unreachable then too);
+    // Run is disabled while opted out; opening the editor stays
+    // available, as before.
     // opening the editor stays available, as before.
     const bool run_enabled = OptIn();
     if (!run_enabled) {
@@ -465,21 +466,14 @@ void TransformsPage::DrawEditor(float scale, const Palette& palette) {
             ImGui::PopFont();
         }
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_inline * scale));
-        const int sheet_slot = editing_slot_;
         if (widgets::PrimaryButton("transforms_save", "Save", scale, palette)) {
             if (SaveEdit()) {
                 toast_.Show("Saved", "");
             }
         }
         ImGui::SameLine(0.0f, studio_metrics::gap_section * scale);
-        if (sheet_slot > 2) {
-            if (widgets::LightButton("transforms_delete", "Delete", scale, palette)) {
-                DeleteEdit();
-            }
-        } else {
-            if (widgets::LightButton("transforms_restore", "Restore default", scale, palette)) {
-                ReturnToDefault();
-            }
+        if (widgets::LightButton("transforms_delete", "Delete", scale, palette)) {
+            DeleteEdit();
         }
         if (recording_) {
             ImGui::EndDisabled();
@@ -501,7 +495,7 @@ void TransformsPage::DrawResetConfirm(float scale, const Palette& palette) {
     if (reset_modal_.Begin("Reset transforms?", scale)) {
         const ResetPreview plan = ResetPlan();
         ImGui::PushFont(nullptr, studio_metrics::font_card_title_px);
-        ImGui::TextUnformatted("Reset to defaults?");
+        ImGui::TextUnformatted("Reset all transforms?");
         ImGui::PopFont();
         ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
         std::string deleted;
@@ -517,7 +511,7 @@ void TransformsPage::DrawResetConfirm(float scale, const Palette& palette) {
         ImGui::PopTextWrapPos();
         // Intentional native grid reuse: metrics::space_xs (4px) has no studio twin; this site alone keeps the native token.
         ImGui::Dummy(ImVec2(0.0f, metrics::space_xs * scale));
-        ImGui::TextUnformatted("Polish and Prompt Engineer return to their defaults.");
+        ImGui::TextUnformatted("Every slot ends up empty.");
         ImGui::PopFont();
         ImGui::Dummy(ImVec2(0.0f, studio_metrics::gap_section * scale));
         if (widgets::LightButton("transforms_reset_cancel", "Cancel", scale, palette)) {

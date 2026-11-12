@@ -262,6 +262,10 @@ void Overlay::SetScratchpadActivateHandler(std::function<void()> handler) {
     on_scratchpad_activate_ = std::move(handler);
 }
 
+void Overlay::SetScratchpadRemoveHandler(std::function<void()> handler) {
+    on_scratchpad_remove_ = std::move(handler);
+}
+
 bool Overlay::Visible() const {
     return state_ != OverlayModel::PillState::Hidden;
 }
@@ -522,6 +526,14 @@ void Overlay::DrawBadge() {
         const bool note_pressed = ImGui::InvisibleButton("##note", ImVec2(note_size, note_size));
         if (note_pressed && on_scratchpad_activate_) {
             on_scratchpad_activate_();
+            dirty_ = true;
+        }
+        // Followups-2: right-click removes the icon where it lives instead
+        // of sending the user hunting for the Scratchpad page toggle. The
+        // click only arrives while pass-through is off (near_note), so no
+        // extra hit plumbing is needed.
+        if (ImGui::IsItemClicked(1) && on_scratchpad_remove_) {
+            on_scratchpad_remove_();
             dirty_ = true;
         }
         if (ImGui::IsItemHovered()) {

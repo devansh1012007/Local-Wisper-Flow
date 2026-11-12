@@ -139,7 +139,7 @@ inline constexpr float status_square = 8.0f;      // Hairline status square 8x8 
 // design px at 1.0 scale; callers apply typography through scoped fonts
 // (ImGui::PushFont(nullptr, design_px) + ImGui::PopFont) and the window
 // DPI factor once via style.FontScaleMain in ApplyImGuiStyle.
-inline constexpr float font_wordmark_px = 24.0f;   // wordmark "Local Wisper Flow" (title)
+inline constexpr float font_wordmark_px = 24.0f;   // wordmark "Echo flow" (title)
 inline constexpr float font_page_title_px = 24.0f; // page title (title)
 inline constexpr float font_card_title_px = 14.0f; // card title (section)
 inline constexpr float font_body_px = 13.0f;       // body text (body)

@@ -197,7 +197,7 @@ void WindowsTray::Start() {
         data.uCallbackMessage = kWmTrayIcon;
         LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1));
         data.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));
-        wcscpy_s(data.szTip, L"Local Wisper Flow");
+        wcscpy_s(data.szTip, L"Echo flow");
         Shell_NotifyIconW(NIM_ADD, &data);
 
         UINT taskbar_created = RegisterWindowMessageW(L"TaskbarCreated");
@@ -236,7 +236,7 @@ void WindowsTray::NotifyError(ErrorCode code, const std::string& detail) {
     data.uFlags = NIF_INFO;
     const std::wstring wide(detail.begin(), detail.end());
     wcsncpy_s(data.szInfo, wide.c_str(), _TRUNCATE);
-    wcsncpy_s(data.szInfoTitle, L"Local Wisper Flow", _TRUNCATE);
+    wcsncpy_s(data.szInfoTitle, L"Echo flow", _TRUNCATE);
     data.dwInfoFlags = NIIF_ERROR;
     Shell_NotifyIconW(NIM_MODIFY, &data);
     lwf::Log::Error("tray notify: " + std::string(ToString(code)) + " " + detail);

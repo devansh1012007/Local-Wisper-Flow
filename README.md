@@ -1,9 +1,13 @@
-# Local Wisper Flow
+# Echo flow (repo: Local-Wisper-Flow)
 
 Local-first voice dictation for Windows. Hold a hotkey, speak, and the text
 lands in whatever app you are typing in. Whisper speech-to-text and an
 optional local LLM run on this machine; a cloud STT provider is available
 behind an explicit consent gate (see "Cloud speech-to-text" below).
+
+The app presents itself as "Echo flow" (window title, wordmark, tray); the
+repository, data directory and registry identifiers keep the LocalWisperFlow
+spelling so existing installs keep their config and history.
 
 - **Press-to-talk dictation** with VAD-gated capture, a mini overlay badge and
   a full window with top-strip navigation (Dear ImGui).
