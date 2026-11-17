@@ -51,6 +51,44 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  linux-ubuntu-24:
+    # Ubuntu port L0: pinned 24.04 runner, noble dep install (the canonical
+    # list lives in scripts/install_ubuntu_deps.sh + docs/UBUNTU_DEPS.md -
+    # an unknown package name fails this job, which is the R5 check),
+    # portable build, ctest and an Xvfb smoke run. The smoke target is the
+    # current stub binary; it becomes the real GUI smoke at L4.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Install cmake (repo CI pattern, parity with the linux job)
+        run: python3 -m pip install --user cmake
+
+      - name: "Install desktop deps (canonical list: docs/UBUNTU_DEPS.md)"
+        run: sudo sh scripts/install_ubuntu_deps.sh
+
+      - name: Cache dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: build/_deps
+          key: linux24-deps-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+
+      - name: Configure (portable core; LWF_BUILD_FULL stays off on Linux)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j4
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: GUI smoke under Xvfb (stub app until L4)
+        run: |
+          set -euo pipefail
+          xvfb-run -a ./build/EchoFlow | tee /tmp/lwf-smoke.out
+          grep -q "Echo flow core build" /tmp/lwf-smoke.out
+          echo "smoke: app binary links, runs with a display, banner OK"
+
   windows:
     runs-on: windows-2022
     steps:
