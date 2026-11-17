@@ -3404,7 +3404,12 @@ void MainWindow::DrawModelsPage(float scale) {
             ImGui::EndDisabled();
             if (installed) {
                 ImGui::SameLine();
-                ImGui::BeginDisabled(is_active || download_busy_.load());
+                // Catalog names feed filesystem paths (Set active writes
+                // "models/<name>" to config, Delete removes it on disk), so
+                // both buttons are disabled for names IsSafeFileName rejects
+                // and the click handlers re-check (defense in depth).
+                const bool name_safe = Onboarding::IsSafeFileName(model->name);
+                ImGui::BeginDisabled(is_active || download_busy_.load() || !name_safe);
                 const std::string activate_id = std::string("Set active##act_") + model->name;
                 if (ImGui::Button(activate_id.c_str())) {
                     settings_.SetString("whisper_model_path", stored_path);
@@ -3413,14 +3418,19 @@ void MainWindow::DrawModelsPage(float scale) {
                 }
                 ImGui::EndDisabled();
                 ImGui::SameLine();
-                ImGui::BeginDisabled(is_active || download_busy_.load());
+                ImGui::BeginDisabled(is_active || download_busy_.load() || !name_safe);
                 const std::string delete_id = std::string("Delete##del_") + model->name;
                 if (ImGui::Button(delete_id.c_str())) {
-                    std::error_code rm_ec;
-                    std::filesystem::remove(std::filesystem::path(destination), rm_ec);
-                    if (rm_ec) {
-                        lwf::Log::Error("Models page: delete " + destination + " failed (" +
-                                        rm_ec.message() + ")");
+                    if (!name_safe) {
+                        lwf::Log::Error("Models page: refused delete of unsafe catalog name '" +
+                                        model->name + "'");
+                    } else {
+                        std::error_code rm_ec;
+                        std::filesystem::remove(std::filesystem::path(destination), rm_ec);
+                        if (rm_ec) {
+                            lwf::Log::Error("Models page: delete " + destination + " failed (" +
+                                            rm_ec.message() + ")");
+                        }
                     }
                 }
                 ImGui::EndDisabled();
@@ -3485,7 +3495,11 @@ void MainWindow::DrawModelsPage(float scale) {
         ImGui::EndDisabled();
         if (installed) {
             ImGui::SameLine();
-            ImGui::BeginDisabled(is_active || download_busy_.load());
+            // Same name-safety gate as the Speech section above: the LLM
+            // delete/Set-active paths build the same class of filesystem
+            // paths from catalog names.
+            const bool name_safe = Onboarding::IsSafeFileName(model.name);
+            ImGui::BeginDisabled(is_active || download_busy_.load() || !name_safe);
             const std::string activate_id = std::string("Set active##act_llm_") + model.name;
             if (ImGui::Button(activate_id.c_str())) {
                 settings_.SetString("llm_model_path", stored_path);
@@ -3494,14 +3508,19 @@ void MainWindow::DrawModelsPage(float scale) {
             }
             ImGui::EndDisabled();
             ImGui::SameLine();
-            ImGui::BeginDisabled(is_active || download_busy_.load());
+            ImGui::BeginDisabled(is_active || download_busy_.load() || !name_safe);
             const std::string delete_id = std::string("Delete##del_llm_") + model.name;
             if (ImGui::Button(delete_id.c_str())) {
-                std::error_code rm_ec;
-                std::filesystem::remove(std::filesystem::path(destination), rm_ec);
-                if (rm_ec) {
-                    lwf::Log::Error("Models page: delete " + destination + " failed (" +
-                                    rm_ec.message() + ")");
+                if (!name_safe) {
+                    lwf::Log::Error("Models page: refused delete of unsafe catalog name '" +
+                                    model.name + "'");
+                } else {
+                    std::error_code rm_ec;
+                    std::filesystem::remove(std::filesystem::path(destination), rm_ec);
+                    if (rm_ec) {
+                        lwf::Log::Error("Models page: delete " + destination + " failed (" +
+                                        rm_ec.message() + ")");
+                    }
                 }
             }
             ImGui::EndDisabled();

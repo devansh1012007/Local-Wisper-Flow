@@ -268,6 +268,13 @@ TEST_CASE("download file name safety rejects separators and parents") {
     CHECK_FALSE(Onboarding::IsSafeFileName("a*b"));
     CHECK_FALSE(Onboarding::IsSafeFileName("trailing."));
     CHECK_FALSE(Onboarding::IsSafeFileName("trailing "));
+    // Path-traversal hardening (review fix): the Models page Delete button
+    // builds its file path from the catalog name, so embedded ".." is
+    // rejected even though separators alone would already block traversal.
+    CHECK_FALSE(Onboarding::IsSafeFileName("a..b.bin"));
+    CHECK_FALSE(Onboarding::IsSafeFileName("..evil.bin"));
+    CHECK_FALSE(Onboarding::IsSafeFileName("evil..bin"));
+    CHECK_FALSE(Onboarding::IsSafeFileName("...."));
 }
 
 TEST_CASE("models catalog parses optional display metadata with backward-compatible defaults") {

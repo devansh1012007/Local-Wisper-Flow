@@ -142,8 +142,12 @@ bool IsSafeFileName(const std::string& name) {
     }
     // Reject ':' (drive root / alternate data streams), Windows-invalid
     // filename chars <>"|?*, and path separators.
+    // Reject embedded ".." too (defense in depth): no legit catalog name
+    // contains a double dot, and the delete/Set-active paths on the Models
+    // page build filesystem paths from these names.
     // SECURITY: catalog names are attacker-influenced via models.json (Q2).
-    return name.find_first_of("/\\:<>\"|?*") == std::string::npos;
+    return name.find("..") == std::string::npos &&
+           name.find_first_of("/\\:<>\"|?*") == std::string::npos;
 }
 
 std::string ModelDisplayName(const ModelDownload& model) {
