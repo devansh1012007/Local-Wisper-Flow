@@ -13,6 +13,15 @@
 namespace lwf {
 
 // Redirect-stable catalog URL (release workflow publishes the file).
+// TRUST MODEL: latest.json travels over HTTPS from this repository's own
+// GitHub Releases but is NOT cryptographically signed. That is an accepted
+// limit because the check is inert by design: it compares version strings
+// and opens the download page in the browser; it never downloads, writes or
+// executes anything itself, and asset URLs from the manifest are only
+// accepted when https (EvaluateLatestJson) with a hard-coded fallback to
+// this repository's releases page. HARD GATE for any future change: an
+// automatic download/install path must first add a signature over the
+// manifest (e.g. minisign/cosign) and verify it before acting on it.
 inline constexpr const char* kLatestJsonUrl =
     "https://github.com/devansh1012007/Local-Wisper-Flow/releases/latest/download/latest.json";
 
