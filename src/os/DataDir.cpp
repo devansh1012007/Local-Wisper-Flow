@@ -48,6 +48,18 @@ std::filesystem::path MigrateDataDir(std::filesystem::path base) {
             return legacy;
         }
     }
+    // Review followup: when BOTH directories exist (the user restored a
+    // backup next to a fresh install, or a failed rename was resolved
+    // manually), the new location wins silently. Log the situation so it is
+    // visible in the log file instead of looking like lost data - the legacy
+    // folder is stale and safe to delete once the new one is confirmed good.
+    std::error_code both_ec;
+    if (std::filesystem::exists(legacy, both_ec) && std::filesystem::exists(target, both_ec)) {
+        lwf::Log::Warning("DataDir: both " + legacy.string() + " and " + target.string() +
+                          " exist; using " + target.string() + " and ignoring the legacy "
+                          "folder. After checking the new location has your config and models, "
+                          "the legacy folder can be deleted manually.");
+    }
     return target;
 }
 
