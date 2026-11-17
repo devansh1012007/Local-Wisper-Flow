@@ -26,7 +26,16 @@ ctest --test-dir build --output-on-failure
 sh scripts/check_hygiene.sh
 sh scripts/check_no_network.sh
 sh scripts/check_licenses.sh
+sh scripts/verify_model_hashes.sh --lint   # catalog sanity, no network
+sh scripts/verify_model_hashes.sh          # downloads every model, sha256-checks
 ```
+
+The full `verify_model_hashes.sh` run downloads ~3.3 GB once (kept in
+`$TMPDIR/lwf-model-verify`, re-run only retries failures). Do not ship a
+release whose catalog entries have not passed it: the in-app downloader
+refuses a hash mismatch, and a release pointing at unverified bytes breaks
+every new install. URLs must stay pinned to 40-hex commit revisions - the
+lint step fails on any moving `resolve/main` URL.
 
 ## 3. Tag and push
 
