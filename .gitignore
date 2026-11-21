@@ -12,3 +12,11 @@ tests/data/
 transforms_test_tmp.json
 build-linux/
 build-full/
+
+# Build artifacts, releases, and cached dependencies
+/dist/
+/_deps-cache/
+/_deps-src/
+*.exe
+*.gguf
+*.bin
