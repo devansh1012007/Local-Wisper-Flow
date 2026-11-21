@@ -68,16 +68,11 @@ bool HasTrigger(const std::vector<SnippetStore::Entry>& entries, const std::stri
 
 }
 
-TEST_CASE("snippets page banner copy pins the example pair and existing subtitle") {
-    CHECK(std::string(lwf::ui::pages::kSnippetsBannerExampleTrigger) == "my booking link");
-    CHECK(std::string(lwf::ui::pages::kSnippetsBannerExampleExpansion) ==
-          "https://example.com/book");
-    CHECK(std::string(lwf::ui::pages::kSnippetsBannerHeadline) == "Reusable phrases.");
+TEST_CASE("snippets page copy pins the add label and the retired banner is gone") {
     CHECK(std::string(lwf::ui::pages::kSnippetsAddLabel) == "Add new snippet");
-    CHECK(lwf::ui::pages::VisibleBanner(lwf::ui::pages::SnippetsPageState{}));
-    lwf::ui::pages::SnippetsPageState closed;
-    closed.banner_closed = true;
-    CHECK_FALSE(lwf::ui::pages::VisibleBanner(closed));
+    // Followups D3: the page-top banner was removed; its constants and the
+    // banner_closed state must not come back.
+    CHECK(std::string(lwf::ui::pages::kSnippetsEmptyCopy) == "No snippets yet.");
 }
 
 TEST_CASE("snippets page row text joins trigger and expansion with the arrow") {
@@ -328,21 +323,24 @@ TEST_CASE("snippets page sources stay off the font scale ban and carry the brief
     }
     CHECK(header.find("#include \"imgui.h\"") == std::string::npos);
     CHECK(header.find("PushFont") == std::string::npos);
-    // T-004 pin flip (P-005): typography must go through design-px tokens. The
-    // 15px row text maps to metrics::font_card_title_px and the 13px detail
-    // text to studio_metrics::font_helper_px (same-value tokens), so the old
-    // metrics ban is reversed and both vocabularies are required. Anchored
-    // form: a loose "metrics::font_" substring would match studio_metrics::
-    // alone and prove nothing.
+    // T-004 pin flip (P-005) + W2-IMPL-02: typography must go through
+    // design-px tokens. The 15px row text maps to
+    // studio_metrics::font_card_title_px and the 13px detail text to
+    // studio_metrics::font_helper_px (same-value tokens), so the old
+    // metrics requirement is reversed and studio fonts are required.
+    // Anchored form: a loose "metrics::font_" substring would match
+    // studio_metrics:: alone and prove nothing.
     CHECK(impl.find("PushFont(nullptr, studio_metrics::") != std::string::npos);
-    const bool has_metrics_font =
-        impl.find("PushFont(nullptr, metrics::font_") != std::string::npos ||
-        impl.find("PushFont(nullptr, lwf::ui::metrics::font_") != std::string::npos;
-    CHECK(has_metrics_font);
+    const bool has_studio_font =
+        impl.find("PushFont(nullptr, studio_metrics::font_") != std::string::npos ||
+        impl.find("PushFont(nullptr, lwf::ui::studio_metrics::font_") !=
+            std::string::npos;
+    CHECK(has_studio_font);
     CHECK(impl.find("PushFont(nullptr, 15.0f)") == std::string::npos);
     CHECK(impl.find("PushFont(nullptr, 13.0f)") == std::string::npos);
-    CHECK(header.find("my booking link") != std::string::npos);
-    CHECK(header.find("https://example.com/book") != std::string::npos);
+    // Followups D3: the banner example pair ("my booking link" ->
+    // "https://example.com/book") was removed with the page-top banner.
+    CHECK(header.find("my booking link") == std::string::npos);
     CHECK(header.find("Add new snippet") != std::string::npos);
     CHECK(header.find("Edit snippet") != std::string::npos);
     CHECK(header.find("No snippets yet.") != std::string::npos);
@@ -353,13 +351,25 @@ TEST_CASE("snippets page sources stay off the font scale ban and carry the brief
     CHECK(impl.find("What to say") != std::string::npos);
     CHECK(impl.find("Trigger") != std::string::npos);
     CHECK(impl.find("Expansion") != std::string::npos);
-    CHECK(impl.find("\xE2\x86\x92") != std::string::npos);
+    // Followups D3: the arrow glyph and the Chip widget were banner-only;
+    // the pencil glyph (row edit button) stays.
     CHECK(impl.find("\xE2\x9C\x8E") != std::string::npos);
     CHECK(impl.find("LightButton") != std::string::npos);
     CHECK(impl.find("PrimaryButton") != std::string::npos);
-    CHECK(impl.find("Chip") != std::string::npos);
+    CHECK(impl.find("Chip") == std::string::npos);
     CHECK(impl.find("IconButton") != std::string::npos);
     CHECK(impl.find("editor_sheet_") != std::string::npos);
     CHECK(impl.find("kSnippetsUndoAction") != std::string::npos);
     CHECK(impl.find("IsItemClicked") == std::string::npos);
+    // T10b F1: every custom draw and widget call threads the live palette.
+    CHECK(header.find("Draw(float scale, const lwf::ui::Palette") != std::string::npos);
+    CHECK(impl.find("kLightPalette") == std::string::npos);
+    CHECK(impl.find("palette.") != std::string::npos);
+    CHECK(impl.find("Color(palette.bg)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.border)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.muted)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.text)") != std::string::npos);
+    CHECK(impl.find("Pack(palette.accent)") != std::string::npos);
+    CHECK(impl.find("Color(palette.err)") != std::string::npos);
+    CHECK(impl.find("Color(kLightPalette.err)") == std::string::npos);
 }

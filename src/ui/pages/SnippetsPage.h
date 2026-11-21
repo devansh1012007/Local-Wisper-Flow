@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/SnippetStore.h"
-#include "ui/theme/StudioPalette.h"
+#include "ui/theme/ThemePalette.h"
 #include "ui/widgets/Overlays.h"
 
 #include <algorithm>
@@ -12,9 +12,6 @@
 
 namespace lwf::ui::pages {
 
-inline constexpr const char* kSnippetsBannerHeadline = "Reusable phrases.";
-inline constexpr const char* kSnippetsBannerExampleTrigger = "my booking link";
-inline constexpr const char* kSnippetsBannerExampleExpansion = "https://example.com/book";
 inline constexpr const char* kSnippetsEmptyCopy = "No snippets yet.";
 inline constexpr const char* kSnippetsEditorAddTitle = "Add new snippet";
 inline constexpr const char* kSnippetsEditorEditTitle = "Edit snippet";
@@ -23,7 +20,6 @@ inline constexpr const char* kSnippetsUndoAction = "Undo";
 inline constexpr int kSnippetsEditorVisibleLines = 6;
 
 struct SnippetsPageState {
-    bool banner_closed = false;
     bool pending_delete = false;
     SnippetStore::Entry pending_entry;
     float delete_at = -1.0f;
@@ -150,10 +146,6 @@ inline bool UndoPendingDelete(SnippetStore& store, SnippetsPageState& state, std
     return true;
 }
 
-inline bool VisibleBanner(const SnippetsPageState& state) {
-    return !state.banner_closed;
-}
-
 class SnippetsPage {
 public:
     explicit SnippetsPage(SnippetStore& store) : store_(store) {}
@@ -161,7 +153,10 @@ public:
     SnippetsPage(const SnippetsPage&) = delete;
     SnippetsPage& operator=(const SnippetsPage&) = delete;
 
-    void Draw(float scale);
+    // T10b: the live palette is explicit. The default keeps the old
+    // MainWindow call site compiling; MainWindow::DrawSnippetsPage passes
+    // *current_palette_ (wired in the same commit, see docs/PROGRESS.md T10b).
+    void Draw(float scale, const lwf::ui::Palette& palette = lwf::ui::kDarkPalette);
 
     void OpenAdd() {
         editing_id_.clear();
@@ -240,10 +235,9 @@ public:
     }
 
 private:
-    void DrawHeader(float scale);
-    void DrawBanner(float scale);
-    void DrawRows(float scale);
-    void DrawSheet(float scale);
+    void DrawHeader(float scale, const lwf::ui::Palette& palette);
+    void DrawRows(float scale, const lwf::ui::Palette& palette);
+    void DrawSheet(float scale, const lwf::ui::Palette& palette);
     bool DeleteEdit();
 
     void SyncBuffers() {

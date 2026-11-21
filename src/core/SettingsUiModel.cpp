@@ -63,6 +63,112 @@ std::string ValidateLanguage(const std::string& code) {
     return {};
 }
 
+int MatchMicDeviceIndex(const std::vector<std::string>& names, const std::string& selected) {
+    // INVARIANT: entry 0 of the picker is always "System default" (stored
+    // value ""), so a stored value that is empty or no longer in the list
+    // resolves to 0 and the caller shows the default entry.
+    if (selected.empty()) {
+        return 0;
+    }
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        if (names[i] == selected) {
+            return static_cast<int>(i + 1);
+        }
+    }
+    return 0;
+}
+
+MicTestStatus MicTestStatusFor(double peak) {
+    // Same 0.005 floor as the engine's silent-mic gate (DictationEngine
+    // StopAndTranscribe), so the check and the dictation path agree on what
+    // "silent" means; 0.05 marks recordings that work but will transcribe
+    // poorly without a boost.
+    if (peak < 0.005) {
+        return MicTestStatus::Silent;
+    }
+    if (peak < 0.05) {
+        return MicTestStatus::Quiet;
+    }
+    return MicTestStatus::Good;
+}
+
+const char* MicTestAdvice(MicTestStatus status) {
+    switch (status) {
+        case MicTestStatus::Good:
+            return "Working - the microphone picked up your voice.";
+        case MicTestStatus::Quiet:
+            return "Quiet - raise the microphone level in your sound settings.";
+        case MicTestStatus::Silent:
+            return "Silent - the microphone is muted, disabled or the wrong one. "
+                   "Pick another device and test again.";
+    }
+    return "";
+}
+
+int MatchModelIndex(const std::vector<std::string>& fetched, const std::string& selected) {
+    // INVARIANT: no sentinel entry exists in this combo, so "no match" is -1
+    // and the caller layers its synthetic entry on top of this result.
+    if (selected.empty()) {
+        return -1;
+    }
+    for (std::size_t i = 0; i < fetched.size(); ++i) {
+        if (fetched[i] == selected) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+ApiKeySource ApiKeySourceFor(bool has_saved, bool has_env) {
+    if (has_saved) {
+        return ApiKeySource::Saved;
+    }
+    if (has_env) {
+        return ApiKeySource::Environment;
+    }
+    return ApiKeySource::NotSet;
+}
+
+const char* ApiKeySourceLabel(ApiKeySource source) {
+    switch (source) {
+        case ApiKeySource::Saved:
+            return "Saved key";
+        case ApiKeySource::Environment:
+            return "Environment key";
+        case ApiKeySource::NotSet:
+            return "Not set";
+    }
+    return "Not set";
+}
+
+const char* ApiKeyStatusWord(ApiKeySource source) {
+    switch (source) {
+        case ApiKeySource::Saved:
+            return "Ready";
+        case ApiKeySource::Environment:
+            return "Ready";
+        case ApiKeySource::NotSet:
+            return "Not set";
+    }
+    return "Not set";
+}
+
+std::string TrimApiKeyInput(const std::string& raw) {
+    const std::size_t first = raw.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) {
+        return {};
+    }
+    const std::size_t last = raw.find_last_not_of(" \t\r\n");
+    return raw.substr(first, last - first + 1);
+}
+
+std::string ApiKeySaveError(const std::string& trimmed) {
+    if (trimmed.empty()) {
+        return "Enter a key to save.";
+    }
+    return {};
+}
+
 void DictionaryEditorModel::AddWord(std::string value) {
     if (!value.empty()) {
         words.push_back({std::move(value)});

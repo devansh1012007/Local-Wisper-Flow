@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "llm/OpenRouterContract.h"
+#include "llm/OpenRouterModels.h"
 #include "llm/OpenRouterProvider.h"
 
 #include "core/DictationCleanup.h"
@@ -52,9 +53,33 @@ public:
 
     const std::vector<HttpRequest>& Requests() const { return requests_; }
 
+    HttpResponse Get(const HttpRequest& request) override {
+        get_requests_.push_back(request);
+        if (index_ >= script_.size()) {
+            throw std::runtime_error("ScriptedTransport: script exhausted");
+        }
+        const ScriptedStep step = script_[index_++];
+        if (step.throw_timeout) {
+            throw HttpTransportError(HttpTransportErrorKind::Timeout, "timed out");
+        }
+        if (step.throw_network) {
+            throw HttpTransportError(HttpTransportErrorKind::Network, "connection reset");
+        }
+        if (step.throw_runtime) {
+            throw std::runtime_error("unexpected transport failure");
+        }
+        HttpResponse response;
+        response.status = step.status;
+        response.body.assign(step.body.begin(), step.body.end());
+        return response;
+    }
+
+    const std::vector<HttpRequest>& GetRequests() const { return get_requests_; }
+
 private:
     std::vector<ScriptedStep> script_;
     std::vector<HttpRequest> requests_;
+    std::vector<HttpRequest> get_requests_;
     std::size_t index_ = 0;
 };
 
@@ -436,4 +461,141 @@ TEST_CASE("openrouter failure falls back to raw and counts as rejected") {
     CHECK(cleanup.Process(raw) == raw);
     CHECK(cleanup.GuardRejections() == 1);
     CHECK(provider.LastOutcome().error == OpenRouterError::Auth);
+}
+
+TEST_CASE("openrouter models fetch: parse sort dedupe") {
+    const std::string api_key = "or-secret-key-123";
+
+    // a. Happy path: ids + sort + dedupe in one feed; extras ignored.
+    {
+        ScriptedStep step;
+        step.status = 200;
+        step.body =
+            R"({"data":[{"id":"zeta/b","x":1},{"id":"Alpha/A"},{"id":"zeta/b"},"oops",{"id":123},{"nope":1}]})";
+        ScriptedTransport transport({step});
+        const OpenRouterModels::ModelList result =
+            OpenRouterModels::FetchOpenRouterModels(transport, api_key);
+        CHECK(result.status == OpenRouterModels::FetchStatus::Ok);
+        CHECK(result.errorDetail.empty());
+        const std::vector<std::string> expected = {"Alpha/A", "zeta/b"};
+        CHECK(result.modelIds == expected);
+
+        // f. Request shape with a key.
+        REQUIRE(transport.GetRequests().size() == 1);
+        const HttpRequest& request = transport.GetRequests()[0];
+        CHECK(request.host == OpenRouterContract::kHost);
+        CHECK(request.path == "/api/v1/models");
+        CHECK(request.path == OpenRouterContract::kModelsPath);
+        CHECK(request.body.empty());
+        CHECK(request.content_type.empty());
+        CHECK(request.timeout_ms == 8000);
+        CHECK(request.timeout_ms == OpenRouterContract::kDefaultTimeoutMs);
+        REQUIRE(request.headers.size() == 1);
+        CHECK(request.headers[0].first == "Authorization");
+        CHECK(request.headers[0].second == "Bearer or-secret-key-123");
+    }
+
+    // f (contd). Request shape without a key: no Authorization header.
+    {
+        ScriptedStep step;
+        step.status = 200;
+        step.body = R"({"data":[{"id":"solo/model"}]})";
+        ScriptedTransport transport({step});
+        const OpenRouterModels::ModelList result =
+            OpenRouterModels::FetchOpenRouterModels(transport, "");
+        CHECK(result.status == OpenRouterModels::FetchStatus::Ok);
+        REQUIRE(transport.GetRequests().size() == 1);
+        const HttpRequest& request = transport.GetRequests()[0];
+        CHECK(request.host == OpenRouterContract::kHost);
+        CHECK(request.path == "/api/v1/models");
+        CHECK(request.body.empty());
+        CHECK(request.timeout_ms == 8000);
+        CHECK(request.headers.empty());
+    }
+
+    // b. Malformed JSON -> BadJson.
+    {
+        ScriptedStep step;
+        step.status = 200;
+        step.body = "not json at all";
+        ScriptedTransport transport({step});
+        const OpenRouterModels::ModelList result =
+            OpenRouterModels::FetchOpenRouterModels(transport, api_key);
+        CHECK(result.status == OpenRouterModels::FetchStatus::BadJson);
+        CHECK(result.modelIds.empty());
+        CHECK_FALSE(result.errorDetail.empty());
+    }
+
+    // b (contd). data missing / not array / non-object body -> BadJson.
+    {
+        ScriptedStep missing;
+        missing.status = 200;
+        missing.body = R"({"nope":[]})";
+        ScriptedTransport missing_transport({missing});
+        CHECK(OpenRouterModels::FetchOpenRouterModels(missing_transport, api_key).status ==
+              OpenRouterModels::FetchStatus::BadJson);
+
+        ScriptedStep wrong_type;
+        wrong_type.status = 200;
+        wrong_type.body = R"({"data":{"id":"x"}})";
+        ScriptedTransport wrong_transport({wrong_type});
+        CHECK(OpenRouterModels::FetchOpenRouterModels(wrong_transport, api_key).status ==
+              OpenRouterModels::FetchStatus::BadJson);
+
+        ScriptedStep non_object;
+        non_object.status = 200;
+        non_object.body = R"(["a","b"])";
+        ScriptedTransport non_object_transport({non_object});
+        CHECK(OpenRouterModels::FetchOpenRouterModels(non_object_transport, api_key).status ==
+              OpenRouterModels::FetchStatus::BadJson);
+    }
+
+    // c. Empty data -> Empty.
+    {
+        ScriptedStep step;
+        step.status = 200;
+        step.body = R"({"data":[]})";
+        ScriptedTransport transport({step});
+        const OpenRouterModels::ModelList result =
+            OpenRouterModels::FetchOpenRouterModels(transport, api_key);
+        CHECK(result.status == OpenRouterModels::FetchStatus::Empty);
+        CHECK(result.modelIds.empty());
+        CHECK(result.errorDetail.empty());
+    }
+
+    // d. Non-2xx -> NonOk with redacted detail (key bytes not echoed).
+    {
+        ScriptedStep step;
+        step.status = 401;
+        step.body = R"({"error":{"message":"bad bearer or-secret-key-123 token"}})";
+        ScriptedTransport transport({step});
+        const OpenRouterModels::ModelList result =
+            OpenRouterModels::FetchOpenRouterModels(transport, api_key);
+        CHECK(result.status == OpenRouterModels::FetchStatus::NonOk);
+        CHECK(result.modelIds.empty());
+        CHECK_FALSE(result.errorDetail.empty());
+        CHECK(result.errorDetail.find(api_key) == std::string::npos);
+        CHECK(result.errorDetail.find("[redacted]") != std::string::npos);
+    }
+
+    // e. Transport throw -> Network (typed + generic runtime).
+    {
+        ScriptedStep timeout;
+        timeout.throw_timeout = true;
+        ScriptedTransport timeout_transport({timeout});
+        const OpenRouterModels::ModelList timeout_result =
+            OpenRouterModels::FetchOpenRouterModels(timeout_transport, api_key);
+        CHECK(timeout_result.status == OpenRouterModels::FetchStatus::Network);
+        CHECK_FALSE(timeout_result.errorDetail.empty());
+        CHECK(timeout_result.errorDetail.find(api_key) == std::string::npos);
+
+        ScriptedStep runtime;
+        runtime.throw_runtime = true;
+        ScriptedTransport runtime_transport({runtime});
+        const OpenRouterModels::ModelList runtime_result =
+            OpenRouterModels::FetchOpenRouterModels(runtime_transport, api_key);
+        CHECK(runtime_result.status == OpenRouterModels::FetchStatus::Network);
+        CHECK_FALSE(runtime_result.errorDetail.empty());
+        CHECK(runtime_result.errorDetail.find(api_key) == std::string::npos);
+    }
 }

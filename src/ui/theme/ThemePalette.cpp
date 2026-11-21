@@ -3,6 +3,7 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <unordered_map>
 
 namespace lwf::ui {
 namespace {
@@ -22,13 +23,18 @@ ImVec4 ToColor(std::uint32_t rgb, float alpha = 1.0f) {
     return ImVec4(r, g, b, std::clamp(alpha, 0.0f, 1.0f));
 }
 
-// Last (ImGui context, window DPI scale) pair ApplyImGuiStyle applied through
-// ImGuiStyle. ImGuiStyle::ScaleAllSizes is cumulative (_MainScale *= scale
-// factor with lossy ImTrunc rounding) over a freshly initialized style, so it
-// must run only when the applied scale actually changes; this tracks the last
-// applied pair so a re-apply cannot drift.
-ImGuiContext* g_last_applied_context = nullptr;
-float g_last_applied_scale = 1.0f;
+// Last applied window DPI scale per ImGui context. ImGuiStyle::ScaleAllSizes
+// is cumulative (_MainScale *= scale factor with lossy ImTrunc rounding) over
+// a freshly initialized style, so it must run only when the applied scale
+// actually changes for that context. One global (context, scale) pair cannot
+// gate three ImGui contexts: at >100% DPI each theme toggle carrying a
+// different context re-ran ScaleAllSizes and drifted the non-reassigned
+// _MainScale-derived fields (1px borders, WindowMinSize, CellPadding,
+// TabMinWidthBase/Shrink, ...). At 100% the drift is zero, which is why it
+// stayed invisible. ImGui contexts live for process lifetime (destroyed only
+// at Shutdown), so stale keys are not a concern; Init of a fresh style still
+// correctly applies (no entry yet).
+std::unordered_map<ImGuiContext*, float> g_last_scale_by_ctx;
 
 }  // namespace
 
@@ -37,13 +43,14 @@ void ApplyImGuiStyle(const Palette& palette, float scale) {
 
     // Apply the token geometry and the DPI scale only when the applied scale
     // actually changed for this ImGui context (init, or a live content-scale
-    // move). style.FontScaleMain is assigned absolutely below; ScaleAllSizes
-    // must not run twice for the same scale or its cumulative state drifts.
-    const bool applies = ImGui::GetCurrentContext() != g_last_applied_context ||
-                         scale != g_last_applied_scale;
+    // move) — once per actual change per context. style.FontScaleMain is
+    // assigned absolutely below; ScaleAllSizes must not run twice for the
+    // same scale on the same context or its cumulative state drifts.
+    ImGuiContext* const ctx = ImGui::GetCurrentContext();
+    const auto it = g_last_scale_by_ctx.find(ctx);
+    const bool applies = it == g_last_scale_by_ctx.end() || it->second != scale;
     if (applies) {
-        g_last_applied_context = ImGui::GetCurrentContext();
-        g_last_applied_scale = scale;
+        g_last_scale_by_ctx[ctx] = scale;
 
         // Geometry from the token set.
         style.WindowRounding = metrics::radius_card;

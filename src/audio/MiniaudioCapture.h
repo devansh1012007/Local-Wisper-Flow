@@ -6,14 +6,20 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #include "miniaudio.h"
 
 class MiniaudioCapture : public IAudioCapture {
 public:
-    explicit MiniaudioCapture(std::uint32_t sample_rate = 16000, std::uint32_t channels = 1);
+    explicit MiniaudioCapture(std::uint32_t sample_rate = 16000, std::uint32_t channels = 1,
+                              std::string device_name = "");
     ~MiniaudioCapture() override;
+
+    // Display names of the system's capture devices; {} when enumeration is
+    // unavailable. Static: listing needs no instance (and no running capture).
+    static std::vector<std::string> ListCaptureDevices();
 
     MiniaudioCapture(const MiniaudioCapture&) = delete;
     MiniaudioCapture& operator=(const MiniaudioCapture&) = delete;
@@ -36,6 +42,10 @@ private:
 
     std::uint32_t sample_rate_;
     std::uint32_t channels_;
+    // INVARIANT: an owned context makes name->id selection possible; it must be
+    // uninitted AFTER the device (dtor body order) because the device may use it.
+    ma_context context_{};
+    bool context_ok_ = false;
     ma_device device_{};
     bool device_initialized_ = false;
     std::atomic<bool> capturing_{false};

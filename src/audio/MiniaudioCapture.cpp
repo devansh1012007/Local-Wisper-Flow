@@ -6,6 +6,8 @@
 #include <string>
 #include <utility>
 
+#include "core/Log.h"
+
 namespace {
 
 std::string DescribeResult(ma_result result) {
@@ -15,9 +17,43 @@ std::string DescribeResult(ma_result result) {
 
 constexpr float kLevelDecay = 0.8f;
 
+// RAII pairing for ma_context_init/ma_context_uninit: miniaudio requires every
+// successful init to be matched, including when a later step returns early.
+struct ContextGuard {
+    ma_context* context;
+    ~ContextGuard() {
+        if (context != nullptr) {
+            ma_context_uninit(context);
+            context = nullptr;
+        }
+    }
+};
+
+// Name of the capture device the backend flags as default, for logging the default
+// path (which endpoint is actually feeding the engine). Empty when enumeration
+// fails or no device carries the flag.
+// DECISION: logging only -- selection keeps passing a null device id to
+// ma_device_init, because the isDefault flag and ma_device_init's own default pick
+// are not guaranteed to agree per backend.
+std::string DefaultCaptureName(ma_context* context) {
+    ma_device_info* capture_infos = nullptr;
+    ma_uint32 capture_count = 0;
+    if (ma_context_get_devices(context, nullptr, nullptr, &capture_infos, &capture_count) !=
+        MA_SUCCESS) {
+        return {};
+    }
+    for (ma_uint32 i = 0; i < capture_count; ++i) {
+        if (capture_infos[i].isDefault == MA_TRUE) {
+            return capture_infos[i].name;
+        }
+    }
+    return {};
 }
 
-MiniaudioCapture::MiniaudioCapture(std::uint32_t sample_rate, std::uint32_t channels)
+}
+
+MiniaudioCapture::MiniaudioCapture(std::uint32_t sample_rate, std::uint32_t channels,
+                                   std::string device_name)
     : sample_rate_(sample_rate), channels_(channels) {
     ma_device_config config = ma_device_config_init(ma_device_type_capture);
     config.capture.format = ma_format_f32;
@@ -27,18 +63,122 @@ MiniaudioCapture::MiniaudioCapture(std::uint32_t sample_rate, std::uint32_t chan
     config.stopCallback = &MiniaudioCapture::StopCallback;
     config.pUserData = this;
 
-    const ma_result result = ma_device_init(nullptr, &config, &device_);
+    // DECISION: an owned context is what makes name->id selection possible, but if it
+    // fails we keep the legacy path (ma_device_init with a null context self-manages
+    // one) so startup behavior degrades to exactly what it was before this feature.
+    const ma_result context_result = ma_context_init(nullptr, 0, nullptr, &context_);
+    if (context_result == MA_SUCCESS) {
+        context_ok_ = true;
+    } else {
+        lwf::Log::Warning("MiniaudioCapture: context init failed: " + DescribeResult(context_result) +
+                          "; using system default capture device");
+    }
+
+    // INVARIANT: selected_id is copied out of the context-owned enumeration buffer so
+    // it stays valid for the whole ma_device_init call (which copies it into the
+    // device: MA_COPY_MEMORY of capture.id in ma_device_init). Duplicate display
+    // names resolve to the first capture match.
+    ma_device_id selected_id{};
+    std::string active_name = "system default";
+    bool selected = false;
+    if (!device_name.empty() && context_ok_) {
+        ma_device_info* capture_infos = nullptr;
+        ma_uint32 capture_count = 0;
+        const ma_result enum_result =
+            ma_context_get_devices(&context_, nullptr, nullptr, &capture_infos, &capture_count);
+        if (enum_result != MA_SUCCESS) {
+            lwf::Log::Warning("MiniaudioCapture: device enumeration failed: " +
+                              DescribeResult(enum_result) + "; using system default capture device");
+        } else {
+            for (ma_uint32 i = 0; i < capture_count; ++i) {
+                if (device_name == capture_infos[i].name) {
+                    selected_id = capture_infos[i].id;
+                    selected = true;
+                    active_name = capture_infos[i].name;
+                    break;
+                }
+            }
+            if (!selected) {
+                lwf::Log::Warning("MiniaudioCapture: capture device '" + device_name +
+                                  "' not found; using system default capture device");
+            }
+        }
+    } else if (device_name.empty() && context_ok_) {
+        // Diagnosability for the default path (the reported silent-mic case): name the
+        // endpoint ma_device_init is about to open. No selection change -- pDeviceID
+        // stays null below, so miniaudio still picks the default itself.
+        const std::string default_name = DefaultCaptureName(&context_);
+        if (!default_name.empty()) {
+            active_name = default_name + " (system default)";
+        }
+    } else if (!device_name.empty()) {
+        lwf::Log::Warning("MiniaudioCapture: requested capture device '" + device_name +
+                          "' unavailable; using system default capture device");
+    }
+
+    if (selected) {
+        config.capture.pDeviceID = &selected_id;
+    }
+
+    ma_result result = ma_device_init(context_ok_ ? &context_ : nullptr, &config, &device_);
+    if (result != MA_SUCCESS && selected) {
+        // AC1: a stale or rejected device id must never stop the app from starting.
+        lwf::Log::Warning("MiniaudioCapture: init with device '" + active_name +
+                          "' failed: " + DescribeResult(result) + "; retrying system default");
+        config.capture.pDeviceID = nullptr;
+        active_name = "system default";
+        result = ma_device_init(context_ok_ ? &context_ : nullptr, &config, &device_);
+    }
     if (result != MA_SUCCESS) {
+        // DECISION: this throw skips ~MiniaudioCapture (a ctor that throws never
+        // destroys its own object), so the owned context has to be released here;
+        // clearing context_ok_ keeps this path mutually exclusive with the dtor's
+        // uninit so neither can double-uninit.
+        if (context_ok_) {
+            ma_context_uninit(&context_);
+            context_ok_ = false;
+        }
         throw std::runtime_error("MiniaudioCapture: device init failed: " + DescribeResult(result));
     }
     device_initialized_ = true;
+    // Diagnosability: which endpoint actually feeds the engine (name only, never audio).
+    lwf::Log::Info("MiniaudioCapture: active capture device: " + active_name);
 }
 
 MiniaudioCapture::~MiniaudioCapture() {
+    // INVARIANT: device first, then context -- ma_device_uninit touches the context,
+    // and it only releases the context itself when it owns it (isOwnerOfContext,
+    // set only by the null-context init path), so no double-uninit either way.
     if (device_initialized_) {
         ma_device_uninit(&device_);
         device_initialized_ = false;
     }
+    if (context_ok_) {
+        ma_context_uninit(&context_);
+        context_ok_ = false;
+    }
+}
+
+std::vector<std::string> MiniaudioCapture::ListCaptureDevices() {
+    ma_context context{};
+    if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
+        return {};
+    }
+    ContextGuard guard{&context};
+
+    ma_device_info* capture_infos = nullptr;
+    ma_uint32 capture_count = 0;
+    if (ma_context_get_devices(&context, nullptr, nullptr, &capture_infos, &capture_count) !=
+        MA_SUCCESS) {
+        return {};
+    }
+
+    std::vector<std::string> names;
+    names.reserve(capture_count);
+    for (ma_uint32 i = 0; i < capture_count; ++i) {
+        names.emplace_back(capture_infos[i].name);
+    }
+    return names;
 }
 
 void MiniaudioCapture::Start() {

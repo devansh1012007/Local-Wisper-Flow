@@ -1,0 +1,11 @@
+﻿{
+    "schema_version":  1,
+    "dictation_enabled":  true,
+    "vad_threshold":  0.6,
+    "last_page":  "Home",
+    "hotkey_code":  165,
+    "whisper_model_path":  "ggml-base.en.bin",
+    "mini_x":  -1,
+    "mini_y":  -1,
+    "first_run":  false
+}

@@ -64,9 +64,10 @@ TEST_CASE("opt-in off registers nothing at the page gate") {
     lwf::ui::TransformsPage page(store);
     CHECK(false == store.Enabled());
     CHECK(page.ActiveShortcuts().empty());
-    CHECK(false == store.IsSlotEnabled(1));
-    CHECK(false == store.IsSlotEnabled(2));
-    FillCustom(store, 3, "Email", "Make it formal. {text}");
+    // Followups-2: nothing is seeded, so the gate test fills its own slots.
+    FillCustom(store, 1, "Email", "Make it formal. {text}");
+    FillCustom(store, 2, "Note", "Make it a note. {text}");
+    FillCustom(store, 3, "Chat", "Make it chatty. {text}");
     CHECK(page.ActiveShortcuts().empty());
     CHECK(false == store.IsSlotEnabled(3));
     page.SetOptIn(true);
@@ -129,18 +130,17 @@ TEST_CASE("reset confirmation lists how many customs are deleted") {
     FillCustom(store, 4, "Short", "Brief. {text}");
     std::string error;
     REQUIRE(store.SetSlot(1, "Polished Edit", "Custom polish. {text}", error));
+    // Followups-2: every named slot counts (no built-ins are restored).
     const auto plan = page.ResetPlan();
-    CHECK(plan.customs_deleted == 2);
-    CHECK(plan.restores_built_ins);
+    CHECK(plan.customs_deleted == 3);
     const int deleted = page.PerformReset();
-    CHECK(deleted == 2);
+    CHECK(deleted == 3);
     const auto entries = store.Entries();
-    CHECK(entries.at(0).name == "Polish");
-    CHECK(entries.at(0).prompt == TransformStore::DefaultPolishPrompt());
-    CHECK(entries.at(1).name == "Prompt Engineer");
-    CHECK(entries.at(1).prompt == TransformStore::DefaultPromptEngineerPrompt());
-    CHECK(entries.at(2).name.empty());
-    CHECK(entries.at(3).name.empty());
+    for (const auto& entry : entries) {
+        CHECK(entry.name.empty());
+        CHECK(entry.prompt.empty());
+        CHECK_FALSE(entry.built_in);
+    }
     CHECK(page.ResetPlan().customs_deleted == 0);
 }
 
@@ -164,6 +164,9 @@ TEST_CASE("shortcut recorder requires a modifier and a real key") {
 TEST_CASE("shortcut recorder rejects conflicts with slots bindings and the diff chord") {
     TransformStore store;
     FillCustom(store, 5, "Email", "Formal. {text}");
+    // Followups-2: fill slot 1 so its default chord is held by a named entry
+    // (nothing is seeded any more).
+    FillCustom(store, 1, "First", "One. {text}");
     const auto entries = store.Entries();
     const std::string diff = store.DiffShortcut();
     const std::vector<Binding> no_bindings;
@@ -218,40 +221,46 @@ TEST_CASE("keycaps split the live diff shortcut") {
           std::vector<std::string>({"Ctrl", "Shift", "D"}));
 }
 
-TEST_CASE("cards are built-ins first then customs by slot and the create card hides at eight") {
+TEST_CASE("cards list named slots in order and the create card hides at ten") {
     TransformStore store;
     lwf::ui::TransformsPage page(store);
+    // Followups-2: no built-ins ship, so an empty store shows no cards.
     auto cards = page.Cards();
-    REQUIRE(cards.size() == 2);
-    CHECK(cards.at(0).slot == 1);
-    CHECK(cards.at(1).slot == 2);
+    REQUIRE(cards.empty());
     CHECK(page.ShowCreateCard());
     FillCustom(store, 5, "Fifth", "Prompt five. {text}");
     FillCustom(store, 3, "Third", "Prompt three. {text}");
+    FillCustom(store, 1, "First", "Prompt one. {text}");
     cards = page.Cards();
-    REQUIRE(cards.size() == 4);
-    CHECK(cards.at(2).slot == 3);
-    CHECK(cards.at(3).slot == 5);
+    REQUIRE(cards.size() == 3);
+    CHECK(cards.at(0).slot == 1);
+    CHECK(cards.at(1).slot == 3);
+    CHECK(cards.at(2).slot == 5);
+    FillCustom(store, 2, "Two", "Prompt two. {text}");
     FillCustom(store, 4, "Four", "Prompt four. {text}");
     FillCustom(store, 6, "Six", "Prompt six. {text}");
     FillCustom(store, 7, "Seven", "Prompt seven. {text}");
     FillCustom(store, 8, "Eight", "Prompt eight. {text}");
     FillCustom(store, 9, "Nine", "Prompt nine. {text}");
     FillCustom(store, 10, "Ten", "Prompt ten. {text}");
-    CHECK(page.CountCustoms() == 8);
+    CHECK(page.CountCustoms() == 10);
     CHECK(false == page.ShowCreateCard());
     REQUIRE(page.Cards().size() == 10);
 }
 
-TEST_CASE("card descriptions pin built-in copy and truncate customs") {
+TEST_CASE("card descriptions show the real prompt and truncate long ones") {
     TransformStore store;
     lwf::ui::TransformsPage page(store);
-    const auto entries = store.Entries();
-    CHECK(page.CardDescription(entries.at(0)) == "Improve clarity and conciseness");
-    CHECK(page.CardDescription(entries.at(1)) == "Constructs optimal prompts");
+    // Followups-2: with the built-ins retired every card shows its real
+    // prompt; there is no shipped default copy any more.
+    std::string set_error;
+    REQUIRE(store.SetSlot(1, "Mine", "Make it crisp. {text}", set_error));
+    const auto edited = page.Cards().at(0);
+    CHECK(edited.slot == 1);
+    CHECK(page.CardDescription(edited) == "Make it crisp. {text}");
     FillCustom(store, 3, "Custom",
                "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz0123456789 rest");
-    const auto custom = page.Cards().at(2);
+    const auto custom = page.Cards().at(1);
     CHECK(custom.slot == 3);
     CHECK(page.CardDescription(custom).size() == 63);
     CHECK(page.CardDescription(custom).back() == '.');
@@ -267,6 +276,7 @@ TEST_CASE("prompt counter counts codepoints like the store cap") {
 TEST_CASE("editor save rejects duplicate names empty custom names and long prompts") {
     TransformStore store;
     lwf::ui::TransformsPage page(store);
+    FillCustom(store, 1, "Polish", "Make it polish. {text}");
     page.OpenEditor(3);
     page.SetEditName("Polish");
     page.SetEditPrompt("Whatever. {text}");
@@ -284,20 +294,21 @@ TEST_CASE("editor save rejects duplicate names empty custom names and long promp
     CHECK(store.Entries().at(2).name == "Good");
 }
 
-TEST_CASE("editor delete only applies to customs") {
+TEST_CASE("editor delete applies to every slot") {
     TransformStore store;
     lwf::ui::TransformsPage page(store);
+    // Followups-2: slots 1-2 are ordinary user slots, so Delete clears them
+    // like any other (the old guard and ReturnToDefault went with the
+    // built-ins).
+    FillCustom(store, 1, "First", "One. {text}");
     page.OpenEditor(1);
-    CHECK(false == page.DeleteEdit());
-    CHECK(store.Entries().at(0).name == "Polish");
+    CHECK(page.DeleteEdit());
+    CHECK(store.Entries().at(0).name.empty());
+    CHECK(false == page.IsEditing());
     FillCustom(store, 3, "Temp", "Temporary. {text}");
     page.OpenEditor(3);
     CHECK(page.DeleteEdit());
     CHECK(store.Entries().at(2).name.empty());
-    CHECK(false == page.IsEditing());
-    page.OpenEditor(2);
-    CHECK(page.ReturnToDefault());
-    CHECK(store.Entries().at(1).name == "Prompt Engineer");
 }
 
 TEST_CASE("opt-in toggle reads live store state") {
@@ -333,32 +344,80 @@ TEST_CASE("diff viewer label and copy payload consume the engine snapshot") {
     CHECK(page.CurrentChangeLabel() == "2 Changes");
 }
 
-TEST_CASE("try it out posts a start transform command for polish") {
+// T10c per-slot Run: RunSlot posts the caller's real slot (plan AC: "Run on
+// slot N reaches engine.RequestTransform(N)"). Followups-2: the fixed-slot
+// TryItOut helper is retired with the built-ins, so this is the only run
+// path left.
+TEST_CASE("per-slot run posts the real slot") {
     TransformStore store;
     UiBus bus;
     lwf::ui::TransformsPage page(store, &bus, nullptr);
-    CHECK(page.TryItOut());
+    CHECK(page.RunSlot(3));
     UiCommand command{UiCommandType::Quit, {}};
     REQUIRE(bus.PollCommand(command));
     CHECK(command.type == UiCommandType::StartTransform);
+    CHECK(command.payload == "3");
+    CHECK(page.RunSlot(7));
+    REQUIRE(bus.PollCommand(command));
+    CHECK(command.type == UiCommandType::StartTransform);
+    CHECK(command.payload == "7");
+    CHECK(page.RunSlot(1));
+    REQUIRE(bus.PollCommand(command));
     CHECK(command.payload == "1");
     lwf::ui::TransformsPage unwired(store);
-    CHECK(false == unwired.TryItOut());
+    CHECK(false == unwired.RunSlot(4));
     CHECK(false == bus.PollCommand(command));
 }
 
-TEST_CASE("page copy keeps opt-in banner and original banner text") {
-    CHECK(lwf::ui::transforms::kOptInOffBanner == "Turn on Opt in to use transforms.");
-    CHECK(std::string(lwf::ui::transforms::kBannerHeadline).size() > 20);
-    CHECK(std::string(lwf::ui::transforms::kBannerBody).size() > 40);
+// T10c F1: every custom draw and widget call threads the live palette;
+// edit_error renders in palette.err (byte-identical string).
+TEST_CASE("transforms page threads the live palette and err for edit_error") {
+    const std::string header = ReadPageFile("src/ui/pages/TransformsPage.h");
+    const std::string source = ReadPageFile("src/ui/pages/TransformsPage.cpp");
+    REQUIRE(!header.empty());
+    REQUIRE(!source.empty());
+    CHECK(header.find("Draw(float scale, const Palette& palette = kDarkPalette)") !=
+          std::string::npos);
+    CHECK(header.find("kLightPalette") == std::string::npos);
+    CHECK(source.find("kLightPalette") == std::string::npos);
+    CHECK(source.find("palette.") != std::string::npos);
+    CHECK(source.find("Color(palette.surface)") != std::string::npos);
+    CHECK(source.find("Color(palette.muted)") != std::string::npos);
+    CHECK(source.find("Pack(palette.accent)") != std::string::npos);
+    CHECK(source.find("Pack(palette.border)") != std::string::npos);
+    // T10c link-hover pair retired with the banner's TextLink (D3); the
+    // live-palette threading stays pinned by the rows above.
+    CHECK(source.find("palette.err") != std::string::npos);
+    CHECK(source.find("Color(palette.err), \"%s\", edit_error_.c_str()") != std::string::npos);
+    CHECK(source.find("Color(palette.muted), \"%s\", edit_error_.c_str()") == std::string::npos);
+    CHECK(source.find("FLAG: edit_error") == std::string::npos);
+    // RunSlot posts the real slot.
+    CHECK(header.find("std::to_string(slot)") != std::string::npos);
+    CHECK(source.find("RunSlot(entry.slot)") != std::string::npos);
+    CHECK(source.find("transforms_run_") != std::string::npos);
+    // Followups D3: the banner button copy is retired with the hero banner;
+    // followups-2 retired the fixed-slot TryItOut API with the built-ins.
+    // T10c review CRITICAL (hit-test): the card overlay must carry AllowOverlap
+    // so the later Run button wins hover/click (first-submitted-wins);
+    // scoped to the DrawCard span so a stray flag elsewhere cannot pass this.
+    const std::size_t card_begin = source.find("void TransformsPage::DrawCard");
+    const std::size_t card_end = source.find("void TransformsPage::DrawCreateCard");
+    REQUIRE(card_begin != std::string::npos);
+    REQUIRE(card_end != std::string::npos);
+    REQUIRE(card_end > card_begin);
+    const std::string card_span = source.substr(card_begin, card_end - card_begin);
+    CHECK(card_span.find("ImGuiButtonFlags_AllowOverlap") != std::string::npos);
+}
+
+TEST_CASE("page copy keeps how-it-works text; banners are retired") {
+    // Followups D3/D4: the hero banner and the opted-out notice strip were
+    // removed (constants gone); the How-it-works modal copy stays and keeps
+    // the third-party-name ban.
     CHECK(std::string(lwf::ui::transforms::kHowItWorksBody).size() > 40);
-    CHECK(std::string(lwf::ui::transforms::kBannerHeadline).find("Slack") == std::string::npos);
-    CHECK(std::string(lwf::ui::transforms::kBannerHeadline).find("Gmail") == std::string::npos);
-    CHECK(
-        std::string(lwf::ui::transforms::kBannerHeadline).find("LinkedIn") == std::string::npos);
-    CHECK(std::string(lwf::ui::transforms::kBannerBody).find("Slack") == std::string::npos);
-    CHECK(std::string(lwf::ui::transforms::kBannerBody).find("Gmail") == std::string::npos);
-    CHECK(std::string(lwf::ui::transforms::kBannerBody).find("LinkedIn") == std::string::npos);
+    CHECK(std::string(lwf::ui::transforms::kHowItWorksBody).find("Slack") == std::string::npos);
+    CHECK(std::string(lwf::ui::transforms::kHowItWorksBody).find("Gmail") == std::string::npos);
+    CHECK(std::string(lwf::ui::transforms::kHowItWorksBody).find("LinkedIn") ==
+          std::string::npos);
 }
 
 TEST_CASE("transforms page sources respect the font and hygiene rules") {
@@ -377,15 +436,17 @@ TEST_CASE("transforms page sources respect the font and hygiene rules") {
         CHECK(text.find("Log::") == std::string::npos);
     }
     CHECK(header.find("PushFont") == std::string::npos);
-    CHECK(source.find("PushFont(nullptr, metrics::font_") != std::string::npos);
+    CHECK(source.find("PushFont(nullptr, studio_metrics::font_") != std::string::npos);
     CHECK(source.find("widgets::BadgeBeta") != std::string::npos);
     CHECK(source.find("widgets::ToggleSwitch") != std::string::npos);
     CHECK(source.find("widgets::PrimaryButton") != std::string::npos);
     CHECK(source.find("widgets::LightButton") != std::string::npos);
     CHECK(source.find("My Transforms") != std::string::npos);
     CHECK(source.find("Create New") != std::string::npos);
-    CHECK(source.find("Reset to defaults") != std::string::npos);
-    CHECK(source.find("Try it out") != std::string::npos);
+    CHECK(source.find("Reset all") != std::string::npos);
+    // Followups D3: the banner "Try it out" button is gone with the hero
+    // banner; "How it works" stays (the header "i" button opens the modal).
+    CHECK(source.find("Try it out") == std::string::npos);
     CHECK(source.find("How it works") != std::string::npos);
     CHECK(source.find("Copy result") != std::string::npos);
     CHECK(header.find("<selection>{text}</selection>") != std::string::npos);

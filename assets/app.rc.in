@@ -1,0 +1,39 @@
+// Echo flow Windows resources. Processed by configure_file (CMakeLists.txt)
+// so FileVersion/ProductVersion come from project(VERSION) - the single
+// version source (docs/RELEASE.md). windres (MinGW) and rc.exe (MSVC) both
+// compile the generated file.
+//
+// The icon resource must be FIRST and keep ID 1: Explorer picks the first
+// icon resource for the exe tile, and both window/taskbar (WM_SETICON) and
+// the tray (LoadImageW id 1) load it by that id.
+
+1 ICON "@LWF_ASSETS_DIR@/app.ico"
+
+1 VERSIONINFO
+FILEVERSION     @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION  @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEFLAGSMASK   0x3fL
+FILEFLAGS       0x0L
+FILEOS          0x40004L  // VOS_NT_WINDOWS32
+FILETYPE        0x1L      // VFT_APP
+FILESUBTYPE     0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"  // US English, Unicode
+        BEGIN
+            VALUE "CompanyName",      "Echo flow"
+            VALUE "FileDescription",  "Echo flow - local voice dictation"
+            VALUE "FileVersion",      "@PROJECT_VERSION@"
+            VALUE "InternalName",     "EchoFlow"
+            VALUE "LegalCopyright",   "MIT License"
+            VALUE "OriginalFilename", "EchoFlow.exe"
+            VALUE "ProductName",      "Echo flow"
+            VALUE "ProductVersion",   "@PROJECT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

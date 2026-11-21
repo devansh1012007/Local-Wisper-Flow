@@ -54,6 +54,7 @@ TEST_CASE("stats store record and load round trip") {
         StatsStore store(path);
         DictationRecord record = MakeRecord(now, "hello world again", "slack.exe");
         record.duration_ms = 1500;
+        record.session_ms = 2500;
         record.words_corrected = 1;
         record.dictionary_fixes = 2;
         store.Record(record);
@@ -67,6 +68,7 @@ TEST_CASE("stats store record and load round trip") {
     CHECK(day.words == 3);
     CHECK(day.dictations == 1);
     CHECK(day.speaking_ms == 1500);
+    CHECK(day.session_ms == 2500);
     CHECK(day.words_corrected == 1);
     CHECK(day.dictionary_fixes == 2);
     REQUIRE(day.by_category.find("Work messages") != day.by_category.end());
@@ -87,6 +89,52 @@ TEST_CASE("stats store toggle off is no-op") {
     CHECK(store.Generation() == 0);
     store.SetUsageStatsEnabled(true);
     CHECK(store.UsageStatsEnabled());
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats store session_ms floors to the capture duration") {
+    const std::string path = TempPath("sessionfloor");
+    std::filesystem::remove(path);
+    const std::int64_t now = NowSeconds();
+    StatsStore store(path);
+    // Clock skew / a legacy record can hand us a session shorter than the
+    // mic-open window, or no session at all: both must floor to duration_ms.
+    DictationRecord short_session = MakeRecord(now, "hello world", "slack.exe");
+    short_session.duration_ms = 1500;
+    short_session.session_ms = 900;
+    store.Record(short_session);
+    DictationRecord legacy = MakeRecord(now, "more words here", "slack.exe");
+    legacy.duration_ms = 1000;
+    legacy.session_ms = 0;
+    store.Record(legacy);
+    const auto snap = store.Snapshot();
+    const std::string key = StatsStore::DateKey(now);
+    REQUIRE(snap.find(key) != snap.end());
+    CHECK(snap.at(key).speaking_ms == 2500);
+    CHECK(snap.at(key).session_ms == 2500);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("stats store legacy files without session_ms load as zero") {
+    const std::string path = TempPath("legacysession");
+    std::filesystem::remove(path);
+    const std::int64_t now = NowSeconds();
+    nlohmann::json planted = nlohmann::json::object();
+    nlohmann::json day;
+    day["words"] = 10;
+    day["dictations"] = 2;
+    day["speaking_ms"] = 3000;
+    day["words_corrected"] = 0;
+    day["dictionary_fixes"] = 0;
+    planted[StatsStore::DateKey(now)] = day;
+    WriteJson(path, planted);
+
+    StatsStore store(path);
+    const auto snap = store.Snapshot();
+    const std::string key = StatsStore::DateKey(now);
+    REQUIRE(snap.find(key) != snap.end());
+    CHECK(snap.at(key).speaking_ms == 3000);
+    CHECK(snap.at(key).session_ms == 0);
     std::filesystem::remove(path);
 }
 

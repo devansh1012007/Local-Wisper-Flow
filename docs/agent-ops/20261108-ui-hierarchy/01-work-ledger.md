@@ -16,6 +16,12 @@
 | T-002 | P-002,P-003 tranche1 | ui/pages+widgets | SURFACE | 37 PushFont + ~30 Dummy digit literals | pages/*.cpp + widgets/* | none | — | C1 resolved disjoint | 1 | W1-IMPL-02 | pending |
 | T-004 (P-005) | P-005 | tests | SURFACE | Tests bless literals, no bypass ban | test_overlay_settings_ui + scratchpad + snippets tests | none | — (red-by-design) | C5 resolved disjoint | 1 | W1-IMPL-03 | pending |
 | T-003 | Token gaps 24/17/10 + 12px gap | theme | DEEP | No token for 24/17/10 headings, 12px gap | StudioPalette.h (additive) + tranche2 | additive studio_metrics fonts/gaps | T-002 spelling first | C4 ordering | 2 | TBD | deferred |
+## Tasks (synthesized from Wave 0 digests 2026-11-08)
+| Task | Plan items | Domain | Class | Root cause (1 line) | Write-set | Contract-set | Depends on | Conflicts | Wave | Agent | Status |
+| T-001 | P-001 | ui/MainWindow | SURFACE | Geometry literals bypass metrics::* | MainWindow.cpp, MainWindow.h | none | — | C1 resolved disjoint | 1 | W1-IMPL-01 | pending |
+| T-002 | P-002,P-003 tranche1 | ui/pages+widgets | SURFACE | 37 PushFont + ~30 Dummy digit literals | pages/*.cpp + widgets/* | none | — | C1 resolved disjoint | 1 | W1-IMPL-02 | pending |
+| T-004 (P-005) | P-005 | tests | SURFACE | Tests bless literals, no bypass ban | test_overlay_settings_ui + scratchpad + snippets tests | none | — (red-by-design) | C5 resolved disjoint | 1 | W1-IMPL-03 | pending |
+| T-003 | Token gaps 24/17/10 + 12px gap | theme | DEEP | No token for 24/17/10 headings, 12px gap | StudioPalette.h (additive) + tranche2 | additive studio_metrics fonts/gaps | T-002 spelling first | C4 ordering | 2 | TBD | deferred |
 
 ## Waves
 ### Wave 0 (Investigation) — DONE 2026-11-08
@@ -23,16 +29,13 @@
 - Digests: 37 PushFont-digit + whitespace literals; dual-palette split proven (ApplyStudioStyle only ScratchpadWindow 91,591); tests pin literals (fail-before required); mockup matches structurally (PARTIAL token coverage); rail 220 vs 208 leave+document per D-rail
 - Spot-checked by ORCH: PushFont grep + Dummy grep confirm counts; read W0-INV-02 s5/s9 + W0-INV-03 s5
 
-### Wave 1 (Surface fixes) — APPROVED 2026-11-08 (all waves approved)
+### Wave 1 (Surface fixes) — READY FOR APPROVAL
 - Agents: 3 parallel, disjoint (ownership/W1.tsv, overlap check clean)
-- WAVE_BASE_SHA (pre-wave): aecb917e33dbbf43a69df55e6b9df8eef7ed2c1a
+- WAVE_BASE_SHA (pre-wave): 8f2ff6c
 - Pre-mortem: hidden coupling via shared widgets (ScratchpadWindow editor shares RowList/Toast/Banner); same-value mapping error silently shifts pixels with no lexical test failure; dual-palette means spelling-only cannot fix identity split; token-gap sites (24/17/10, 12px) must stay allowlisted, never forced to 28/16. Mitigations: same-value-only rule + allowlist in T-004 ban, forbid *Palette.cpp edits, screenshots gate before merge, no palette changes.
 - Gate plan: G1 target lwf_tests build, G2 ctest (expect green only after all 3 land; T-004 alone is red-by-design), G4 hygiene, G5 in-suite, G3 pending. Full exe build with long timeout at gate.
 - Review plan: 1 code reviewer (MainWindow+pages) + 1 test reviewer (ban + pin flips), each blind-first.
 - Status: AWAITING USER APPROVAL (=orchestrator gate)
-
-## Orchestrator recovery note 2026-11-08
-- Wave 1 plan commit landed on main (572ec21) instead of ops branch; ORCH cherry-picked it to ops as 81b82db to restore single-branch invariant. Main is now 1 ahead with same docs. No code involved. Verify with git branch -vv before Wave 1.
 
 ## Conflict resolution notes
 - C1 write-write MainWindow vs pages/widgets resolved by W1.tsv disjoint files; widgets assigned solely to W1-IMPL-02 (Wave 1), not split with W1-IMPL-01

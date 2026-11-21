@@ -53,6 +53,8 @@ const std::vector<SettingsStore::SchemaEntry>& BuildSchema() {
         {"sound_enabled", SettingsStore::Type::Bool, 1, "", 0, 0, true},
         {"sound_volume", SettingsStore::Type::Double, 0.3, "", 0.0, 1.0, true},
         {"reduce_motion", SettingsStore::Type::Bool, 0, "", 0, 0, true},
+        {"update_check_enabled", SettingsStore::Type::Bool, 0, "", 0, 0, true},
+        {"update_last_check_s", SettingsStore::Type::Double, 0.0, "", 0.0, 0.0, true},
         {"mini_x", SettingsStore::Type::Int, -1, "", -1000000, 1000000, false},
         {"mini_y", SettingsStore::Type::Int, -1, "", -1000000, 1000000, false},
         {"history_enabled", SettingsStore::Type::Bool, 1, "", 0, 0, true},
@@ -62,12 +64,12 @@ const std::vector<SettingsStore::SchemaEntry>& BuildSchema() {
         {"debug_log_transcripts", SettingsStore::Type::Bool, 0, "", 0, 0, true},
         {"dictation_enabled", SettingsStore::Type::Bool, 1, "", 0, 0, true},
         {"first_run", SettingsStore::Type::Bool, 1, "", 0, 0, true},
-        {"scratchpad_flow_bar", SettingsStore::Type::Bool, 0, "", 0, 0, true},
         {"keep_usage_stats", SettingsStore::Type::Bool, 1, "", 0, 0, true},
         {"last_page", SettingsStore::Type::String, 0, "Home", 0, 0, true},
         {"quiet_speech_boost", SettingsStore::Type::Bool, 0, "", 0, 0, true},
         {"llm_provider", SettingsStore::Type::String, 0, "local", 0, 0, false},
         {"openrouter_model", SettingsStore::Type::String, 0, "", 0, 0, false},
+        {"theme", SettingsStore::Type::String, 0, "graphite", 0, 0, true},
     };
     return schema;
 }

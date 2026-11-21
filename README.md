@@ -1,12 +1,18 @@
-# Local Wisper Flow
+# Echo flow (repo: Local-Wisper-Flow)
 
 Local-first voice dictation for Windows. Hold a hotkey, speak, and the text
 lands in whatever app you are typing in. Whisper speech-to-text and an
 optional local LLM run on this machine; a cloud STT provider is available
 behind an explicit consent gate (see "Cloud speech-to-text" below).
 
+The app presents itself as "Echo flow" everywhere user-visible, and ships as
+`EchoFlow.exe` (with the exe icon + VERSIONINFO from assets/). Data lives in
+`%APPDATA%\EchoFlow` - a first start renames a pre-existing
+`%APPDATA%\LocalWisperFlow` directory so old installs keep their config,
+dictionary and history. The repository keeps its historical name.
+
 - **Press-to-talk dictation** with VAD-gated capture, a mini overlay badge and
-  a full settings window (Dear ImGui).
+  a full window with top-strip navigation (Dear ImGui).
 - **Text pipeline**: spoken commands, personal dictionary, snippets, optional
   LLM cleanup, paste-chord handling per app.
 - **Streaming mode**: long dictations commit in segments at pauses with a
@@ -17,10 +23,10 @@ behind an explicit consent gate (see "Cloud speech-to-text" below).
 ## Requirements
 
 - Windows 10/11 (the GUI app) or any Linux for the core build and tests.
-- CMake >= 3.16, a C++17 toolchain (MSVC 2022 on Windows), network access on
-  the first configure for FetchContent deps (nlohmann/json, doctest, and -
-  with `LWF_BUILD_FULL=ON` - llama.cpp, whisper.cpp, miniaudio, gRPC, GLFW,
-  Dear ImGui).
+- CMake >= 3.16, a C++17 toolchain (MSVC 2022 on Windows for CI; MinGW GCC via
+  MSYS2 on the dev box), network access on the first configure for FetchContent
+  deps (nlohmann/json, doctest, and - with `LWF_BUILD_FULL=ON` - llama.cpp,
+  whisper.cpp, miniaudio, gRPC, GLFW, Dear ImGui).
 - Full build extras: whisper `ggml` model, optional Qwen GGUF for cleanup,
   optional ONNX Runtime for the Silero VAD gate.
 
@@ -36,14 +42,36 @@ ctest --test-dir build
 
 Windows full app (two-phase configure: the first configure builds llama.cpp
 via ExternalProject; re-run configure afterwards so the installed llama/ggml
-package is picked up):
+package is picked up). The dev box builds with the MinGW Makefiles generator
+(MSYS2 MinGW); the gRPC FetchContent URL must point at the full, submodule
+complete tarball:
 
 ```sh
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DGRPC_URL=file://C:/Users/devan/AppData/Local/Temp/grpc-full.tar.gz
+cmake --build build -j4
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DGRPC_URL=file://C:/Users/devan/AppData/Local/Temp/grpc-full.tar.gz
+cmake --build build -j4
 ```
+
+If `build/` was previously configured with a different generator (for example the
+Visual Studio generator used by CI), delete `build/CMakeCache.txt` and
+`build/CMakeFiles` before reconfiguring - CMake refuses to switch generators in
+place. If `build/_deps/grpc-src` is stale or partial, clear `build/_deps/grpc-src`,
+`build/_deps/grpc-build` and `build/_deps/grpc-subbuild` and re-run the configure
+before building.
+
+The Windows exe builds as a GUI-subsystem app (no console window; see
+`LWF_CONSOLE` to bring the console back for a debug build) with the GCC
+runtime statically linked, so the binary has no `libstdc++`/`libgcc`
+DLL tail. To share the app, package a portable zip:
+
+```sh
+powershell -ExecutionPolicy Bypass -File scripts/package_windows.ps1
+# -> dist/EchoFlow-<version>-win64.zip  (exe + models.json + README)
+```
+
+The script audits the exe's import table and fails if a non-system DLL
+reappears - that is the "works on my PC, not on theirs" guard.
 
 ## Models
 
@@ -60,9 +88,10 @@ known hash (unverified entries warn in the UI).
 ## First run
 
 The wizard walks through the hotkey, the whisper model and the cleanup LLM.
-Everything can be changed later in Settings (rail: Home, Speech, Cloud,
-Cleanup, Privacy, About). Dictation starts immediately with local Whisper;
-cloud STT stays off until you opt in.
+Everything can be changed later in the Full window (top strip: Home, History,
+Insights, Dictionary, Snippets, Transforms, Profiles, plus the
+Settings tabs General, Speech, Cloud, Cleanup, Privacy, About). Dictation
+starts immediately with local Whisper; cloud STT stays off until you opt in.
 
 ## Hotkeys (config keys)
 
@@ -121,8 +150,9 @@ the data dir; dictionary and snippets in `dictionary.json` / `snippets.json`; hi
 ## Cloud speech-to-text (opt-in)
 
 Dictation stays on-device by default. Three opt-in cloud providers are available behind
-Settings > Cloud, each gated by an explicit consent flag plus an API key that only ever
-comes from the environment - never from config.json, and never written to logs:
+Settings > Cloud, each gated by an explicit consent flag plus an API key that is entered
+masked in Settings > Cloud (stored in `api_keys.json` next to `config.json`) or provided
+via the provider's environment variable - never in config.json, and never written to logs:
 
 | Provider | `stt_provider` | Key environment variable | Contract |
 |---|---|---|---|

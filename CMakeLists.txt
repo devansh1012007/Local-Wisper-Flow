@@ -14,11 +14,24 @@ endif()
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING
     "Compat shim: vendored deps declare pre-3.5 minimums which CMake >= 4 rejects")
 
+# Echo flow Windows resources (exe icon + VERSIONINFO). Generated from
+# assets/app.rc.in so FileVersion/ProductVersion come from project(VERSION)
+# - the single version source (docs/RELEASE.md). The .rc references the
+# icon by absolute path (RC quoted paths resolve relative to the .rc file,
+# and the generated file lives in the build dir).
+set(LWF_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+configure_file("${LWF_ASSETS_DIR}/app.rc.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/EchoFlow.rc" @ONLY)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(LWF_BUILD_FULL "Build the full app with whisper/llama/grpc/onnx providers" OFF)
+# Followups-4 ("cmd opens when I run the app"): the full app is a GUI
+# subsystem executable - no console window. Keep the console only for
+# debugging sessions where stdout/stderr on a terminal is wanted.
+option(LWF_CONSOLE "Attach a console window to the full app (debug builds)" OFF)
 if(WIN32)
     set(LWF_BUILD_FULL ON CACHE BOOL "" FORCE)
 endif()
@@ -65,6 +78,7 @@ set(LWF_CORE_SOURCES
     src/core/AudioGain.cpp
     src/core/CommandModeController.cpp
     src/core/ConfigManager.cpp
+    src/core/VersionCheck.cpp
     src/core/ConsentGate.cpp
     src/core/SttRouter.cpp
     src/stt/cloud/ClipSplitter.cpp
@@ -82,6 +96,7 @@ set(LWF_CORE_SOURCES
     src/stt/cloud/MuseResponse.cpp
     src/stt/cloud/MuseProvider.cpp
     src/llm/OpenRouterProvider.cpp
+    src/llm/OpenRouterModels.cpp
     src/core/DictationCleanup.cpp
     src/core/DictationEngine.cpp
     src/core/CrashReporter.cpp
@@ -96,7 +111,6 @@ set(LWF_CORE_SOURCES
     src/core/InsightsModel.cpp
     src/core/Languages.cpp
     src/core/Log.cpp
-    src/core/NotesStore.cpp
     src/core/PersonalDictionary.cpp
     src/core/OverlayModel.cpp
     src/core/PathResolver.cpp
@@ -116,6 +130,7 @@ set(LWF_CORE_SOURCES
     src/core/TransformManager.cpp
     src/core/TransformStore.cpp
     src/core/UiBus.cpp
+    src/core/WhisperText.cpp
     src/audio/TonePlayer.cpp
 )
 
@@ -132,6 +147,10 @@ target_link_libraries(lwf_core PUBLIC nlohmann_json::nlohmann_json miniaudio)
 
 add_executable(local-wisper-flow src/main.cpp src/os/ActiveWindow.cpp src/os/CrashHandler.cpp src/os/DataDir.cpp src/os/WindowStyles.cpp)
 target_link_libraries(local-wisper-flow PRIVATE lwf_core)
+# Branding (followups-6): ship as EchoFlow.exe. The CMake target keeps the
+# historical local-wisper-flow name - scripts, CI and docs build the target
+# name; only the produced binary is renamed.
+set_target_properties(local-wisper-flow PROPERTIES OUTPUT_NAME EchoFlow)
 
 enable_testing()
 
@@ -159,11 +178,12 @@ add_executable(lwf_tests
     tests/test_fsm.cpp
     tests/test_gain.cpp
     tests/test_history.cpp
+    tests/test_history_page.cpp
+    tests/test_profiles_page.cpp
     tests/test_hotkey.cpp
     tests/test_insights.cpp
     tests/test_dictionary_page.cpp
     tests/test_insights_page.cpp
-    tests/test_scratchpad_page.cpp
     tests/test_snippets_page.cpp
     tests/test_transforms_page.cpp
     tests/test_languages.cpp
@@ -171,8 +191,8 @@ add_executable(lwf_tests
     tests/test_log.cpp
     tests/test_dictionary.cpp
     tests/test_dictionarystore.cpp
-    tests/test_notesstore.cpp
     tests/test_onboarding.cpp
+    tests/test_versioncheck.cpp
     tests/test_openrouter.cpp
     tests/test_overlay_settings_ui.cpp
     tests/test_resilience.cpp
@@ -191,7 +211,8 @@ add_executable(lwf_tests
     tests/test_transformstore.cpp
     tests/test_uibus.cpp
     tests/test_apikeystore.cpp
-    tests/test_scratchpad_target.cpp
+    tests/test_tone_volume_live.cpp
+    tests/whisperfilter_test.cpp
 )
 target_include_directories(lwf_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(lwf_tests PRIVATE LWF_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
@@ -365,20 +386,43 @@ if(LWF_BUILD_FULL)
             src/os/WindowsTray.cpp
             src/ui/MainWindow.cpp
             src/ui/Overlay.cpp
-            src/ui/ScratchpadWindow.cpp
             src/ui/pages/DictionaryPage.cpp
             src/ui/pages/InsightsPage.cpp
-            src/ui/pages/ScratchpadPage.cpp
             src/ui/pages/TransformsPage.cpp
             src/ui/pages/SnippetsPage.cpp
+            src/ui/pages/HistoryPage.cpp
+            src/ui/pages/ProfilesPage.cpp
             src/ui/theme/ThemePalette.cpp
-            src/ui/theme/StudioPalette.cpp
             src/ui/widgets/Buttons.cpp
             src/ui/widgets/Display.cpp
             src/ui/widgets/Overlays.cpp
         )
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/source/app.manifest")
             target_sources(local-wisper-flow PRIVATE source/app.manifest)
+        endif()
+        # Exe icon + VERSIONINFO (followups-6): Explorer uses the first icon
+        # resource for the exe tile; the tray and the window/taskbar (via
+        # WindowStyles::ApplyAppIcon -> WM_SETICON) load resource id 1.
+        enable_language(RC)
+        target_sources(local-wisper-flow PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/EchoFlow.rc")
+        # Followups-4: GUI subsystem (no console window on double-click).
+        # CMake maps WIN32_EXECUTABLE to -mwindows on MinGW, and the mingw-w64
+        # runtime provides the WinMain stub that forwards to main(), so the
+        # plain main() keeps working. LWF_CONSOLE=ON restores the console for
+        # debug builds (-mconsole, i.e. the previous behaviour).
+        if(NOT LWF_CONSOLE)
+            set_target_properties(local-wisper-flow PROPERTIES WIN32_EXECUTABLE TRUE)
+        endif()
+        # Followups-4 ("share the exe, must work on other PCs"): statically
+        # link the GCC runtime. A dynamically linked MinGW C++ exe needs
+        # libstdc++-6.dll / libgcc_s_seh-1.dll (libwinpthread-1.dll for
+        # std::thread) next to it - none of which exist on a clean machine,
+        # which is the classic "works here, not there" failure. With -static
+        # the import table drops to system DLLs only (KERNEL32, msvcrt,
+        # USER32, ...). scripts/package_windows.ps1 audits this and fails the
+        # package if a foreign DLL reappears.
+        if(NOT MSVC)
+            target_link_options(local-wisper-flow PRIVATE -static -static-libgcc -static-libstdc++)
         endif()
         target_link_libraries(local-wisper-flow PRIVATE user32 wtsapi32 winhttp bcrypt shell32 advapi32 dwmapi)
 

@@ -1,5 +1,6 @@
 #include "core/CommandModeController.h"
 #include "core/ITextInjector.h"
+#include "core/WhisperText.h"
 #include "core/WorkerQueue.h"
 
 #include <algorithm>
@@ -122,7 +123,8 @@ CommandModeController::Result CommandModeController::Run(const std::string& inst
     }
 
     edited = TrimCopy(std::move(edited));
-    if (edited.empty() || StartsPreamble(edited)) {
+    if (edited.empty() || StartsPreamble(edited) ||
+        WhisperText::IsOnlyHallucination(edited)) {
         capture_.RestoreClipboard();
         pending_selection_.reset();
         result.code = ErrorCode::LlmFailed;

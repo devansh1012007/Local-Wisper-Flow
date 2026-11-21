@@ -13,6 +13,10 @@
 struct ImFont;
 struct ImGuiContext;
 
+namespace lwf::ui {
+struct Palette;
+}
+
 // The Mini badge: a quarter-size, highly transparent resident dot with a
 // tiny status label. It starts anchored bottom-center above the taskbar and
 // can be dragged anywhere with the mouse; the chosen position is persisted
@@ -43,6 +47,11 @@ public:
     void SetState(OverlayModel::PillState state, const std::string& message);
     void PushLevel(float level);
     void SetReduceMotion(bool reduce);
+    // Live theme swap (T2b, fed from main.cpp startup + the ApplySettings
+    // drain). Does NOT call ApplyImGuiStyle directly (the drain may run
+    // while another window's context is current); mirrors SetReduceMotion
+    // by setting dirty_ so the idle early-out cannot skip the re-style.
+    void SetTheme(const lwf::ui::Palette& palette);
     void SetWorkArea(const OverlayModel::Rect& area, double dpi_scale);
 
     // Restores a previously persisted top-left position (call before Init).
@@ -55,14 +64,17 @@ public:
     // Called when the user clicks the Paused badge (resume dictation).
     void SetActivateHandler(std::function<void()> handler);
 
-    void SetScratchpadVisible(bool visible);
-    void SetScratchpadActivateHandler(std::function<void()> handler);
-
     bool Visible() const;
     void RenderFrame(float delta_seconds);
 
 private:
     void ApplyWindowGeometry();
+    // Followups D6: design-px window extent for the current state. Normal
+    // states hug the icons (dot + status strip, ring_pad clearance);
+    // Attention expands to the message reserve. All geometry sites (Init,
+    // ApplyWindowGeometry, UpdateDrag clamp) share this so the sizes can
+    // never drift apart again.
+    void ComputeWindowExtent(int* width, int* height) const;
     void DrawBadge();
     void DrawMic(ImDrawList& draw, const ImVec2& center, float scale, ImU32 color,
                  bool filled) const;
@@ -89,7 +101,6 @@ private:
     bool poll_near_dot_ = false;
     bool poll_hover_dot_ = false;
     bool poll_button_down_ = false;
-    bool poll_note_hover_ = false;
     // INVARIANT: levels_scratch_ is reused across Listening frames so the
     // per-frame render performs zero heap allocations.
     std::vector<float> levels_scratch_;
@@ -106,6 +117,12 @@ private:
     OverlayModel::Rect work_area_;
     double dpi_scale_ = 1.0;
     float pending_dpi_scale_ = 0.0f;  // deferred content-scale callback value
+    // T2b theme selection. INVARIANT: current_palette_ is the last-applied
+    // palette; SetTheme before Init is promoted by Init, a live SetTheme
+    // is promoted by RenderFrame where this window's context is current.
+    const lwf::ui::Palette* current_palette_ = nullptr;
+    const lwf::ui::Palette* pending_theme_palette_ = nullptr;
+    bool theme_pending_ = false;
     bool reduce_motion_ = false;
     float dwell_remaining_ms_ = 0.0f;
     float fade_alpha_ = 0.0f;
@@ -128,6 +145,4 @@ private:
     int saved_y_ = 0;
     std::function<void(int, int)> on_position_persist_;
     std::function<void()> on_activate_;
-    bool scratchpad_visible_ = false;
-    std::function<void()> on_scratchpad_activate_;
 };

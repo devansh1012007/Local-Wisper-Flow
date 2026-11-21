@@ -16,4 +16,5 @@ public:
     WindowsHttpClient& operator=(const WindowsHttpClient&) = delete;
 
     HttpResponse Post(const HttpRequest& request) override;
+    HttpResponse Get(const HttpRequest& request) override;
 };

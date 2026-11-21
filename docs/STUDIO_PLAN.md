@@ -1,5 +1,11 @@
 # Studio pages plan (F0) — repo copy of approved plan
 
+> SUPERSEDED (visual system) 2026-11-09 by the Hairline identity on
+> `ops/ui-redesign-v2` — see `docs/design/DESIGN.md` (Graphite/Paper, top-strip
+> navigation, lime accent). The StudioPalette/teal/rail visual system described
+> here is gone; this document is retained for history only, and where it
+> disagrees with `src/` or DESIGN.md, those win (T16 docs sweep).
+
 - Status: **IMPLEMENTED on `feature/studio-pages`** (F0 signed 2026-11-07; P01-P24 + workstreams A/C shipped; merge + Windows manual pass still open — see §15). The F0 STOP language below is historical; §§3/5 describe shipped shapes and `src/` is the source of truth where this file and the code disagree.
 - Branch: `feature/studio-pages` from origin/main `1d95fb2` (PR #2 merged). Local docs commit `d7595d1` (PROGRESS/SUMMARY CI-green record) is NOT in origin/main — cherry-pick onto main before work starts or the docs record is lost. Baseline `0e655ec` (1d95fb2 merge + docs cherry-pick). Baseline gates at `1d95fb2`: CI run 42310536369 both jobs success; local configure 0, app build 0, ctest lwf-tests 1/1, hygiene OK. G3 zig pending (no zig on box).
 - Spec: operator message 2026-11-07 (five pages + F0-F9) plus five settings-GUI bullets.

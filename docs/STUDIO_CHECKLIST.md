@@ -1,5 +1,11 @@
 # Studio checklist (spec §9) — F9 sweep result
 
+> SUPERSEDED (visual system) 2026-11-09 by the Hairline identity on
+> `ops/ui-redesign-v2` — see `docs/design/DESIGN.md`. The studio visual system
+> this checklist pins (teal / StudioPalette / rail / studio cards) was
+> re-skinned to Hairline in T3-T10; this document is retained for history only
+> (T16 docs sweep).
+
 Status of every §8 checkpoint item (I/D/S/T/Sn/P1). PASS-able automatable items are pinned by
 doctest; Devansh-manual items require a Windows run with the real binary (this box has no zig
 and no window runtime — G3 "pending on Windows" per AGENTS.md).
@@ -49,7 +55,8 @@ repo, so no pixel claim is made anywhere in this sweep).
 - S1 (Snippets): MANUAL — 4 validation messages, sheet flow.
 - T1-T6 (Transforms): MANUAL — editor, shortcut recorder, diff viewer (Win+Alt+O),
   opt-in dimming, reset confirm.
-- S1n-S5n (Scratchpad): MANUAL — editor lifecycle, dictation target, tab UX.
+- (Scratchpad S1n-S5n: retired — the Scratchpad page and its functions were
+  removed outright in remove/scratchpad-page.)
 - P1 (Privacy): MANUAL — delete-all two-step confirm on Windows. A4 delete-scope findings
   R-W4-001/002/003/005/006/007 were FIXED by W4-IMPR-01 (98f7685); R-W4-004 (usage_count
   dead) remains open.

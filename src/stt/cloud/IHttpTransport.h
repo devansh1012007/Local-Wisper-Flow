@@ -67,4 +67,8 @@ public:
     virtual ~IHttpTransport() = default;
 
     virtual HttpResponse Post(const HttpRequest& request) = 0;
+
+    virtual HttpResponse Get(const HttpRequest& request) {
+        throw HttpTransportError(HttpTransportErrorKind::Network, "GET not supported by this transport");
+    }
 };

@@ -59,3 +59,18 @@ TEST_CASE("presets match the spec") {
     CHECK(error.frequency_hz == doctest::Approx(220.0));
     CHECK(error.duration_ms == 150);
 }
+
+TEST_CASE("preview tone is the distinct long volume sample") {
+    // Followups-3 D1: the volume-slider sample must be clearly audible at
+    // low amplitudes and distinguishable from the 60 ms start/stop blips -
+    // middle C for 160 ms. Pinning frequency AND duration keeps it that way.
+    const ToneGenerator::ToneSpec preview = ToneGenerator::PreviewTone();
+    CHECK(preview.frequency_hz == doctest::Approx(523.25));
+    CHECK(preview.duration_ms == 160);
+    const auto samples = ToneGenerator::Generate(16000, preview.frequency_hz,
+                                                 preview.duration_ms, 10, 0.3);
+    CHECK(samples.size() == static_cast<std::size_t>(16000 * 160 / 1000));
+    // Fade envelope applies: ends (and starts) below the 0.3 ceiling.
+    CHECK(std::fabs(samples.front()) <= 0.3);
+    CHECK(std::fabs(samples.back()) <= 0.3);
+}

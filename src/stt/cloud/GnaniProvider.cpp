@@ -1,5 +1,6 @@
 #include "stt/cloud/GnaniProvider.h"
 
+#include "core/Log.h"
 #include "core/Redact.h"
 #include "stt/cloud/ClipSplitter.h"
 #include "stt/cloud/GnaniResponse.h"
@@ -10,6 +11,21 @@
 #include <utility>
 
 namespace {
+
+constexpr std::size_t kMaxDetailLogChars = 200;
+
+std::string TruncateDetail(const std::string& detail) {
+    // INVARIANT: byte limit is 200 but never split a multi-byte UTF-8
+    // sequence; stored attempt stats stay untruncated, this is display copy.
+    if (detail.size() <= kMaxDetailLogChars) {
+        return detail;
+    }
+    std::size_t cut = kMaxDetailLogChars;
+    while (cut > 0 && (static_cast<unsigned char>(detail[cut]) & 0xC0) == 0x80) {
+        --cut;
+    }
+    return detail.substr(0, cut);
+}
 
 void AppendText(std::string& target, const std::string& addition) {
     if (addition.empty()) {
@@ -32,11 +48,20 @@ std::string RequestIdOf(const HttpResponse& response) {
 }
 
 void LogAttempt(const SttAttemptStats& attempt) {
+    // INVARIANT: attempt.detail is already redacted by the caller and never
+    // contains transcript text; truncate a display copy only, never the
+    // stored attempt stats.
+    const std::string detail = TruncateDetail(attempt.detail);
     std::cerr << "[stt] provider=" << attempt.provider << " request_id="
               << (attempt.request_id.empty() ? std::string("-") : attempt.request_id)
               << " status=" << attempt.http_status << " error=" << ToString(attempt.error)
+              << " detail=" << detail
               << " bytes=" << attempt.bytes_sent << "/" << attempt.bytes_received
               << " latency_ms=" << attempt.latency.count() << '\n';
+    lwf::Log::Warning("[stt] provider=" + attempt.provider + " request_id=" +
+                      (attempt.request_id.empty() ? std::string("-") : attempt.request_id) +
+                      " status=" + std::to_string(attempt.http_status) +
+                      " error=" + std::string(ToString(attempt.error)) + " detail=" + detail);
 }
 
 }  // namespace

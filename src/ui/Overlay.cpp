@@ -21,7 +21,10 @@
 namespace {
 
 namespace metrics = lwf::ui::metrics;
-using lwf::ui::kDarkPalette;
+// Mini badge (T2b): the ImGui style follows PaletteForTheme with the other
+// windows; the badge's custom Pack(current_palette_->...) draws follow the
+// selected theme after T15.
+
 using lwf::ui::Pack;
 
 constexpr float kPi = 3.14159265358979323846f;
@@ -71,11 +74,14 @@ bool Overlay::Init() {
     glfwWindowHint(GLFW_FOCUS_ON_SHOW, GLFW_FALSE);
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
-    // The window is wider and taller than the dot so the attention hover
-    // message fits below it; everything outside the dot stays transparent.
-    const int window_w = static_cast<int>(metrics::mini_message_w * scale_x);
-    const int window_h =
-        static_cast<int>((metrics::mini_dot + metrics::mini_message_h) * scale_y);
+    // Followups D6: the window hugs the icons (dot + status strip). The
+    // attention state re-applies the expanded extent through
+    // ApplyWindowGeometry; everything outside the icons stays transparent.
+    int design_w = 0;
+    int design_h = 0;
+    ComputeWindowExtent(&design_w, &design_h);
+    const int window_w = static_cast<int>(static_cast<float>(design_w) * scale_x);
+    const int window_h = static_cast<int>(static_cast<float>(design_h) * scale_y);
     window_ = glfwCreateWindow(window_w, window_h, "lwf-mini", nullptr, nullptr);
     if (window_ == nullptr) {
         return false;
@@ -122,7 +128,22 @@ bool Overlay::Init() {
     glfwSwapInterval(1);
     ImGui_ImplGlfw_InitForOpenGL(window_, true);
     ImGui_ImplOpenGL3_Init("#version 130");
-    lwf::ui::ApplyImGuiStyle(kDarkPalette, static_cast<float>(dpi_scale_));
+    // T2b theme selection. This window has no SettingsStore ref, so main.cpp
+    // feeds the palette via a pre-Init SetTheme; promote any pending
+    // selection (a pre-Init SetTheme queues it) or default to Graphite.
+    if (theme_pending_ && pending_theme_palette_ != nullptr) {
+        current_palette_ = pending_theme_palette_;
+        pending_theme_palette_ = nullptr;
+        theme_pending_ = false;
+    }
+    if (current_palette_ == nullptr) {
+        // DECISION: no pre-Init SetTheme (defaults to Graphite). Route the
+        // fallback through the canonical selector so the default follows the
+        // schema combination kThemeGraphite -> kDarkPalette, never a bare
+        // palette literal.
+        current_palette_ = &lwf::ui::PaletteForTheme(std::string(lwf::ui::kThemeGraphite));
+    }
+    lwf::ui::ApplyImGuiStyle(*current_palette_, static_cast<float>(dpi_scale_));
 
     // Topmost tool window, never activates, click-through until hovered.
     WindowStyles::ApplyOverlayStyles(glfwGetWin32Window(window_));
@@ -155,6 +176,9 @@ void Overlay::SetState(OverlayModel::PillState state, const std::string& message
     // SECURITY: none (no auth path) — but the badge must repaint, and the
     // idle early-out must not swallow a dwell/fade restart.
     dirty_ = true;
+    // The window extent depends on the state (Attention expands for the
+    // message; leaving Attention shrinks back), so re-apply the geometry.
+    ApplyWindowGeometry();
 }
 
 void Overlay::PushLevel(float level) {
@@ -164,6 +188,25 @@ void Overlay::PushLevel(float level) {
 
 void Overlay::SetReduceMotion(bool reduce) {
     reduce_motion_ = reduce;
+    dirty_ = true;
+}
+
+void Overlay::SetTheme(const lwf::ui::Palette& palette) {
+    // CRITICAL: never call ApplyImGuiStyle here. The ApplySettings drain in
+    // main.cpp may run while another window's ImGui context is current.
+    // Queue the palette (same deferred pattern as pending_dpi_scale_); a
+    // pre-Init call is promoted by Init, a live call by RenderFrame where
+    // this window's context is current. Mirror SetReduceMotion by setting
+    // dirty_ so the idle early-out cannot skip the re-style. No-op when the
+    // selection is unchanged.
+    if (&palette == current_palette_ && !theme_pending_) {
+        return;
+    }
+    if (theme_pending_ && &palette == pending_theme_palette_) {
+        return;
+    }
+    pending_theme_palette_ = &palette;
+    theme_pending_ = true;
     dirty_ = true;
 }
 
@@ -205,29 +248,39 @@ void Overlay::SetActivateHandler(std::function<void()> handler) {
     on_activate_ = std::move(handler);
 }
 
-void Overlay::SetScratchpadVisible(bool visible) {
-    if (scratchpad_visible_ == visible) {
-        return;
-    }
-    scratchpad_visible_ = visible;
-    dirty_ = true;
-}
-
-void Overlay::SetScratchpadActivateHandler(std::function<void()> handler) {
-    on_scratchpad_activate_ = std::move(handler);
-}
-
 bool Overlay::Visible() const {
     return state_ != OverlayModel::PillState::Hidden;
+}
+
+void Overlay::ComputeWindowExtent(int* width, int* height) const {
+    // Design pixels; callers scale once by dpi_scale_.
+    const bool expanded =
+        state_ == OverlayModel::PillState::Attention && !message_.empty();
+    if (expanded) {
+        // Attention expands to the message reserve under the dot (the box
+        // spans the window width; same reserve as the pre-D6 badge).
+        *width = static_cast<int>(metrics::mini_message_w);
+        *height = static_cast<int>(metrics::mini_ring_pad + metrics::mini_dot +
+                                   metrics::mini_message_h);
+        return;
+    }
+    float w = 2.0f * metrics::mini_ring_pad + metrics::mini_dot;
+    *width = static_cast<int>(w);
+    // One top pad only: the status strip carries the bottom edge, so the
+    // hugged height stays tight (ring_pad + dot + status strip).
+    *height = static_cast<int>(metrics::mini_ring_pad + metrics::mini_dot +
+                               metrics::mini_status_h);
 }
 
 void Overlay::ApplyWindowGeometry() {
     if (window_ == nullptr) {
         return;
     }
-    const int window_w = static_cast<int>(metrics::mini_message_w * dpi_scale_);
-    const int window_h =
-        static_cast<int>((metrics::mini_dot + metrics::mini_message_h) * dpi_scale_);
+    int design_w = 0;
+    int design_h = 0;
+    ComputeWindowExtent(&design_w, &design_h);
+    const int window_w = static_cast<int>(static_cast<float>(design_w) * dpi_scale_);
+    const int window_h = static_cast<int>(static_cast<float>(design_h) * dpi_scale_);
     OverlayModel::Rect position;
     if (has_saved_position_) {
         position =
@@ -235,8 +288,7 @@ void Overlay::ApplyWindowGeometry() {
     } else {
         // Design pixels in, scaled once inside PillPosition (the old call
         // passed pre-scaled pixels and scaled them a second time).
-        position = OverlayModel::PillPosition(work_area_, metrics::mini_message_w,
-                                              metrics::mini_dot + metrics::mini_message_h,
+        position = OverlayModel::PillPosition(work_area_, design_w, design_h,
                                               metrics::mini_margin, dpi_scale_);
     }
     glfwSetWindowPos(window_, position.x, position.y);
@@ -290,7 +342,10 @@ void Overlay::RenderFrame(float delta_seconds) {
     // self-corrects on the next tick, since the verdict is re-polled every
     // frame while idle (cf. R-W2-005).
     const bool fade_settled = reduce_motion_ || fade_alpha_ >= 1.0f;
-    if (!dirty_ && fade_settled && !dragging_ && pending_dpi_scale_ <= 0.0f &&
+    // A pending theme (SetTheme) also forces a full frame. SetTheme already
+    // sets dirty_, but naming it here keeps the early-out correct even if a
+    // future caller queues a theme without setting dirty_.
+    if (!dirty_ && fade_settled && !dragging_ && pending_dpi_scale_ <= 0.0f && !theme_pending_ &&
         (state_ == OverlayModel::PillState::Ready ||
          state_ == OverlayModel::PillState::Paused)) {
         int poll_win_x = 0;
@@ -298,32 +353,27 @@ void Overlay::RenderFrame(float delta_seconds) {
         int poll_win_w = 0;
         glfwGetWindowPos(window_, &poll_win_x, &poll_win_y);
         glfwGetWindowSize(window_, &poll_win_w, nullptr);
-        const float poll_dot = metrics::mini_dot * static_cast<float>(dpi_scale_);
-        const int poll_dot_px = static_cast<int>(poll_dot);
-        const int poll_dot_min_x =
-            (poll_win_w - poll_dot_px) / 2;
-        const int poll_inflate = static_cast<int>(metrics::mini_hover_inflate *
-                                                  static_cast<float>(dpi_scale_));
+        const float poll_scale = static_cast<float>(dpi_scale_);
+        const int poll_pad_px = static_cast<int>(metrics::mini_ring_pad * poll_scale);
+        const int poll_dot_px = static_cast<int>(metrics::mini_dot * poll_scale);
+        // Followups D6: the dot is anchored top-left at ring_pad (it was
+        // horizontally centered when the window carried the message
+        // reserve at all times); the poll must mirror DrawBadge's geometry.
+        const int poll_dot_min_x = poll_pad_px;
+        const int poll_dot_min_y = poll_pad_px;
+        const int poll_inflate = static_cast<int>(metrics::mini_hover_inflate * poll_scale);
         const bool poll_near = WindowStyles::IsCursorInsideRect(
-            poll_win_x + poll_dot_min_x, poll_win_y, poll_dot_px, poll_dot_px,
-            poll_inflate);
+            poll_win_x + poll_dot_min_x, poll_win_y + poll_dot_min_y,
+            poll_dot_px, poll_dot_px, poll_inflate);
         const bool poll_hover_dot = WindowStyles::IsCursorInsideRect(
-            poll_win_x + poll_dot_min_x, poll_win_y, poll_dot_px, poll_dot_px, 0);
-        bool poll_note_hover = false;
-        if (scratchpad_visible_) {
-            const int poll_note_px = static_cast<int>(16.0f * static_cast<float>(dpi_scale_));
-            const int poll_note_gap = static_cast<int>(4.0f * static_cast<float>(dpi_scale_));
-            const int poll_note_min_x = poll_dot_min_x + poll_dot_px + poll_note_gap;
-            const int poll_note_min_y = (poll_dot_px - poll_note_px) / 2;
-            poll_note_hover = WindowStyles::IsCursorInsideRect(poll_win_x + poll_note_min_x, poll_win_y + poll_note_min_y, poll_note_px, poll_note_px, 0);
-        }
+            poll_win_x + poll_dot_min_x, poll_win_y + poll_dot_min_y,
+            poll_dot_px, poll_dot_px, 0);
         const bool poll_button_down = WindowStyles::LeftMouseButtonDown();
-        if (poll_near == poll_near_dot_ && poll_hover_dot == poll_hover_dot_ && poll_note_hover == poll_note_hover_ && poll_button_down == poll_button_down_) {
+        if (poll_near == poll_near_dot_ && poll_hover_dot == poll_hover_dot_ && poll_button_down == poll_button_down_) {
             return;  // Nothing changed; skip the full frame render.
         }
         poll_near_dot_ = poll_near;
         poll_hover_dot_ = poll_hover_dot;
-        poll_note_hover_ = poll_note_hover;
         poll_button_down_ = poll_button_down;
         dirty_ = true;
     }
@@ -331,14 +381,29 @@ void Overlay::RenderFrame(float delta_seconds) {
     ImGui::SetCurrentContext(imgui_context_);
     glfwMakeContextCurrent(window_);
 
-    // A monitor scale change lands here, where this window's ImGui context
-    // is current: re-apply the style and re-anchor the geometry.
-    if (pending_dpi_scale_ > 0.0f) {
-        dpi_scale_ = pending_dpi_scale_;
-        pending_dpi_scale_ = 0.0f;
-        lwf::ui::ApplyImGuiStyle(kDarkPalette, static_cast<float>(dpi_scale_));
-        cached_status_valid_ = false;  // font scale changed: remap cache key
-        ApplyWindowGeometry();
+    // A monitor scale change and a live theme swap land here, where this
+    // window's ImGui context is current: re-apply the style and re-anchor
+    // the geometry. The theme promotes only on an actual palette change
+    // (pointer identity); the clear color below stays transparent so the
+    // badge remains see-through (INVARIANT) — the Paper/Graphite chrome
+    // draws inside DrawBadge convert in T15.
+    if (pending_dpi_scale_ > 0.0f || theme_pending_) {
+        bool dpi_changed = false;
+        if (pending_dpi_scale_ > 0.0f) {
+            dpi_scale_ = pending_dpi_scale_;
+            pending_dpi_scale_ = 0.0f;
+            dpi_changed = true;
+        }
+        if (theme_pending_) {
+            current_palette_ = pending_theme_palette_;
+            pending_theme_palette_ = nullptr;
+            theme_pending_ = false;
+        }
+        lwf::ui::ApplyImGuiStyle(*current_palette_, static_cast<float>(dpi_scale_));
+        if (dpi_changed) {
+            cached_status_valid_ = false;  // font scale changed: remap cache key
+            ApplyWindowGeometry();
+        }
     }
 
     int fb_width = 0;
@@ -380,11 +445,12 @@ void Overlay::DrawBadge() {
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
 
-    const ImVec2 display = ImGui::GetIO().DisplaySize;
-    // The dot sits at the top of the window; the space below it carries the
-    // tiny status label and the attention hover message.
-    const ImVec2 dot_min((display.x - dot) * 0.5f, 0.0f);
-    const ImVec2 dot_max(dot_min.x + dot, dot);
+    // The dot sits at the top-left with ring_pad clearance (followups D6:
+    // the window hugs the icons, so the dot is no longer horizontally
+    // centered); the space below it carries the tiny status label, and the
+    // attention expansion carries the hover message.
+    const ImVec2 dot_min(metrics::mini_ring_pad * scale, metrics::mini_ring_pad * scale);
+    const ImVec2 dot_max(dot_min.x + dot, dot_min.y + dot);
     const ImVec2 center((dot_min.x + dot_max.x) * 0.5f, (dot_min.y + dot_max.y) * 0.5f);
     const float radius = dot * 0.5f;
 
@@ -397,20 +463,13 @@ void Overlay::DrawBadge() {
     const bool near_dot = WindowStyles::IsCursorInsideRect(
         win_x + static_cast<int>(dot_min.x), win_y + static_cast<int>(dot_min.y),
         static_cast<int>(dot), static_cast<int>(dot), static_cast<int>(metrics::mini_hover_inflate * scale));
-    bool near_note = false;
-    if (scratchpad_visible_) {
-        const float note_size = 16.0f * scale;
-        const ImVec2 note_min(dot_max.x + 4.0f * scale, dot_min.y + (dot - note_size) * 0.5f);
-        near_note = WindowStyles::IsCursorInsideRect(win_x + static_cast<int>(note_min.x), win_y + static_cast<int>(note_min.y), static_cast<int>(note_size), static_cast<int>(note_size), 0);
-    }
-    const bool near_interactive = near_dot || near_note;
     if (dragging_) {
         if (pass_through_) {
             pass_through_ = false;
             WindowStyles::SetOverlayPassThrough(glfwGetWin32Window(window_), false);
         }
-    } else if (near_interactive != !pass_through_) {
-        pass_through_ = !near_interactive;
+    } else if (near_dot != !pass_through_) {
+        pass_through_ = !near_dot;
         WindowStyles::SetOverlayPassThrough(glfwGetWin32Window(window_), pass_through_);
     }
 
@@ -419,20 +478,6 @@ void Overlay::DrawBadge() {
     ImGui::InvisibleButton("##dot", ImVec2(dot, dot));
     hovered_ = ImGui::IsItemHovered() || dragging_;
     UpdateDrag(near_dot);
-
-    if (scratchpad_visible_) {
-        const float note_size = 16.0f * scale;
-        const ImVec2 note_min(dot_max.x + 4.0f * scale, dot_min.y + (dot - note_size) * 0.5f);
-        ImGui::SetCursorScreenPos(note_min);
-        const bool note_pressed = ImGui::InvisibleButton("##note", ImVec2(note_size, note_size));
-        if (note_pressed && on_scratchpad_activate_) {
-            on_scratchpad_activate_();
-            dirty_ = true;
-        }
-        if (ImGui::IsItemHovered()) {
-            dirty_ = true;
-        }
-    }
 
     ImDrawList& draw = *ImGui::GetWindowDrawList();
 
@@ -446,31 +491,20 @@ void Overlay::DrawBadge() {
     }
     const float breathe = reduce_motion_ ? 0.75f : 0.6f + 0.4f * Wave01(animation_time_, metrics::ring_breathe);
 
-    draw.AddCircleFilled(center, radius, Pack(kDarkPalette.surface, kDarkPalette.surface_alpha * badge_alpha), 0);
-    draw.AddCircle(center, radius, Pack(kDarkPalette.border, badge_alpha), 0, 1.0f * scale);
-
-    if (scratchpad_visible_) {
-        const float note_px = 16.0f * scale;
-        const ImVec2 note_min(dot_max.x + 4.0f * scale, dot_min.y + (dot - note_px) * 0.5f);
-        const ImVec2 note_max(note_min.x + note_px, note_min.y + note_px);
-        draw.AddRectFilled(note_min, note_max, Pack(kDarkPalette.surface, badge_alpha), 4.0f * scale);
-        draw.AddRect(note_min, note_max, Pack(kDarkPalette.border, badge_alpha), 4.0f * scale, 0, 1.0f * scale);
-        const ImVec2 glyph_min(note_min.x + 4.0f * scale, note_min.y + 4.0f * scale);
-        draw.AddRect(glyph_min, ImVec2(note_max.x - 4.0f * scale, note_max.y - 4.0f * scale), Pack(kDarkPalette.text, badge_alpha), 1.0f * scale, 0, 1.0f * scale);
-        draw.AddLine(ImVec2(glyph_min.x + 2.0f * scale, glyph_min.y + 4.0f * scale), ImVec2(note_max.x - 6.0f * scale, glyph_min.y + 4.0f * scale), Pack(kDarkPalette.text, badge_alpha), 1.0f * scale);
-    }
+    draw.AddCircleFilled(center, radius, Pack(current_palette_->surface, current_palette_->surface_alpha * badge_alpha), 0);
+    draw.AddCircle(center, radius, Pack(current_palette_->border, badge_alpha), 0, 1.0f * scale);
 
     switch (state_) {
         case OverlayModel::PillState::Ready:
-            DrawMic(draw, center, scale, Pack(kDarkPalette.text, badge_alpha), false);
+            DrawMic(draw, center, scale, Pack(current_palette_->text, badge_alpha), false);
             break;
         case OverlayModel::PillState::Listening: {
             // Filled brass mic, breathing ring, five level bars.
             // INVARIANT: levels_scratch_ is reused across frames so this
             // path performs zero heap allocations (WaveformRing::SnapshotInto).
             draw.AddCircle(center, radius + 6.0f * scale,
-                           Pack(kDarkPalette.accent, breathe * fade_alpha_), 0, 2.0f * scale);
-            DrawMic(draw, center, scale, Pack(kDarkPalette.accent, fade_alpha_), true);
+                           Pack(current_palette_->accent, breathe * fade_alpha_), 0, 2.0f * scale);
+            DrawMic(draw, center, scale, Pack(current_palette_->accent, fade_alpha_), true);
             waveform_.SnapshotInto(levels_scratch_);
             const std::vector<float>& levels = levels_scratch_;
             float avg = 0.0f;
@@ -493,7 +527,7 @@ void Overlay::DrawBadge() {
                 }
                 const float h = std::clamp(2.0f + level * max_h, 2.0f * scale, max_h);
                 draw.AddRectFilled(ImVec2(x, base_y - h), ImVec2(x + bar_w, base_y),
-                                   Pack(kDarkPalette.accent, fade_alpha_), bar_w * 0.5f);
+                                   Pack(current_palette_->accent, fade_alpha_), bar_w * 0.5f);
                 x += bar_w + bar_gap;
             }
             break;
@@ -513,7 +547,7 @@ void Overlay::DrawBadge() {
                 }
                 const ImVec2 p(center.x + (static_cast<float>(i) - 1.0f) * 7.0f * scale, center.y);
                 draw.AddCircleFilled(p, 2.2f * scale,
-                                     Pack(kDarkPalette.text, alpha * fade_alpha_), 0);
+                                     Pack(current_palette_->text, alpha * fade_alpha_), 0);
             }
             break;
         }
@@ -521,22 +555,22 @@ void Overlay::DrawBadge() {
             // A check for 600 ms, then back to Ready (dwell handled above).
             const float s = scale;
             draw.AddLine(ImVec2(center.x - 6.0f * s, center.y), ImVec2(center.x - 1.5f * s, center.y + 5.0f * s),
-                         Pack(kDarkPalette.ok, fade_alpha_), 2.0f * s);
+                         Pack(current_palette_->ok, fade_alpha_), 2.0f * s);
             draw.AddLine(ImVec2(center.x - 1.5f * s, center.y + 5.0f * s), ImVec2(center.x + 6.5f * s, center.y - 6.0f * s),
-                         Pack(kDarkPalette.ok, fade_alpha_), 2.0f * s);
+                         Pack(current_palette_->ok, fade_alpha_), 2.0f * s);
             break;
         }
         case OverlayModel::PillState::Paused: {
             // Outline mic with a bar through it; click resumes.
-            DrawMic(draw, center, scale, Pack(kDarkPalette.muted, fade_alpha_), false);
+            DrawMic(draw, center, scale, Pack(current_palette_->muted, fade_alpha_), false);
             draw.AddLine(ImVec2(center.x - 8.0f * scale, center.y + 8.0f * scale),
                          ImVec2(center.x + 8.0f * scale, center.y - 8.0f * scale),
-                         Pack(kDarkPalette.muted, fade_alpha_), 1.5f * scale);
+                         Pack(current_palette_->muted, fade_alpha_), 1.5f * scale);
             break;
         }
         case OverlayModel::PillState::Attention: {
             draw.AddCircleFilled(center, 5.0f * scale,
-                                  Pack(kDarkPalette.err_fill, fade_alpha_), 0);
+                                  Pack(current_palette_->err_fill, fade_alpha_), 0);
             if (hovered_ && !message_.empty()) {
                 DrawAttentionMessage(draw, dot_min, scale);
             }
@@ -568,7 +602,7 @@ void Overlay::DrawBadge() {
             }
             const ImVec2 text_size = cached_status_size_;
             draw.AddText(ImVec2(center.x - text_size.x * 0.5f, dot_max.y + 2.0f * scale),
-                         Pack(kDarkPalette.muted, badge_alpha), status_word);
+                         Pack(current_palette_->muted, badge_alpha), status_word);
         }
     }
 
@@ -599,9 +633,11 @@ void Overlay::UpdateDrag(bool near_dot) {
                                std::abs(cursor_x - drag_cursor_origin_x_) +
                                    std::abs(cursor_y - drag_cursor_origin_y_));
     if (drag_travel_px_ > kDragClickThresholdPx) {
-        const int window_w = static_cast<int>(metrics::mini_message_w * dpi_scale_);
-        const int window_h =
-            static_cast<int>((metrics::mini_dot + metrics::mini_message_h) * dpi_scale_);
+        int design_w = 0;
+        int design_h = 0;
+        ComputeWindowExtent(&design_w, &design_h);
+        const int window_w = static_cast<int>(static_cast<float>(design_w) * dpi_scale_);
+        const int window_h = static_cast<int>(static_cast<float>(design_h) * dpi_scale_);
         const OverlayModel::Rect position = OverlayModel::ClampPosition(
             work_area_, drag_win_origin_x_ + cursor_x - drag_cursor_origin_x_,
             drag_win_origin_y_ + cursor_y - drag_cursor_origin_y_, window_w, window_h);
@@ -615,9 +651,11 @@ void Overlay::UpdateDrag(bool near_dot) {
     if (!WindowStyles::LeftMouseButtonDown()) {
         if (drag_travel_px_ > kDragClickThresholdPx) {
             if (on_position_persist_) {
-                const int window_w = static_cast<int>(metrics::mini_message_w * dpi_scale_);
-                const int window_h =
-                    static_cast<int>((metrics::mini_dot + metrics::mini_message_h) * dpi_scale_);
+                int design_w = 0;
+                int design_h = 0;
+                ComputeWindowExtent(&design_w, &design_h);
+                const int window_w = static_cast<int>(static_cast<float>(design_w) * dpi_scale_);
+                const int window_h = static_cast<int>(static_cast<float>(design_h) * dpi_scale_);
                 const OverlayModel::Rect position = OverlayModel::ClampPosition(
                     work_area_, drag_win_origin_x_ + cursor_x - drag_cursor_origin_x_,
                     drag_win_origin_y_ + cursor_y - drag_cursor_origin_y_, window_w, window_h);
@@ -665,11 +703,11 @@ void Overlay::DrawAttentionMessage(ImDrawList& draw, const ImVec2& dot_min, floa
     const ImVec2 text_size = ImGui::CalcTextSize(message_.c_str(), nullptr, false, text_w);
     const ImVec2 box_min(0.0f, dot_min.y + metrics::mini_dot * scale);
     const ImVec2 box_max(display.x, box_min.y + text_size.y + 2.0f * pad);
-    draw.AddRectFilled(box_min, box_max, Pack(kDarkPalette.surface, 0.97f * fade_alpha_),
+    draw.AddRectFilled(box_min, box_max, Pack(current_palette_->surface, 0.97f * fade_alpha_),
                        metrics::radius_control * scale);
-    draw.AddRect(box_min, box_max, Pack(kDarkPalette.border, fade_alpha_),
+    draw.AddRect(box_min, box_max, Pack(current_palette_->border, fade_alpha_),
                  metrics::radius_control * scale, 0, 1.0f * scale);
     draw.AddText(ImGui::GetFont(), ImGui::GetFontSize(), text_pos,
-                 Pack(kDarkPalette.err, fade_alpha_), message_.c_str(), nullptr, text_w);
+                 Pack(current_palette_->err, fade_alpha_), message_.c_str(), nullptr, text_w);
     ImGui::PopFont();
 }

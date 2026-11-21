@@ -7,6 +7,43 @@
 
 namespace WindowStyles {
 
+#ifdef _WIN32
+namespace {
+
+// Resource id of the exe icon (assets/app.rc.in -> EchoFlow.rc). Keep in
+// sync with WindowsTray.cpp, which loads the same handle for the tray.
+constexpr wchar_t kAppIconId = 1;
+
+HICON LoadAppIcon(int width, int height) {
+    return static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr),
+                                         MAKEINTRESOURCEW(kAppIconId), IMAGE_ICON,
+                                         width, height, LR_DEFAULTCOLOR));
+}
+
+}  // namespace
+#endif
+
+void ApplyAppIcon(void* hwnd) {
+#ifdef _WIN32
+    if (hwnd == nullptr) {
+        return;
+    }
+    const HWND window = static_cast<HWND>(hwnd);
+    const int small_w = GetSystemMetrics(SM_CXSMICON);
+    const int small_h = GetSystemMetrics(SM_CYSMICON);
+    const int big_w = GetSystemMetrics(SM_CXICON);
+    const int big_h = GetSystemMetrics(SM_CYICON);
+    if (HICON small_icon = LoadAppIcon(small_w, small_h); small_icon != nullptr) {
+        SendMessageW(window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
+    }
+    if (HICON big_icon = LoadAppIcon(big_w, big_h); big_icon != nullptr) {
+        SendMessageW(window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(big_icon));
+    }
+#else
+    (void)hwnd;
+#endif
+}
+
 void ApplyOverlayStyles(void* hwnd) {
 #ifdef _WIN32
     if (hwnd == nullptr) {

@@ -70,16 +70,34 @@ commas/line breaks), mirroring the local initial-prompt hint.
 - **Audio never touches disk.** WAV bytes are built in memory per request and
   freed with the request.
 - **Logs carry only**: provider name, request id, HTTP status, error category,
-  byte counts, latency in ms. Never the API key, the audio, or the transcript.
+  byte counts, latency in ms. Gnani attempts additionally write one file-log
+  line each carrying the attempt's redacted error `detail` (API key masked,
+  truncated to 200 chars on display). Never the API key, the audio, or the
+  transcript.
 - **Network allowlist** (`scripts/check_hygiene.sh`): WinHTTP usage may only
   live in `src/os/WindowsHttpClient.*`; cloud endpoints may only be named in
   `src/stt/cloud/*` and in `scripts/gnani_smoke.py` (the offline contract tool).
 
 ## Verify the contract before trusting the cloud path
 
-The sandbox that produced this code cannot reach `api.vachana.ai`, so the
-request/response shapes above follow the written contract plus defensive
-parsing; **nothing here has been integration-tested against the live API.**
+The Gnani contract below was checked against the live vendor docs on
+2026-11-08 (`https://docs.gnani.ai/api/STT/speech-to-text.md` + OpenAPI spec);
+**it has NOT yet been verified against the live API.** That changes the stale
+values the re-landing originally shipped: request path `/v1/asr/recognize` →
+`/stt/v3`, multipart field `language` → `language_code` (required,
+`indic-auto` valid for v3.0), multipart field `audio` → `audio_file`
+(`audio.wav`, wav ext ok). The rest matches the docs: host `api.vachana.ai`,
+header `X-API-Key-ID` (required), `model` `prisma-v3.0`, `keyterms` sent as
+a single JSON-array string field matching the docs-example form
+(`["खाता","HDFC Bank"]`, checked 2026-11-08, v3.0 only). Success 200 is
+`{"success": true, "request_id": ..., "transcript": "...", "model":
+"prisma-v3.0", "detected_language_code": "hi-IN", "processing_time": ...}`;
+audio < 0.1 s returns success with an empty transcript. Errors come in three
+envelopes: `{"success": false, "error": {"type": "<TYPE>", "message":
+"..."}}`, auth/rate `{"detail": {"error_code", "message", "status_code"}}`,
+and validation 422 `{"detail": [{type, msg, loc, input}]}`. `GnaniResponse`
+reads all three (error type+message, detail message, first-array msg).
+
 Before relying on cloud mode, run the smoke test with a real key:
 
 ```sh
@@ -105,23 +123,29 @@ bounded by `stt_timeout_ms`.
 
 The consent gate lives in `src/core/ConsentGate.{h,cpp}`: one function decides
 whether cloud is allowed (known provider + `stt_consent_accepted` + a
-non-empty key from the provider's environment variable) and returns a
-log-safe reason when it is not. The router, `main`, and the settings UI all
+non-empty key from the provider's key source — an `api_keys.json` entry next
+to `config.json` first, then the provider's environment variable) and returns
+a log-safe reason when it is not. The router, `main`, and the settings UI all
 read the same verdict, so the config boolean, the wiring, and the UI cannot
 drift apart.
 
 Settings > Cloud tab (S5) turns consent into an explicit in-app action: a
-provider combo (local/gnani today) and an "I understand; enable cloud
+provider combo (local/gnani/elevenlabs/muse) and an "I understand; enable cloud
 transcription" checkbox that explains what leaving the device means. Changing
-either needs a restart. The API key is never entered in the UI - it stays in
-the environment. Onboarding keeps pushing local-first; cloud consent is a
-deliberate Settings action.
+either needs a restart. Provider API keys are entered in the same tab behind
+masked rows (T6, 2026-11-09): a saved key is stored in `api_keys.json` next to
+`config.json` and takes precedence over the provider's environment variable
+(`GNANI_API_KEY` / `ELEVENLABS_API_KEY` / `META_MODEL_API_KEY`); the key is
+never written to `config.json`, logs, or history. Onboarding keeps pushing
+local-first; cloud consent is a deliberate Settings action.
 
 Failed cloud attempts keep a redacted error `detail` in their attempt stats
 (server text with the API key masked, auth header values masked by
 `lwf::RedactAuthValues` from `src/core/Redact.h`). Detail values are stored
-in memory for the UI and tests; log lines still carry only provider, request
-id, status, category, byte counts, and latency.
+in memory for the UI and tests; Gnani attempts also write one `[stt] ...`
+line per attempt to the file log (`lwf::Log::Warning`) carrying the redacted
+detail truncated to 200 chars, so failures are visible in `lwf.log`.
+Transcripts are never logged.
 
 ## Latency and cost model (S6)
 

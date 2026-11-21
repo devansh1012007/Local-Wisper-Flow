@@ -25,6 +25,8 @@ until a PASS box is filled. Add one section per task id with exact steps.
 | E | E3 crash handling | crash file, one-time notice, About version |
 | F | F4 installer | per-user install, tasks, uninstall data choice |
 | S | S4-S8 cloud STT | consent UI, gating, fallback, secrets, cancellation, three providers |
+| MIC | MIC-003 microphone picker | Settings > Speech device list, restart banner, level meter per device |
+| OR | OR-UI-01 OpenRouter model picker | Settings > Cleanup live model list + manual id |
 
 Portable logic (FSM tables, tracker, pipeline, stores, streaming fallback,
 resilience/chaos, privacy) is unit-tested on Linux and covered by ctest; the
@@ -37,7 +39,7 @@ sections below only list what needs real Windows.
    `cmake --build build --config Release` (two-phase configure: re-run cmake after
    the first build finishes so llama links).
 2. Put `ggml-base.en.bin` next to the exe or set `whisper_model_path`.
-3. Launch `local-wisper-flow.exe`. Hold the hotkey, speak one sentence, release.
+3. Launch `EchoFlow.exe`. Hold the hotkey, speak one sentence, release.
 
 Expected: transcript cleaned by LLM is pasted into the focused app, FSM lines appear
 in the log, dashboard still renders.
@@ -299,6 +301,12 @@ Expected: v0 keys unchanged, new keys added with defaults, `config.json.bak` cre
 > cwd fallbacks, ba46cbf/db4e40a). Both windows render (verified by window capture).
 > Every item below is still UNVERIFIED until ticked on this machine.
 
+> 2026-11-10 sweep note (T16): the UI nouns below were updated to the Hairline
+> reality (top strip instead of the left rail, Graphite/Paper instead of
+> Hunter/Brass/Ivory); the step structure and the page content they describe
+> are the R1-era shapes — for the CURRENT ui-redesign-v2 checks run section
+> V2 at the bottom of this file.
+
 
 Build first, then run through these in order. Mark PASS only on real Windows
 hardware. All of R replaces the old dashboard/settings/wizard windows.
@@ -314,8 +322,8 @@ hardware. All of R replaces the old dashboard/settings/wizard windows.
 ### R-b: mini badge states
 1. Ready: outline mic at reduced opacity. Hover it: it should come to full
    opacity and the desktop under it should not be blocked once you move away.
-2. Hold the PTT hotkey and speak: filled brass mic, breathing ring, five
-   level bars moving with your voice.
+2. Hold the PTT hotkey and speak: filled mic in the accent color, breathing
+   ring, five level bars moving with your voice.
 3. Release: three thinking dots, then a brief check, then back to Ready.
 4. Tray: disable dictation. Badge shows the paused mic (muted, slash). Click
    it: dictation re-enables (verify the tray checkmark follows).
@@ -326,8 +334,8 @@ hardware. All of R replaces the old dashboard/settings/wizard windows.
 
 ### R-c: full window
 1. Tray > Settings...: the full window opens (960x640 default, native title
-   bar, rail with Home/Speech/Cleanup/Privacy/About, dark Hunter-and-Brass
-   theme).
+   bar, top-strip navigation, dark Graphite theme — Paper is selectable in
+   Settings > General and swaps live).
 2. Home: Right now line, hotkey chips, Trust card, Quick settings toggles,
    Last dictation (dictate something first, then Copy it back from the
    clipboard).
@@ -344,9 +352,10 @@ hardware. All of R replaces the old dashboard/settings/wizard windows.
 ### R-d: first run
 1. Delete `%APPDATA%\LocalWisperFlow\config.json` (or set first_run=true and
    clear whisper_model_path), relaunch.
-2. The full window opens on Welcome: mic test (bar moves), microphone
-   settings button opens ms-settings, hotkey chord capture, model list with
-   unverified warnings, finish lands on Home.
+2. The full window opens on Welcome: intro paragraph, the current
+   push-to-talk chord (read-only), the model list with unverified warnings
+   and the Download/Browse row, and Get started lands on Home. (The 4-step
+   mic-test wizard was retired in followups-1.)
 3. Relaunch: no Welcome; window stays hidden until opened.
 
 ### R-e: regression basics
@@ -354,16 +363,20 @@ hardware. All of R replaces the old dashboard/settings/wizard windows.
 2. Cancel one dictation with the cancel hotkey: badge returns to Ready, no
    attention dot.
 3. Second instance: launching the exe again just opens the full window.
+   (OWED/BLOCKED, pre-PR review: `SingleInstance::SignalOpenSettings` only
+   opens the `Local\LwfOpenSettingsEvent` event — nothing in src/ creates or
+   waits on it, so the second-instance notification is dead end-to-end and
+   this step cannot pass until the event watcher is added; see V2 step 6.)
 
 ## R2: 2026-11 wave-run UI changes (branch fix/gui-typography-dpi)
 These landed in the 20261106-gui wave run and are NOT claimed as verified.
 Do them on a Windows machine at 100%, 125% and 150% DPI.
 
 ### R2-a: keyboard navigation (GUI-A1)
-1. Focus the Full window; verify Tab / Shift+Tab reaches rail items and toggles
-   in a sane order, and Arrow keys move within the rail.
-2. Focused rail item / toggle shows a 2 px focus ring (kDarkPalette.focus).
-3. Pressing Enter or Space on a focused rail item switches page.
+1. Focus the Full window; verify Tab / Shift+Tab reaches top-strip items and
+   toggles in a sane order, and Arrow keys move within the top strip.
+2. Focused top-strip item / toggle shows a 2 px focus ring (kDarkPalette.focus).
+3. Pressing Enter or Space on a focused top-strip item switches page.
 4. Mouse click still works, and clicking does not steal focus from keyboard
    navigation mid-edit (NavActive gating).
 
@@ -376,8 +389,287 @@ Do them on a Windows machine at 100%, 125% and 150% DPI.
 1. Idle badge: after the attention dwell, the frame cost drops to nothing
    (no swap until hover/drag/state change); hovering wakes it.
 2. Idle alphas readable on a dark desktop (0.55 idle / 1.0 active); attention
-   message text legible at 13 px; badge 250 px wide.
+   message text legible at 13 px. Normal badge hugs the icons (38x48 at
+   100% DPI); Attention expands to 250 px
+   wide and shrinks back after the dwell (followups-1).
 
 ### R2-d: DPI scaling
 1. Repeat R and R2 at 100%, 125%, 150% DPI. No double-scaled text, no
    layout drift after moving the window between monitors with different DPI.
+
+## MIC-003: microphone picker (Settings > Speech)
+Device selection UI (branch `ops/ui-full-redesign`, Task B). Not claimed as
+verified until a PASS box is filled.
+
+1. Tray > Settings... > Speech: a `Microphone` card sits between `Model` and
+   `Microphone level`. Its combo lists `System default` first, then every
+   capture device the machine has (a machine with no capture devices must show
+   only `System default` - no crash, no empty popup).
+2. Pick a named device: the `Saved` label flashes and the restart banner
+   appears (this setting is not hot-applied).
+3. Quit from the tray and relaunch. Hold the hotkey and speak: the level meter
+   moves, the log line reads `MiniaudioCapture: active capture device: <name>`,
+   and the transcript lands where the cursor is.
+4. Repeat steps 2-3 for each listed device in turn: the log names each chosen
+   device after its restart, and the level meter responds while speaking into
+   it.
+5. Pick `System default`, restart: the log reports the system default capture
+   device and the meter responds on the OS default input.
+6. Stale-name resilience: put a name that no longer exists in
+   `%APPDATA%\LocalWisperFlow\config.json` -> `mic_device`, restart: the app
+   still starts, the combo previews `System default`, and the log says the name
+   was not found and the system default is used.
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+
+## OR-UI-01: OpenRouter model picker (Settings > Cleanup)
+
+Live model-list picker with a manual id fallback (branch
+`ops/ui-full-redesign`, Task B). Not claimed as verified until a PASS box is
+filled.
+
+Setup: in Settings > Cleanup choose `openrouter` in the backend combo and save
+an OpenRouter key (or set `OPENROUTER_API_KEY`). Note the network state you
+use for each step.
+
+a. Offline refresh + freeze check: go offline (airplane mode / unplugged). In
+   Settings > Cleanup press `Refresh model list`. Expected: the status line
+   shows `Loading models...` then an error (`Could not load the model list.` +
+   detail), and the app stays responsive the whole time - both the Mini badge
+   and the Full window render, hover, and animate while the button reads
+   `Loading models...` (the fetch is off-thread; an 8 s timeout must never
+   freeze either window). Pressing Refresh again during that time does nothing
+   (no second network call).
+b. List load: go online and press `Refresh model list`. Expected: status
+   becomes `<n> models available.` and the `Cleanup model` combo lists the
+   fetched ids in sorted order. When a model is already set and it is also in
+   the fetched list, the combo previews that value.
+c. Select, restart, cleanup: pick a model from the combo - the `Saved` label
+   flashes and the restart banner appears. Quit from the tray, relaunch, then
+   hold the hotkey and dictate a sentence: the Privacy tab mirrors the picked
+   model, and the returned text is cleaned (not raw dictation). Pressing
+   Refresh again after the restart now offers the same list, and the picked
+   model still previews in the combo.
+d. Manual id: in the `Type a model id` field (below the Refresh button) type a
+   valid model id not in the fetched list, press `Use this model`: the `Saved`
+   label flashes and the restart banner appears; after restart the combo
+   previews that id and a dictation with cleanup on works. Clearing the field
+   and pressing `Use this model` sets the model to empty (same as selecting
+   the `No model set` placeholder); after restart the combo previews
+   `No model set` and Settings > Privacy shows `OpenRouter model: not set`.
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+
+## V2: ui-redesign-v2 manual checks (Hairline, 2026-11-10)
+
+Checks for the Hairline redesign landed on `ops/ui-redesign-v2` (T2b-T15).
+Steps 1-4 are the new-UI basics; steps 5-9 are the owed items recorded
+during the tasks. Not claimed as verified until PASS boxes are filled on real
+Windows hardware; the dev sandbox has no window runtime.
+
+1. Top-strip navigation (T4a/T4b): the strip shows the current page; strip
+   press and Ctrl+<digit> land on the same page with identical persistence,
+   error-clear and focus semantics (shared ActivateStripPage path).
+2. Theme switcher (Settings > General, T5 + T2b): Graphite <-> Paper swaps
+   live on both windows (Full, Mini badge) without a
+   restart; after an app restart the selected theme persists; a hand-edited
+   bogus `theme` value in config.json falls back to Graphite.
+3. Settings tabs click-through eyeball at 100%, 150% and 200% DPI: no clipped
+   rows, banners or error copy; focus rings visible on strip items and
+   controls; the ruled rows keep their slot heights.
+4. Mini badge on the live palette (T15): Ready/Listening/Thinking/Done/Paused
+   colors follow the selected theme; hover rises from the idle 0.55 alpha to
+   full opacity; dragging works and never fights the click-through hit-test;
+   the attention message clears after ~6 s.
+
+Owed items recorded during T0-T15 (blocked on hardware/synthetic input):
+
+5. Real Mini Attention state: unreachable in captures - main.cpp overrides it
+   to Ready; needs a synthetic failure (mic loss) on hardware while capturing.
+6. Dead second-instance OpenSettings event: launching a second instance posts
+   SignalOpenSettings; verify the first instance raises the Full window.
+   (BLOCKED until the event watcher is added: nothing in src/ currently
+   creates or waits on `Local\LwfOpenSettingsEvent` — see the R-e-3 note.)
+7. HotkeyCopy and Insights stubs: the Insights "Download on mobile" pill
+   question is RESOLVED — the pill (with the rest of the card content) was
+   removed outright with the Insights two-card simplification (see item 27);
+   nothing to decide. (The TryItOut banner button was removed with the
+   Transforms banner in followups-1; the TryItOut() method stays as a
+   unit-tested API.) HotkeyCopy remains as-is.
+8. T13a live model download: real catalog download with progress, cancel
+   mid-transfer, and quit mid-download (worker join without crash, partial
+   file handled on the next start).
+9. Capture reruns owed from T0.5: 150% and 200% DPI captures, and the
+   Listening and Thinking states.
+
+Followups-1 additions (ops/ui-followups-1, 2026-11-12):
+
+10. Live knobs: change Settings > General Volume, Speech max-recording and
+    hands-free-silence sliders; the next dictation tone/timeout follows the
+    new values without a restart (shared LoadEngineSettings in main.cpp).
+11. Banners gone: Transforms and Snippets pages open without
+    their page-top banners; Transforms shows no "Turn on Opt in" strip when opted out.
+    (The Scratchpad page and its banner were removed outright afterwards —
+    see item 20.)
+12. Built-in transform edits visible: edit Polish's prompt; the card
+    subtitle shows the real prompt ("Restore default" returns the stock
+    copy). The "Create your own" card is centered.
+13. Mini badge extent: normal badge hugs the dot; an attention error expands it to show the
+    message and it shrinks back after the dwell; drag persistence still
+    clamps inside the work area at 100/150/200% DPI.
+14. Switch tracks: the toggle track reads as filled gray in Graphite AND
+    Paper (border token); the square knob keeps on/off state.
+15. Welcome: no 4-step wizard; model row still downloads/browses; Get
+    started lands on Home and clears first_run.
+
+Followups-2 additions (fix/ui-followups-2, 2026-11-12) — item 12 is
+superseded by 18 (the built-ins are gone entirely):
+
+16. Volume sample: dragging the Volume slider plays a short sample tone at
+    the dragged amplitude while you drag (throttled) and once more on
+    release; with Sound off nothing plays. The next dictation start/stop
+    tone uses the new volume.
+17. Echo flow name: the top-left wordmark, window title, tray tooltip,
+    About row and crash/log headers read "Echo flow"; the data dir, registry
+    run value and window class still read LocalWisperFlow (config and
+    history survive the upgrade).
+18. No default transforms: a fresh profile (or the migrated existing one)
+    shows an empty Transforms grid — Polish and Prompt Engineer are gone
+    (load drops legacy built_in entries, warns in the log); Create New can
+    fill any slot 1-10; Delete works on every slot; the reset modal says
+    every slot ends up empty.
+19. Mini window scratchpad icon removal: with the Flow Bar toggle on,
+    right-click the note icon in the mini window — the icon disappears and
+    the badge re-hugs to the dot-only width; the Scratchpad page toggle
+    adds it back (the header shows the right-click hint while the icon is
+    on). (Superseded by item 20: the whole Scratchpad feature is gone.)
+
+Scratchpad removal (remove/scratchpad-page, 2026-11-12) — items 11/13/19
+above keep their historical wording; the Scratchpad surface no longer
+exists:
+
+20. Scratchpad fully removed: no Scratchpad destination in the top strip
+    (eight destinations, Ctrl+1..8); no Scratchpad page, no floating
+    Scratchpad window, no note icon on the mini badge (always 38x48);
+    Settings > General has no "Scratchpad bar" row; a stale
+    `last_page: "Scratchpad"` in config.json opens on Home; dictation
+    always injects into the active window and always records stats and
+    history.
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+
+Audio diagnostics round 3 (fix/audio-diagnostics, 2026-11-12):
+
+21. Volume preview audible: with Sound on, drag the Volume slider in
+    Settings > General — a distinct 160 ms middle-C ding plays at the
+    dragged amplitude while dragging (throttled) and once more on release;
+    at 0.00 it is silent, at 1.00 clearly louder. (The old sample was the
+    60 ms start blip, easy to miss entirely.)
+22. Dead output endpoint surfaces: with no output device available (or a
+    disabled one), the first tone request raises a one-shot notice on the
+    mini badge ("Sound effects are unavailable...") and the log records
+    "TonePlayer: playback device init failed: <reason>"; with a working
+    device restored, tones resume without restarting the app.
+23. Microphone check verdict: Settings > Speech > Microphone check —
+    "Test microphone" records 2 seconds from the selected device (no
+    restart needed, even mid-dictation on Windows) and reports Working
+    (green) with the peak percent, Quiet (amber) or Silent (red); a
+    missing/failed device reports "Could not open the microphone: ..."
+    in red; the button is disabled while "Listening for 2 seconds..."
+    shows; nothing is stored, logged or sent except the numeric level.
+
+Packaging round (feat/portable-exe, 2026-11-12):
+
+24. No console window: double-click the built EchoFlow.exe (or launch from
+    Explorer) - the app starts with NO black cmd window; the tray icon and
+    the app windows are the only visible surfaces. A debug build with
+    -DLWF_CONSOLE=ON still opens the console (stdout prints as before).
+25. Fatal errors stay visible without a console: with a deliberately broken
+    setup, the app shows an "Echo flow failed to start: ..." message box
+    (and writes the same text to the log) instead of silently exiting.
+26. Portable zip on a clean PC: `powershell -ExecutionPolicy Bypass -File
+    scripts/package_windows.ps1` builds, audits (fails on any non-system
+    DLL in the import table) and writes dist/EchoFlow-<version>-win64.zip
+    (EchoFlow.exe + models.json + README.txt). Unzip on a machine without
+    MinGW/MSYS2 and double-click EchoFlow.exe: it runs, shows the welcome
+    page, and can download the speech model. No DLL errors, no
+    installation.
+
+Insights two-card simplification (2026-11-12):
+
+27. Insights page shows only the two averages: open Insights - exactly two
+    cards (WORDS SPOKEN PER MINUTE, WORDS WRITTEN PER MINUTE), no fixes /
+    total-words / desktop-usage / streak / calendar / gauge / mobile pill,
+    no month navigation. With fresh stats the cards show "—" plus the
+    first-minute hint. Dictate for a total of one minute or more (several
+    sessions are fine): both numbers appear; spoken is greater than or
+    equal to written (transcription adds time). Old stats.json (no
+    session_ms): written equals spoken. Live theme swap recolors both cards.
+    Settings > Privacy "Keep usage statistics" off → no new data recorded.
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+
+
+Followups-6 branding + icon (2026-11-13):
+
+28. Echo flow identity end-to-end: Explorer shows the app icon on the exe
+    tile (both Small icons and Large icons view), the Properties > Details
+    tab shows ProductName "Echo flow" and the build version, the title
+    bar/taskbar/Alt-Tab carry the icon, the tray icon shows the mark (tip
+    "Echo flow"). Legacy migration: with a pre-rename install's
+    %APPDATA%\LocalWisperFlow present, starting EchoFlow.exe renames it to
+    %APPDATA%\EchoFlow (log line "DataDir: migrated ..."), config/history/
+    dictionary survive, and the legacy Run autostart value moves to
+    EchoFlow. Uninstall (installer build): the uninstaller asks about data
+    and about models separately; answering "keep models" leaves
+    %APPDATA%\EchoFlow\models on disk. (Installer + tray are Windows-only;
+    build the installer with iscc installer/lwf.iss.)
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+
+Followups-6 Models page (2026-11-13):
+
+29. Top strip carries Models (between Profiles and Settings; Ctrl+8). The
+    page lists Speech models grouped by language (English, Multilingual,
+    Hinglish) and a Cleanup model section, each with size + license +
+    notes. Download streams a progress bar and is cancellable; on success
+    the model lands in %APPDATA%\EchoFlow\models\<name>, whisper_model_path
+    (or llm_model_path for the cleanup model) is set, the restart banner
+    appears and a restart activates the model. Set active switches models;
+    Delete removes the file (disabled for the active model); Download
+    again re-verifies a complete file via its SHA-256 (a file that fails
+    the hash re-downloads). Only one download runs at a time; the Speech
+    page and Welcome share the same progress state. models.json with an
+    empty url keeps the Download button inert (no crash).
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```
+
+Followups-6 update check (2026-11-13):
+
+30. Settings > General > Updates: shows the running version; "Check for
+    updates automatically" defaults OFF. With it off, no network request
+    happens at startup (verify in the log). Check now fetches
+    latest.json from the GitHub release (redirect URL); while checking the
+    button is disabled with "Checking...". When up to date: "You are on
+    the latest version." When a newer version exists: version text plus
+    Open download page (opens the browser on the release asset/page).
+    With the network cut, the error text appears and the app keeps
+    working. With the toggle ON, a fresh start (last check > 24 h ago)
+    performs exactly one check; toggling OFF stops future checks. The
+    check never downloads or runs anything by itself.
+
+```
+[ ] PASS   [ ] FAIL   notes:
+```

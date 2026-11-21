@@ -1,5 +1,6 @@
 #include "core/ConfigManager.h"
 
+#include <algorithm>
 #include <iostream>
 #include <string>
 
@@ -26,7 +27,6 @@
 #include "core/InjectionException.h"
 #include "core/ITextInjector.h"
 #include "core/Log.h"
-#include "core/NotesStore.h"
 #include "core/PersonalDictionary.h"
 #include "core/SettingsStore.h"
 #include "core/SnippetStore.h"
@@ -41,7 +41,9 @@
 #include "core/SttRouter.h"
 #include "core/UiBus.h"
 #include "core/UnavailableProviders.h"
+#include "core/VersionCheck.h"
 #include "llm/LocalLlamaProvider.h"
+#include "llm/OpenRouterModels.h"
 #include "llm/OpenRouterProvider.h"
 #include "os/ActiveWindow.h"
 #include "os/CrashHandler.h"
@@ -58,12 +60,13 @@
 #include "stt/GrpcInferenceProvider.h"
 #include "stt/LocalWhisperProvider.h"
 #include "ui/MainWindow.h"
-#include "ui/ScratchpadWindow.h"
 #include "ui/Overlay.h"
+#include "ui/theme/ThemePalette.h"
 #include "ui/pages/DictionaryPage.h"
 #include "ui/pages/InsightsPage.h"
-#include "ui/pages/ScratchpadPage.h"
 #include "ui/pages/SnippetsPage.h"
+#include "ui/pages/HistoryPage.h"
+#include "ui/pages/ProfilesPage.h"
 #include "ui/pages/TransformsPage.h"
 
 #include <atomic>
@@ -82,11 +85,39 @@
 
 #ifdef _WIN32
 extern "C" __declspec(dllimport) int __stdcall ShellExecuteA(void*, const char*, const char*, const char*, const char*, int);
+// Followups-4: the fatal box needs MessageBoxA without pulling the Win32
+// umbrella header into main.cpp (hygiene gate G4 confines it to src/os/
+// and the cloud HTTP client). In C++ mode mingw-w64 types HWND as
+// `struct HWND__*` (not void*), so the redeclaration spells the parameter
+// that way - it then matches winuser.h exactly whether some transitively
+// included header got there first or not.
+struct HWND__;
+extern "C" __declspec(dllimport) int __stdcall MessageBoxA(struct HWND__*, const char*, const char*, unsigned int);
 #endif
 
 namespace {
 
 constexpr std::uint32_t kSampleRate = 16000;
+
+// Maps every engine-facing config key onto EngineSettings. Single source
+// for BOTH the startup wiring and the ApplySettings drain, so a slider
+// changed in Settings applies live. History: the drain used to re-list a
+// subset of keys and silently skipped sound_volume, max_recording_ms and
+// hands_free_silence_ms — those knobs stayed at their startup values until
+// the app restarted ("volume knob is not dynamic" report).
+EngineSettings LoadEngineSettings(const SettingsStore& store) {
+    EngineSettings settings;
+    settings.min_hold_ms = store.GetInt("min_hold_ms");
+    settings.max_recording_ms = store.GetInt("max_recording_ms");
+    settings.hands_free_silence_ms = store.GetInt("hands_free_silence_ms");
+    settings.quiet_speech_boost = store.GetBool("quiet_speech_boost");
+    settings.sound_enabled = store.GetBool("sound_enabled");
+    settings.sound_volume = store.GetDouble("sound_volume");
+    settings.streaming_stt = store.GetBool("streaming_stt");
+    settings.streaming_min_segment_ms = store.GetInt("streaming_min_segment_ms");
+    settings.streaming_pause_ms = store.GetInt("streaming_pause_ms");
+    return settings;
+}
 
 // Single-slot attention message written by the engine thread and drained by
 // the main loop. Keeps every UI call on the main thread.
@@ -279,7 +310,7 @@ void RunEngine(MiniaudioCapture& audio, IInferenceProvider& stt, ITextInjector& 
 
 int main() {
     try {
-        SingleInstance instance("LwfSingleInstanceMutex");
+        SingleInstance instance("EchoFlowSingleInstanceMutex");
         if (!instance.IsFirstInstance()) {
             instance.SignalOpenSettings();
             std::cout << "Another instance is already running." << std::endl;
@@ -288,7 +319,7 @@ int main() {
 
         const std::string data_dir = GetDataDir();
         lwf::Log::Init(data_dir + "\\logs");
-        lwf::Log::Info(std::string("Local Wisper Flow ") + lwf::AppVersion() +
+        lwf::Log::Info(std::string("Echo flow ") + lwf::AppVersion() +
                        " starting, data dir " + data_dir);
 
         static std::atomic<int> g_fsm_diag{0};
@@ -311,12 +342,6 @@ int main() {
         config.Store().SetBool("first_run", config.Store().GetBool("first_run"));
 
         ApiKeyStore api_keys(data_dir + "\\api_keys.json");
-        NotesStore notes(data_dir);
-
-        ScratchpadWindow scratchpad_editor(notes, config.Store());
-        if (!scratchpad_editor.Init()) {
-            lwf::Log::Warning("scratchpad window init failed; continuing without it");
-        }
 
         UiBus ui_bus;
         AttentionBox attention;
@@ -331,7 +356,9 @@ int main() {
                 "config.json was corrupt and has been moved aside; defaults loaded");
         }
 
-        MiniaudioCapture audio(kSampleRate, 1);
+        // INVARIANT: config.Store() is loaded in the ConfigManager/SettingsStore ctor
+        // above, so mic_device (hot_apply=false, restart banner) is readable here.
+        MiniaudioCapture audio(kSampleRate, 1, config.Store().GetString("mic_device"));
         std::unique_ptr<LocalWhisperProvider> local_stt;
         try {
             local_stt = std::make_unique<LocalWhisperProvider>(
@@ -351,8 +378,6 @@ int main() {
             local_stt ? static_cast<IInferenceProvider&>(*local_stt)
                       : static_cast<IInferenceProvider&>(unavailable_stt);
         WindowsTextInjector injector;
-        lwf::ui::scratchpad::ScratchpadRouteInjector scratchpad_router(
-            injector, scratchpad_editor.DictationBuffer(), scratchpad_editor.DictationActiveFlag());
 
         AppContextResolver app_context;
         if (!app_context.Load(data_dir + "\\app_profiles.json")) {
@@ -536,16 +561,9 @@ int main() {
         ToneGenerator::TonePlayer tone_player;
         WindowsSelectionCapture selection_capture;
         CommandModeController command_controller(selection_capture, llm, injector);
-        EngineSettings settings;
-        settings.min_hold_ms = config.Store().GetInt("min_hold_ms");
-        settings.max_recording_ms = config.Store().GetInt("max_recording_ms");
-        settings.hands_free_silence_ms = config.Store().GetInt("hands_free_silence_ms");
-        settings.quiet_speech_boost = config.Store().GetBool("quiet_speech_boost");
-        settings.sound_enabled = config.Store().GetBool("sound_enabled");
-        settings.sound_volume = config.Store().GetDouble("sound_volume");
-        settings.streaming_stt = config.Store().GetBool("streaming_stt");
-        settings.streaming_min_segment_ms = config.Store().GetInt("streaming_min_segment_ms");
-        settings.streaming_pause_ms = config.Store().GetInt("streaming_pause_ms");
+        // Startup and the ApplySettings drain share LoadEngineSettings so no
+        // knob can go stale between the two paths (see its comment).
+        EngineSettings settings = LoadEngineSettings(config.Store());
 
         DictationFSM fsm;
         fsm.SetTransitionListener([](State, Trigger, State current) {
@@ -553,14 +571,14 @@ int main() {
         });
         RealClock clock;
         IVadProvider* vad = nullptr;
-        DictationEngine engine(audio, vad, stt_router, pipeline, scratchpad_router, fsm,
-                               clock, bridge, settings);
+        DictationEngine engine(audio, vad, stt_router, pipeline, injector, fsm, clock,
+                               bridge, settings);
         engine.SetToneFeedback(&tone_player);
         engine.SetCommandController(&command_controller);
         engine.SetStatsStore(&usage_stats);
         engine.SetActiveWindow(CreateActiveWindow());
         engine.SetAppContextResolver(&app_context);
-        engine.SetScratchpadTarget(false);
+        engine.SetHistoryStore(&history);
         engine.SetTransformStore(&transforms);
         engine.SetTransformLlm(llm);
         engine.SetSelectionCapture(&selection_capture);
@@ -577,22 +595,78 @@ int main() {
         tray.Start();
 
         MainWindow full(fsm, audio, config.Store(), ui_bus);
+        // DECISION: non-owning transport for the Cleanup model list Refresh.
+        // openrouter_http is declared before `full`, so it outlives the
+        // window; ~MainWindow joins the fetch worker before `full` is
+        // destroyed, so the worker never uses a dead transport.
+        full.SetModelsTransport(&openrouter_http);
+        // Composition root maps the Task-A fetch result onto the UI-facing
+        // primitives (ok/empty/ids/error) so MainWindow never includes the
+        // backend model tree (the F9 copy lint scans src/ui literals,
+        // including #include paths). Fetch errors share one UI message;
+        // errorDetail is already redacted + capped in Task A.
+        full.SetModelsFetcher([](IHttpTransport& transport,
+                                 const std::string& api_key) -> MainWindow::ModelListResult {
+            MainWindow::ModelListResult mapped;
+            const auto result = OpenRouterModels::FetchOpenRouterModels(transport, api_key);
+            switch (result.status) {
+                case OpenRouterModels::FetchStatus::Ok:
+                    mapped.ok = true;
+                    mapped.ids = result.modelIds;
+                    break;
+                case OpenRouterModels::FetchStatus::Empty:
+                    mapped.ok = true;
+                    mapped.empty = true;
+                    break;
+                default:
+                    mapped.error = result.errorDetail;
+                    break;
+            }
+            return mapped;
+        });
+        // Update check (followups-6): the same IHttpTransport seam, mapped
+        // onto MainWindow primitives. One GET of the redirect-stable
+        // latest.json per check; no telemetry, nothing sent beyond the URL.
+        full.SetUpdateFetcher([](const std::string& url) -> MainWindow::UpdateFetchResult {
+            MainWindow::UpdateFetchResult mapped;
+            lwf::UrlParts parts;
+            if (!lwf::SplitHttpsUrl(url, parts)) {
+                mapped.error = "update check: the update URL is not https";
+                return mapped;
+            }
+            HttpRequest request;
+            request.host = parts.host;
+            request.path = parts.path;
+            request.timeout_ms = 8000;
+            const HttpResponse response = http_client.Get(request);
+            if (response.status != 200) {
+                mapped.error = "update check: server answered HTTP " +
+                               std::to_string(response.status);
+                return mapped;
+            }
+            mapped.ok = true;
+            mapped.body.assign(response.body.begin(), response.body.end());
+            return mapped;
+        });
         full.SetDictionaryPage(
             std::make_unique<lwf::ui::pages::DictionaryPage>(dictionary_store, &dictionary));
         full.SetInsightsPage(std::make_unique<lwf::ui::insights::InsightsPage>(usage_stats));
         lwf::ui::EngineDiffSource transforms_diff_source(&engine);
         full.SetTransformsPage(std::make_unique<lwf::ui::TransformsPage>(transforms, &ui_bus,
                                                                           &transforms_diff_source));
-        full.SetScratchpadPage(
-            std::make_unique<ScratchpadPage>(notes, config.Store(), ui_bus));
         full.SetSnippetsPage(std::make_unique<lwf::ui::pages::SnippetsPage>(snippets));
+        full.SetHistoryPage(std::make_unique<lwf::ui::pages::HistoryPage>(
+            history, config.Store(),
+            [&full](const std::string& p) { ShellExecuteA(nullptr, "open", p.c_str(), nullptr, nullptr, 1); },
+            [&full]() { full.OpenSettingsPrivacy(); }));
+        full.SetProfilesPage(std::make_unique<lwf::ui::pages::ProfilesPage>(
+            app_context, config.Store(), data_dir));
         {
             MainWindow::DataResetStores reset_stores;
             reset_stores.dictionary = &dictionary_store;
             reset_stores.snippets = &snippets;
             reset_stores.stats = &usage_stats;
             reset_stores.transforms = &transforms;
-            reset_stores.notes = &notes;
             reset_stores.api_keys = &api_keys;
             reset_stores.history = &history;
             reset_stores.dictionary_legacy = &dictionary;
@@ -610,6 +684,10 @@ int main() {
         // (negative sentinel = never moved: default anchor above the tray).
         overlay.SetSavedPosition(config.Store().GetInt("mini_x"),
                                  config.Store().GetInt("mini_y"));
+        // T2b: Overlay has no SettingsStore ref, so the startup theme is
+        // fed here (before Init, which promotes the pending selection). The
+        // Full window reads the store in its own Init.
+        overlay.SetTheme(lwf::ui::PaletteForTheme(config.Store().GetString("theme")));
         overlay.SetPositionPersistHandler([&config](int x, int y) {
             config.Store().SetInt("mini_x", x);
             config.Store().SetInt("mini_y", y);
@@ -619,10 +697,6 @@ int main() {
             overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
             overlay.SetActivateHandler([&ui_bus] {
                 ui_bus.PostCommand(UiCommandType::SetEnabled, "1");
-            });
-            overlay.SetScratchpadVisible(config.Store().GetBool("scratchpad_flow_bar"));
-            overlay.SetScratchpadActivateHandler([&ui_bus] {
-                ui_bus.PostCommand(UiCommandType::OpenScratchpad);
             });
         } else {
             lwf::Log::Error("mini badge init failed; continuing without it");
@@ -635,6 +709,8 @@ int main() {
         State previous_state = State::IDLE;
         auto done_flash_until = std::chrono::steady_clock::time_point{};
         const auto done_flash_duration = std::chrono::milliseconds(600);
+        // Followups-3 D1: one-shot latch for the dead-output-endpoint notice.
+        bool tone_failure_surfaced = false;
         while (!quit.load()) {
             glfwPollEvents();
 
@@ -645,6 +721,9 @@ int main() {
                         full.SetVisible(true);
                         break;
                     case UiCommandType::OpenHistory:
+                        full.SetVisible(true);
+                        full.OpenHistoryPage();
+                        break;
                     case UiCommandType::OpenLogsFolder:
                         ShellExecuteA(nullptr, "open", (data_dir + "\\logs").c_str(), nullptr,
                                       nullptr, 1);
@@ -668,21 +747,26 @@ int main() {
                             hotkey.UpdateBindings(bindings);
                             transforms.SetHotkeyBindings(bindings);
                         }
-                        settings.min_hold_ms = config.Store().GetInt("min_hold_ms");
-                        settings.quiet_speech_boost = config.Store().GetBool("quiet_speech_boost");
-                        settings.sound_enabled = config.Store().GetBool("sound_enabled");
-                        settings.streaming_stt = config.Store().GetBool("streaming_stt");
-                        settings.streaming_min_segment_ms = config.Store().GetInt("streaming_min_segment_ms");
-                        settings.streaming_pause_ms = config.Store().GetInt("streaming_pause_ms");
+                        // Full reload through the shared mapper: every
+                        // engine-facing knob (volume, record limits, silence
+                        // timeout, ...) applies live, not just the old subset.
+                        settings = LoadEngineSettings(config.Store());
                         engine.SetSettings(settings);
                         spoken.SetAggressive(config.Store().GetBool("spoken_commands_aggressive"));
                         snippets.SetMode(config.Store().GetString("snippet_mode"));
                         overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
                         usage_stats.SetUsageStatsEnabled(config.Store().GetBool("keep_usage_stats"));
-                        overlay.SetScratchpadVisible(config.Store().GetBool("scratchpad_flow_bar"));
-                        break;
-                    case UiCommandType::ToggleAutostart:
-                        Autostart::SetEnabled(!Autostart::IsEnabled());
+                        // T2b live theme swap (hot_apply=true, no restart).
+                        // The ApplyTheme/SetTheme calls only queue the
+                        // palette; each window re-styles inside its own
+                        // frame where its ImGui context is current, so this
+                        // drain never colors another window's context.
+                        {
+                            const lwf::ui::Palette& theme_palette =
+                                lwf::ui::PaletteForTheme(config.Store().GetString("theme"));
+                            full.ApplyTheme(theme_palette);
+                            overlay.SetTheme(theme_palette);
+                        }
                         break;
                     case UiCommandType::Quit:
                         quit.store(true);
@@ -699,12 +783,26 @@ int main() {
                         engine.RequestTransform(slot);
                         break;
                     }
-                    case UiCommandType::OpenScratchpad:
-                        lwf::Log::Info("scratchpad open requested");
-                        if (command.payload.empty()) {
-                            scratchpad_editor.OpenNewNote();
-                        } else {
-                            scratchpad_editor.OpenNote(command.payload);
+                    case UiCommandType::PreviewTone:
+                        // Followups-2 D1: the Volume slider asks for an
+                        // immediate sample at the dragged amplitude so the
+                        // change is audible on the spot (the next dictation
+                        // tone uses it too, via the ApplySettings drain).
+                        // Followups-3 D1: the sample is the distinct 160 ms
+                        // middle-C ding (PreviewTone), not the 60 ms start
+                        // blip - short blips at low volume were easy to miss
+                        // entirely, which read as "the slider does nothing".
+                        {
+                            double preview_volume = 0.0;
+                            try {
+                                preview_volume = std::stod(command.payload);
+                            } catch (const std::exception&) {
+                                preview_volume = 0.0;
+                            }
+                            preview_volume = std::clamp(preview_volume, 0.0, 1.0);
+                            if (config.Store().GetBool("sound_enabled")) {
+                                tone_player.Play(ToneGenerator::PreviewTone(), preview_volume);
+                            }
                         }
                         break;
                 }
@@ -749,6 +847,19 @@ int main() {
             ui_bus.PublishStatus(status);
             overlay.PushLevel(audio.AudioLevel());
 
+            // Followups-3 D1: a dead output endpoint used to drop every tone
+            // with no trace, presenting exactly as "the volume slider does
+            // nothing". TonePlayer flags the failure once a tone has been
+            // requested; surface it once per run on the mini badge and stop
+            // checking (no spam while it stays broken).
+            if (!tone_failure_surfaced && tone_player.DeviceFailed()) {
+                tone_failure_surfaced = true;
+                attention.Set(
+                    "Sound effects are unavailable - no working output device. "
+                    "The volume slider will have no effect until one is connected.");
+                lwf::Log::Error("tone device failed: sound effects disabled for this run");
+            }
+
             // Mini badge state, derived here so the engine thread never
             // touches the UI. Attention beats the done flash, which beats
             // the live FSM state; the badge itself handles the dwell times.
@@ -784,9 +895,6 @@ int main() {
             full.RunOnce(1.0f / 60.0f);
             full.TakeCloseRequest();  // close hides; the tray owns Quit
             overlay.RenderFrame(1.0f / 60.0f);
-            engine.SetScratchpadTarget(scratchpad_editor.IsDictationActive());
-            scratchpad_editor.RenderFrame(1.0f / 60.0f);
-            scratchpad_editor.TakeCloseRequest();
             std::this_thread::sleep_for(std::chrono::milliseconds(8));
         }
 
@@ -795,7 +903,6 @@ int main() {
         tray.Stop();
         tone_player.Shutdown();
         overlay.Shutdown();
-        scratchpad_editor.Shutdown();
         full.Shutdown();
         glfwTerminate();
         lwf::Log::Info("shutdown complete");
@@ -803,6 +910,15 @@ int main() {
     } catch (const std::exception& e) {
         lwf::Log::Error(std::string("fatal: ") + e.what());
         std::cerr << "Fatal: " << e.what() << std::endl;
+#ifdef _WIN32
+        // Followups-4: the full app is a GUI-subsystem executable (no
+        // console), so the cerr line above goes nowhere the user can see.
+        // Show the fatal text in a message box instead - without it a
+        // startup failure on a shared machine is indistinguishable from
+        // "the exe does nothing when I double-click it".
+        MessageBoxA(nullptr, (std::string("Echo flow failed to start:\n\n") + e.what()).c_str(),
+                    "Echo flow", 0x10u /* MB_ICONERROR */);
+#endif
         return 1;
     }
 }
@@ -812,7 +928,7 @@ int main() {
 int main() {
     try {
         ConfigManager config("config.json");
-        std::cout << "Local Wisper Flow core build: hotkey=" << config.HotkeyCode()
+        std::cout << "Echo flow core build: hotkey=" << config.HotkeyCode()
                   << " model=" << config.WhisperModelPath()
                   << " stt_provider=" << config.SttProvider()
                   << " stt_consent=" << (config.SttConsentAccepted() ? "true" : "false")

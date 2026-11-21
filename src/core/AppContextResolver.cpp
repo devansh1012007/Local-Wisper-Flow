@@ -36,6 +36,7 @@ bool ContainsAny(const std::string& haystack, std::initializer_list<const char*>
 }
 
 bool AppContextResolver::Load(const std::string& path) {
+    std::lock_guard<std::mutex> lock(mutex_);
     std::error_code rc_ec;
     if (!std::filesystem::is_regular_file(path, rc_ec) || rc_ec) {
         return false;
@@ -92,6 +93,9 @@ bool AppContextResolver::Load(const std::string& path) {
             }
             Rule rule;
             rule.profile = element["profile"].get<std::string>();
+            if (element.contains("disabled") && element["disabled"].is_boolean()) {
+                rule.disabled = element["disabled"].get<bool>();
+            }
             const auto& match = element["match"];
             if (match.contains("process") && match["process"].is_string()) {
                 rule.process_regex = match["process"].get<std::string>();
@@ -125,8 +129,8 @@ bool AppContextResolver::Load(const std::string& path) {
                     valid = false;
                 }
             }
-            rule.disabled = !valid;
             if (!valid) {
+                rule.disabled = true;
                 continue;
             }
             rules.push_back(std::move(rule));
@@ -139,10 +143,12 @@ bool AppContextResolver::Load(const std::string& path) {
         profiles_["default"] = AppProfile{("default")};
     }
     loaded_ = true;
+    path_ = path;
     return true;
 }
 
 void AppContextResolver::UseBuiltInProfiles() {
+    std::lock_guard<std::mutex> lock(mutex_);
     rules_.clear();
     profiles_.clear();
     warnings_.clear();
@@ -193,8 +199,139 @@ void AppContextResolver::UseBuiltInProfiles() {
     loaded_ = true;
 }
 
+bool AppContextResolver::Save() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (path_.empty()) {
+        return false;
+    }
+    nlohmann::json json;
+    nlohmann::json profiles = nlohmann::json::object();
+    for (const auto& kv : profiles_) {
+        nlohmann::json p;
+        p["prompt_addendum"] = kv.second.prompt_addendum;
+        p["casual"] = kv.second.casual;
+        p["trailing_period"] = kv.second.trailing_period;
+        p["use_llm"] = kv.second.use_llm;
+        p["paste_chord"] = kv.second.paste_chord;
+        p["category"] = kv.second.category;
+        profiles[kv.first] = std::move(p);
+    }
+    json["profiles"] = std::move(profiles);
+
+    nlohmann::json rules = nlohmann::json::array();
+    for (const auto& rule : rules_) {
+        nlohmann::json r;
+        nlohmann::json match = nlohmann::json::object();
+        if (!rule.process_regex.empty()) {
+            match["process"] = rule.process_regex;
+        }
+        if (!rule.title_contains.empty()) {
+            match["title_contains"] = rule.title_contains;
+        }
+        if (!rule.title_regex.empty()) {
+            match["title_regex"] = rule.title_regex;
+        }
+        r["match"] = std::move(match);
+        r["profile"] = rule.profile;
+        r["disabled"] = rule.disabled;
+        rules.push_back(std::move(r));
+    }
+    json["rules"] = std::move(rules);
+
+    std::string content;
+    try {
+        content = json.dump(2);
+    } catch (const nlohmann::json::exception&) {
+        return false;
+    }
+    return lwf::WriteAtomic(path_, content);
+}
+
+bool AppContextResolver::AssignCategory(const std::string& profile_name,
+                                       const std::string& category) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = profiles_.find(profile_name);
+    if (it == profiles_.end()) {
+        return false;
+    }
+    const auto& names = CategoryNames();
+    if (std::find(names.begin(), names.end(), category) == names.end()) {
+        return false;
+    }
+    it->second.category = category;
+    return true;
+}
+
+bool AppContextResolver::SetEnabled(const std::string& profile_name, bool enabled) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = profiles_.find(profile_name);
+    if (it == profiles_.end()) {
+        return false;
+    }
+    bool matched = false;
+    for (auto& rule : rules_) {
+        if (rule.profile == profile_name) {
+            rule.disabled = !enabled;
+            matched = true;
+        }
+    }
+    // Return true if profile exists, regardless of rules (per spec).
+    (void)matched;
+    return true;
+}
+
+bool AppContextResolver::ProfileEnabled(const std::string& profile_name) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = profiles_.find(profile_name);
+    if (it == profiles_.end()) {
+        return false;
+    }
+    bool has_rule = false;
+    bool any_enabled = false;
+    for (const auto& rule : rules_) {
+        if (rule.profile == profile_name) {
+            has_rule = true;
+            if (!rule.disabled) {
+                any_enabled = true;
+            }
+        }
+    }
+    if (!has_rule) {
+        return true;
+    }
+    return any_enabled;
+}
+
+std::vector<std::string> AppContextResolver::ListProfiles() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::string> out;
+    out.reserve(profiles_.size());
+    for (const auto& kv : profiles_) {
+        out.push_back(kv.first);
+    }
+    return out;
+}
+
+bool AppContextResolver::Reload() {
+    std::string p;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (path_.empty()) {
+            return false;
+        }
+        p = path_;
+    }
+    return Load(p);
+}
+
+const std::string& AppContextResolver::Path() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return path_;
+}
+
 const AppProfile& AppContextResolver::Resolve(const std::string& process_name,
                                               const std::string& window_title) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     for (const Rule& rule : rules_) {
         if (rule.disabled) {
             continue;
@@ -232,15 +369,18 @@ const AppProfile& AppContextResolver::Resolve(const std::string& process_name,
 }
 
 const AppProfile& AppContextResolver::ProfileByName(const std::string& name) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     const auto it = profiles_.find(name);
     return it != profiles_.end() ? it->second : FallbackProfile();
 }
 
 const std::vector<std::string>& AppContextResolver::Warnings() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return warnings_;
 }
 
 bool AppContextResolver::Loaded() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return loaded_;
 }
 

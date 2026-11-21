@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/theme/ThemePalette.h"
+
 #include <string>
 
 namespace lwf::ui::widgets {
@@ -34,7 +36,11 @@ struct Toast {
     void Show(const std::string& message, const std::string& action_label);
     void Dismiss();
     bool IsVisible() const;
-    void Draw(float scale);
+    // DECISION: default is Paper primary (kLightPalette via Widgets.h
+    // companion); callers that carry a Palette pass it explicitly so the dark
+    // variant is a runtime choice, not a second hard-coded palette.
+    void Draw(float scale,
+              const lwf::ui::Palette& palette = lwf::ui::kLightPalette);
     bool TakeAction();
 
 private:

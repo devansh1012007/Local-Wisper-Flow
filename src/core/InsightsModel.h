@@ -2,35 +2,20 @@
 
 #include <cstdint>
 #include <optional>
-#include <string>
-#include <utility>
-#include <vector>
 
 namespace lwf {
 
-struct DayRecord {
-    std::string day;
-    std::int64_t words = 0;
-    std::int64_t speaking_ms = 0;
-    std::int64_t fixes = 0;
-    std::string app;
-    std::string category;
-};
-
-std::string DayKey(int year, int month, int day);
-
-std::optional<double> Wpm(std::int64_t total_words, std::int64_t speaking_ms);
-
-std::int64_t FixesMadeByFlow(const std::vector<DayRecord>& records);
-
-std::vector<std::pair<std::string, int>> CategoryShares(const std::vector<DayRecord>& records);
-
-int TotalAppsUsed(const std::vector<DayRecord>& records);
-
-int CurrentStreak(const std::vector<DayRecord>& records, const std::string& today_key);
-
-int LongestStreak(const std::vector<DayRecord>& records);
-
+// Heat-ramp level (0-4 quartiles of the month maximum) for the activity
+// calendar widget. Kept as the portable ground truth the HeatLevel widget
+// tests pin against (tests/test_overlay_settings_ui.cpp).
 int CalendarLevel(std::int64_t day_words, std::int64_t month_max_words);
+
+// Average words per minute over an accumulated duration. Empty below one
+// accumulated minute (the floor keeps tiny samples from presenting noisy
+// averages); negative word counts clamp to zero. Insights feeds it twice:
+// total words over the mic-open speaking time ("words spoken per minute")
+// and total words over the end-to-end session time, transcription included
+// ("words written per minute").
+std::optional<double> Wpm(std::int64_t total_words, std::int64_t duration_ms);
 
 }

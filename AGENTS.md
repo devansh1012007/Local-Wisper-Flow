@@ -6,6 +6,28 @@ opt-in cloud STT path behind a consent gate. Reconstructed rule sheet: the
 original was lost with the dev-environment reset; the paragraphs below are
 recovered verbatim from the S9 documentation patch where noted.
 
+- Branding (followups-6, user decision 2026-11-13 — supersedes followups-2):
+  the app is "Echo flow" everywhere user-visible (wordmark, window title,
+  tray, About, crash/log headers) AND in the shipped artifacts: exe
+  `EchoFlow.exe` (CMake target keeps `local-wisper-flow`; OUTPUT_NAME is
+  EchoFlow), installer `EchoFlowSetup-<version>.exe` with AppId
+  D47CF84B-737B-43E1-B3DC-F3278C5B429A and install dir
+  `%LOCALAPPDATA%\Programs\EchoFlow`, data dir `%APPDATA%\EchoFlow` (one-time
+  rename migration from `%APPDATA%\LocalWisperFlow` in src/os/DataDir.cpp,
+  legacy location kept when the rename fails), registry Run value `EchoFlow`
+  (legacy `LocalWisperFlow` value copied over and deleted on start, see
+  WindowsTray.cpp `MigrateLegacyRunKey`; the installer also deletes it on
+  install), single-instance mutex `EchoFlowSingleInstanceMutex`. Only the
+  repo name and the historical PROGRESS rows keep the LocalWisperFlow
+  spelling. The exe icon + VERSIONINFO live in assets/ (app.ico, app.rc.in
+  configured into EchoFlow.rc; icon resource id 1 is loaded by
+  WindowStyles::ApplyAppIcon -> WM_SETICON and WindowsTray.cpp).
+- Default transforms (followups-2): nothing is seeded. TransformStore starts
+  with ten empty slots, no entry is `built_in`, and Load drops legacy
+  built_in-flagged entries (the retired Polish / Prompt Engineer) from
+  existing transforms.json files. All slots are user slots (Create New fills
+  the first empty one, Delete clears any). v1 arrays convert from slot 1.
+
 ## Build and gates
 
 ```sh
@@ -13,6 +35,24 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j4
 ctest --test-dir build
 ```
+
+Local dev box (Windows, MSYS2 MinGW) - the VS generator is not installed here, so the
+build dir must be configured with the MinGW Makefiles generator (a VS-era cache, e.g.
+`CMAKE_GENERATOR=Visual Studio 18 2026`, makes every build fail with "could not find any
+instance of Visual Studio"):
+
+```sh
+cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DGRPC_URL=file://C:/Users/devan/AppData/Local/Temp/grpc-full.tar.gz
+cmake --build build -j4
+```
+
+- If `build/CMakeCache.txt` + `build/CMakeFiles` hold a foreign generator, delete both and
+  re-run the configure above (CMake refuses to switch generators in place).
+- gRPC full-tarball: `-DGRPC_URL=file://C:/Users/devan/AppData/Local/Temp/grpc-full.tar.gz` (the
+  re-tarred full tarball, copy of `_deps-cache/grpc-v1.71.0-full.tar.gz`). If
+  `build/_deps/grpc-src` is stale/partial, clear `build/_deps/grpc-src`,
+  `build/_deps/grpc-build` and `build/_deps/grpc-subbuild`, then re-run configure before
+  building.
 
 - `LWF_BUILD_FULL=ON` (forced on Windows) builds whisper/llama/miniaudio
   and gRPC and links the real providers. Windows always builds full.
@@ -64,15 +104,17 @@ ctest --test-dir build
   submodules and dies in `cmake/cares.cmake`. Recipe: download tag tarball + inject
   submodule sources at their pinned SHAs into
   `third_party/{cares/cares,boringssl-with-bazel,abseil-cpp,protobuf,re2,zlib}`, re-tar,
-  pass via `-DGRPC_URL=file://...`. Also needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`
+  pass via `-DGRPC_URL=file://...` (locally: `-DGRPC_URL=file://C:/Users/devan/AppData/Local/Temp/grpc-full.tar.gz`,
+  the re-tarred full tarball copied from `_deps-cache/grpc-v1.71.0-full.tar.gz`). Also needs `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`
   (CMake 4 vs old dep minimums), `protobuf_INSTALL=OFF`, `utf8_range_ENABLE_INSTALL=OFF`.
   Stub generation uses in-tree `protoc` + `grpc_cpp_plugin` targets into
   `build/generated/`, compiled as `lwf_proto`.
 
 ## Config and data
 
-- Config keys (`config.json`): `hotkey_code`, `whisper_model_path`, `vad_threshold` are
-  required; `llm_model_path`, `use_remote` (default false) and `remote_endpoint`
+- Config keys (`config.json`): `hotkey_code` (schema key + LoadBindings fallback
+  retained; its Settings UI row was removed in T14 — do not re-add a row),
+  `whisper_model_path`, `vad_threshold` are required; `llm_model_path`, `use_remote` (default false) and `remote_endpoint`
   (default `localhost:50051`) optional. The full schema with defaults lives in
   `SettingsStore::BuildSchema()` (src/core/SettingsStore.cpp); keys are additive-only
   across releases and unknown keys are preserved on save. Cloud STT is opt-in:
@@ -86,7 +128,9 @@ ctest --test-dir build
   Cloud (S5); failed attempts keep a redacted error `detail` (lwf::RedactSecret/
   RedactAuthValues, src/core/Redact.h) in the attempt stats. Data files live under
   `%APPDATA%\LocalWisperFlow` (LWF_HOME overrides): config.json, dictionary.json,
-  snippets.json, app_profiles.json, history.jsonl, models.json, logs/, models/.
+  snippets.json, app_profiles.json, history.jsonl, logs/, models/. The model
+  catalog `models.json` is NOT a data-dir file: it is read from the exe
+  directory (the T13a/T9 GetExeDir() sites), so keep it next to the exe.
 - `whisper_model_path` (same for `llm_model_path`) is resolved by `ResolveModelPath`
   (src/os/DataDir.cpp → `ResolveDataPath`, src/core/PathResolver.cpp): an absolute path
   is used as-is; otherwise it is probed in order: `%APPDATA%\LocalWisperFlow\<path>`,
@@ -134,9 +178,13 @@ vendor docs on 2026-11-04, NOT yet against the live APIs.
 
 ## UI (GLFW + Dear ImGui, two windows)
 
-- Two OS windows, each with its own Dear ImGui context AND its own GL context:
-  `MainWindow` (Full window: rail + pages) and `Overlay` (Mini badge, draggable,
-  click-through unless hovered). Never share a context between windows.
+- Two OS windows, each with its own Dear ImGui context AND its own GL
+  context: `MainWindow` (Full window: Hairline top-strip navigation + pages —
+  Welcome, Home, History, Insights, Dictionary, Snippets, Transforms,
+  Profiles, Settings; the left rail was replaced by the top strip
+  in T4a) and `Overlay` (Mini badge, draggable, click-through unless
+  hovered). Never share a context between windows. (The former third window,
+  `ScratchpadWindow`, was removed with the Scratchpad feature.)
 - **`ImGui::CreateContext()` restores the PREVIOUS context after initializing the new
   one** (vendored v1.92.9b behaviour). Do NOT do
   `imgui_context_ = ImGui::GetCurrentContext()` after `CreateContext()` — it returns
@@ -145,14 +193,19 @@ vendor docs on 2026-11-04, NOT yet against the live APIs.
   rendered with `DisplaySize = 140x70` (the Mini badge's size), its GL viewport
   anchored at the bottom-left (GL origin) and the GUI appeared as a tiny pill on a
   black background (the long-standing "black screen"). Fixed in 1a8304f.
-- The main loop (src/main.cpp) calls `full.RunOnce()` then `overlay.RenderFrame()`
-  every tick; both re-assert `glfwMakeContextCurrent()` and `ImGui::SetCurrentContext()`
+- The main loop (src/main.cpp) calls `full.RunOnce()` and then
+  `overlay.RenderFrame()` every tick;
+  both re-assert `glfwMakeContextCurrent()` and `ImGui::SetCurrentContext()`
   before their backend NewFrame calls because they run back-to-back on one thread.
-- Theme tokens are exact mockup values in src/ui/theme/ThemePalette.h and
-  tests/test_overlay_settings_ui.cpp enforces them (and the 3:1/4.5:1 contrast policy
-  off those exact tokens). Do NOT lighten colors to "fix" perceived contrast —
-  the dark-screen bug was a viewport/context bug, not a color bug; the earlier
-  lightened-palette change was reverted.
+- Theme tokens are the Hairline spec values from docs/design/DESIGN.md (the
+  design source of truth; docs/design/mockup.html is superseded legacy) in
+  src/ui/theme/ThemePalette.h, and tests/test_overlay_settings_ui.cpp enforces
+  them (and the 3:1/4.5:1 contrast policy off those exact tokens). Two
+  palettes, one accent per theme: Graphite (kDarkPalette, runtime default) and
+  Paper (kLightPalette, config `theme` = "graphite"/"paper", live swap, T2b).
+  Do NOT lighten colors to "fix" perceived contrast — the dark-screen bug was
+  a viewport/context bug, not a color bug; the earlier lightened-palette
+  change was reverted.
 - The Full window is the only visible main window; it hides on close (the tray owns
   Quit) and opens from the tray (Open Settings…). `first_run` (schema default true)
   and an empty `whisper_model_path` control whether it appears at startup.

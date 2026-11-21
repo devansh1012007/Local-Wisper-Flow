@@ -9,13 +9,16 @@
 #include "core/CommandModeController.h"
 #include "core/ILlmProvider.h"
 #include "core/StatsStore.h"
+#include "core/HistoryStore.h"
 #include "core/StreamingDictation.h"
 #include "core/TextPipeline.h"
 #include "core/TransformStore.h"
+#include "core/WhisperText.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <future>
 #include <memory>
 #include <utility>
@@ -258,16 +261,16 @@ void DictationEngine::SetStatsStore(StatsStore* stats) {
     stats_ = stats;
 }
 
+void DictationEngine::SetHistoryStore(HistoryStore* store) {
+    history_ = store;
+}
+
 void DictationEngine::SetActiveWindow(IActiveWindow* active_window) {
     active_window_ = active_window;
 }
 
 void DictationEngine::SetAppContextResolver(AppContextResolver* resolver) {
     app_context_ = resolver;
-}
-
-void DictationEngine::SetScratchpadTarget(bool enabled) {
-    scratchpad_target_.store(enabled);
 }
 
 void DictationEngine::SetTransformLlmTimeoutMs(int timeout_ms) {
@@ -548,6 +551,26 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
         return;
     }
 
+    // Silent-mic gate: distinguish "mic recorded nothing" from "mic heard
+    // sound but Whisper returned a blank filtered transcript" (both used to
+    // land as "nothing to inject"). Gate on raw PCM peak before any boost
+    // or transcription, logging only the level, never transcript text.
+    float pcm_peak = 0.0f;
+    for (float sample : full) {
+        pcm_peak = std::max(pcm_peak, std::fabs(sample));
+    }
+    if (pcm_peak < 0.005f) {
+        char peak_buf[64];
+        std::snprintf(peak_buf, sizeof(peak_buf), "%.5f", static_cast<double>(pcm_peak));
+        // INVARIANT: log the level only; raw/final transcript text must never
+        // enter the log ring (privacy gate).
+        lwf::Log::Info(std::string("audio: peak level ") + peak_buf +
+                       " < 0.005 — no sound recorded");
+        sink_.OnStatus("no sound recorded — check microphone");
+        FailToIdle(fsm_);
+        return;
+    }
+
     const double speech_ratio = chunk_count_ > 0
                                     ? static_cast<double>(speech_chunk_count_) /
                                           static_cast<double>(chunk_count_)
@@ -589,9 +612,16 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
         fsm_.TriggerEvent(Trigger::SST_COMPLETE);
     }
 
+    raw = WhisperText::FilterHallucinations(raw);
+
     if (in_command_mode_.load()) {
         in_command_mode_.store(false);
         if (command_ == nullptr) {
+            FailToIdle(fsm_);
+            return;
+        }
+        if (raw.empty()) {
+            sink_.OnStatus("nothing to inject");
             FailToIdle(fsm_);
             return;
         }
@@ -611,7 +641,7 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
     }
 
     const ProcessResult result = pipeline_.ProcessWithStats(raw);
-    const std::string final_text = result.text;
+    const std::string final_text = WhisperText::FilterHallucinations(result.text);
 
     if (cancel_requested_.load()) {
         sink_.OnStatus("cancelled during cleanup, result discarded");
@@ -638,10 +668,16 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
 
     const std::int64_t end_ms = now_ms > 0 ? now_ms : clock_.NowMs();
     const std::int64_t duration_ms = end_ms > capture_start_ms_ ? end_ms - capture_start_ms_ : 0;
-    if (stats_ != nullptr && !scratchpad_target_.load()) {
+    if (stats_ != nullptr) {
+        // End-to-end session time for the "words written per minute"
+        // average: capture window plus transcription plus injection. Read
+        // the clock here (post-injection), not the release timestamp.
+        const std::int64_t session_end_ms = clock_.NowMs();
         DictationRecord record;
         record.timestamp_local = 0;
         record.duration_ms = duration_ms;
+        record.session_ms =
+            session_end_ms > capture_start_ms_ ? session_end_ms - capture_start_ms_ : duration_ms;
         record.final_text = final_text;
         record.raw_text = raw;
         record.process_name = capture_app_.process_name;
@@ -653,6 +689,20 @@ void DictationEngine::StopAndTranscribe(std::int64_t now_ms, bool timeout_fired)
         record.words_corrected = result.words_corrected;
         record.dictionary_fixes = result.dictionary_fixes;
         stats_->Record(record);
+    }
+
+    if (history_ != nullptr) {
+        HistoryEntry entry;
+        entry.timestamp = HistoryStore::NowSeconds();
+        entry.raw = raw;
+        entry.text = final_text;
+        entry.app_profile = app_context_ != nullptr
+                                ? app_context_->Resolve(capture_app_.process_name,
+                                                        capture_app_.window_title)
+                                      .name
+                                : std::string();
+        entry.duration_ms = duration_ms;
+        history_->Append(entry);
     }
 
     {
@@ -691,6 +741,7 @@ void DictationEngine::HandlePasteLast() {
         std::lock_guard<std::mutex> lock(text_mutex_);
         text = last_text_;
     }
+    text = WhisperText::FilterHallucinations(text);
     if (text.empty()) {
         sink_.OnStatus("nothing to paste");
         return;

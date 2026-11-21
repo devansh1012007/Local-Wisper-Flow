@@ -12,12 +12,11 @@ enum class UiCommandType {
     OpenSettings,
     OpenHistory,
     OpenLogsFolder,
-    ToggleAutostart,
     StartLearnHotkey,
     ApplySettings,
     Quit,
     StartTransform,
-    OpenScratchpad,
+    PreviewTone,
 };
 
 struct UiCommand {
