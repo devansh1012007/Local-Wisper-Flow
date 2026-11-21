@@ -364,6 +364,10 @@ TEST_CASE("dictionary page sources stay off the font scale ban and carry no copi
 TEST_CASE("dictionary rows compensate cursor restore by ItemSpacing before Dummy") {
     const std::string dict = ReadFile("src/ui/pages/DictionaryPage.cpp");
     const std::string snips = ReadFile("src/ui/pages/SnippetsPage.cpp");
+    const std::string insights = ReadFile("src/ui/pages/InsightsPage.cpp");
+    REQUIRE_FALSE(dict.empty());
+    REQUIRE_FALSE(snips.empty());
+    REQUIRE_FALSE(insights.empty());
     REQUIRE_FALSE(dict.empty());
     REQUIRE_FALSE(snips.empty());
     // (Insights left this test with the simplification: its two-card layout
@@ -394,4 +398,5 @@ TEST_CASE("dictionary rows compensate cursor restore by ItemSpacing before Dummy
         };
     CHECK(dummy_within_two_lines(dict, dict_pos, saved_restore));
     CHECK(dummy_within_two_lines(snips, snips_pos, saved_restore));
+    CHECK(dummy_within_two_lines(insights, insights_pos, insights_restore));
 }

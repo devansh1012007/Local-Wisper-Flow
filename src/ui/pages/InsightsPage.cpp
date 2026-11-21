@@ -84,6 +84,37 @@ void InsightsPage::DrawStatCard(const char* id, const std::optional<double>& wpm
     ImGui::PushFont(nullptr, studio_metrics::font_page_title_px);
     ImGui::TextUnformatted(value.c_str());
     ImGui::PopFont();
+    ImGui::PushFont(nullptr, studio_metrics::font_caps_px);
+    ImGui::TextColored(Color(kStudioPalette.muted), "%s", TotalAppsCaption(summary_.total_apps).c_str());
+    ImGui::PopFont();
+    if (!summary_.has_data) {
+        ImGui::PushFont(nullptr, studio_metrics::font_helper_px);
+        ImGui::PushTextWrapPos(ImGui::GetWindowWidth() - 16.0f * scale);
+        ImGui::TextColored(Color(kStudioPalette.muted), "%s", kDesktopEmpty);
+        ImGui::PopTextWrapPos();
+        ImGui::PopFont();
+        EndCard();
+        return;
+    }
+    const std::vector<CategoryRow> rows = CategoryRowsFor(snapshot_);
+    for (const CategoryRow& row : rows) {
+        const ImVec2 row_pos = ImGui::GetCursorScreenPos();
+        const float row_h = studio_metrics::progress_height * scale;
+        ImDrawList& draw = *ImGui::GetWindowDrawList();
+        const ImVec2 icon_center(row_pos.x + 14.0f * scale, row_pos.y + row_h * 0.5f);
+        draw.AddCircle(icon_center, 12.0f * scale, Pack(kStudioPalette.border), 24, 1.0f * scale);
+        // ALLOWLIST (Wave 2 T-003): 10px glyph font has no same-value token; mapping to 13/28 would shift pixels. Value frozen.
+        ImGui::PushFont(nullptr, 10.0f);
+        const ImVec2 icon_size = ImGui::CalcTextSize(row.icon.c_str());
+        draw.AddText(ImVec2(icon_center.x - icon_size.x * 0.5f, icon_center.y - icon_size.y * 0.5f),
+                     Pack(kStudioPalette.teal_700), row.icon.c_str());
+        ImGui::PopFont();
+        ImGui::SetCursorScreenPos(ImVec2(row_pos.x + 32.0f * scale, row_pos.y));
+        const std::string pill_id = std::string("##insights_pill_") + row.key;
+        widgets::ProgressPill(pill_id.c_str(), row.fraction,
+                              PillLabel(row.words, row.display_label).c_str(), scale);
+        ImGui::SetCursorScreenPos(ImVec2(row_pos.x, row_pos.y + row_h + 8.0f * scale - ImGui::GetStyle().ItemSpacing.y));
+        ImGui::Dummy(ImVec2(0.0f, 0.0f));
     ImGui::SameLine(0.0f, studio_metrics::gap_inline * scale);
     const std::string info_id = std::string(id) + "_info";
     widgets::IconButton(info_id.c_str(), "i", scale, palette);
