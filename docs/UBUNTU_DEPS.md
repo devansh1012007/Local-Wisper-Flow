@@ -1,74 +1,62 @@
-# Ubuntu 24.04 port - dependencies (L0)
+# Ubuntu dependencies (Linux port, plan 2026-11-21)
 
-Target: Ubuntu 24.04 LTS ("noble"), amd64. This file is the canonical,
-verified package list for the Linux port; `scripts/install_ubuntu_deps.sh`
-encodes the install set and the `linux-ubuntu-24` CI job runs it - a wrong
-package name fails CI, which is the R5 check ("never invent package names or
-versions").
+One-shot setup: `sh scripts/install_ubuntu_deps.sh` (no root needed; it
+elevates only for `apt-get`). Everything below is what it installs and why.
 
-## How these entries were verified (2026-11-17)
+## Build tools
 
-The dev sandbox for this work is Debian, not Ubuntu, so versions were checked
-against the noble archive (Launchpad / packages.ubuntu.com /
-ubuntu.pkgs.org) instead of a local `apt-cache policy`. Rows whose version
-column says "name-verified by CI" had no reachable noble version page at
-verification time; their NAME is exercised by the CI job on the real
-ubuntu-24.04 runner (apt fails the job on any unknown name). On a real
-Ubuntu 24.04 machine, `apt-cache policy <name>` output supersedes this file -
-refresh it if versions drift.
+| Package | Why |
+|---|---|
+| `build-essential`, `cmake` (>= 3.16), `ninja-build` | Toolchain; C++17 |
+| `git` | FetchContent deps + the offline vendor-patch flow (AGENTS.md) |
 
-## Install set (build + CI)
+## Platform libraries
 
-Installed by `scripts/install_ubuntu_deps.sh` / the `linux-ubuntu-24` job:
+| Package | Why | Missing at build time |
+|---|---|---|
+| `libx11-dev` | Global hotkey via `XGrabKey` (X11 sessions) | No X11 hotkey; daemon logs the reason |
+| `libxtst-dev` (+ `libxi-dev`, pulled in) | Text injection via the XTest extension | Clipboard-only injection (copy + Ctrl+V) |
+| `libncurses-dev` | The settings TUI (`./local-wisper-flow`, no flags) | Banner mode only |
+| `libnotify-bin` | `notify-send` toasts (runtime, not build-time) | Toasts degrade to log lines |
+| `wl-clipboard`, `xclip` | Clipboard handoff (runtime) | Injection fails with "install wl-clipboard or xclip" |
 
-| Package | Noble version (amd64) | Kind | Needed for | Verification |
-| --- | --- | --- | --- | --- |
-| build-essential | (runner image) | build | all phases | runner |
-| cmake | via pip, repo CI pattern (`python3 -m pip install --user cmake`) | build | all phases | existing linux job |
-| pkg-config | name-verified by CI | build | find_package from L2 | CI job |
-| ninja-build | name-verified by CI | build | optional generator | CI job |
-| libx11-dev | name-verified by CI | build | GLFW 3.4 source build (L4), X11 hotkey (L2) | CI job |
-| libxrandr-dev | name-verified by CI | build | GLFW 3.4 source build | CI job |
-| libxinerama-dev | name-verified by CI | build | GLFW 3.4 source build | CI job |
-| libxcursor-dev | name-verified by CI | build | GLFW 3.4 source build | CI job |
-| libxi-dev | name-verified by CI | build | GLFW 3.4 source build, XInput2 (L2) | CI job |
-| libgl-dev | name-verified by CI | build | OpenGL headers (GLVND) | CI job |
-| libegl-dev | name-verified by CI | build | EGL for the GLFW Wayland backend (L4/L7) | CI job |
-| libxtst-dev | name-verified by CI | build | XTest injection (L3) | CI job |
-| libxkbcommon-dev | 1.6.0-1build1 | build | keysym handling (L3/L7) | Launchpad, 2026-11-17 |
-| libwayland-dev | name-verified by CI | build | only if direct Wayland is ever needed (L7 uses portals over D-Bus) | CI job |
-| libdbus-1-dev | 1.14.10-4ubuntu4.1 | build | SNI tray (L5), notifications, portals (L7) | ubuntuupdates.org, 2026-11-17 |
-| libnotify-dev | name-verified by CI | build | notifications (L5) | CI job |
-| libcurl4-openssl-dev | 8.5.0-2ubuntu10.16 | build | IHttpTransport on libcurl (L6): model download + update check | Launchpad, 2026-11-17 |
-| xvfb | 2:21.1.12-1ubuntu1 | ci | GUI smoke test | ubuntuupdates.org, 2026-11-17 |
-| xauth | name-verified by CI | ci | xvfb-run helper | CI job |
-| xclip | name-verified by CI | runtime | X11 clipboard subprocess (L3) | CI job |
-| wl-clipboard | 2.2.1-1build1 | runtime | Wayland clipboard subprocess (L3, D1a) | Launchpad, 2026-11-17 |
-| xdg-desktop-portal | name-verified by CI | runtime | FileChooser / RemoteDesktop portals | CI job |
+All X11/ncurses pieces are probed at configure time; a build on a minimal box
+succeeds and the daemon reports the reduced capability set at startup
+(`capabilities: x11_hotkey=… evdev_hotkey=… xtest_inject=… tui=… toasts=…`).
 
-## Runtime-only (user machines, not installed by CI)
+## Models and runtimes
 
-| Package | Noble version (amd64) | Why | Verification |
-| --- | --- | --- | --- |
-| xdg-desktop-portal-gnome | 46.2-0ubuntu1 | GNOME portal backend; PREINSTALLED on the desktop session; no GlobalShortcuts (see UBUNTU_DECISIONS.md D2) | ubuntu.pkgs.org, 2026-11-17 |
-| gnome-shell-extension-appindicator | 57-2 | displays StatusNotifierItem tray icons; PREINSTALLED and enabled on fresh desktop installs (D6; M4 confirms on the VM) | ubuntu.pkgs.org, 2026-11-17 |
-| libfuse2t64 | 2.9.9-8.1build1 | required to EXECUTE AppImages on noble (D4); document in install instructions | packages.ubuntu.com, 2026-11-17 |
-| libasound2-dev | 1.2.11-1ubuntu0.3 | NOT required: miniaudio dlopens ALSA/PulseAudio at runtime, no link-time dependency (portable core builds without it). Recorded because it is the classic wrong-suspect when audio breaks | packages.ubuntu.com, 2026-11-17 |
+- **ONNX Runtime** (not fetched by CMake, per AGENTS.md): the script drops the
+  prebuilt `linux-x64` release into `third_party/onnxruntime/`. Missing =>
+  configure still succeeds; VAD targets are skipped and the daemon runs
+  without silence gating.
+- **silero_vad.onnx**: fetched into `<data dir>/models/` (`~/.local/share/
+  LocalWisperFlow` unless `LWF_HOME` is set). Missing => same graceful
+  degradation.
+- **whisper model** (e.g. `ggml-base.en.bin`): place next to the binary or in
+  `<data dir>/`; point `whisper_model_path` at it in the TUI.
 
-## Explicitly NOT used
+## Session behavior (decision D3/D4)
 
-| Package | Noble version | Reason |
-| --- | --- | --- |
-| libglfw3-dev | 3.3.10-1build1 (universe) | too old - the app needs GLFW 3.4 (3.3.10 < 3.4); GLFW is built from source via FetchContent, same tag 3.4 as Windows |
-| libgl1-mesa-dev | 24.0.5-1ubuntu1 | transitional dummy package in noble (GLVND restructure); use libgl-dev |
-| libayatana-appindicator3-dev | 0.5.92-1 (universe) | would pull GTK into the link closure for one feature; tray is implemented directly over D-Bus (D6) |
-| ydotool | - | rejected in D1c: wants system-wide uinput rights |
+| Session | Hotkey | Injection |
+|---|---|---|
+| X11 | `XGrabKey` chords, unprivileged | XTest direct typing; clipboard+Ctrl+V fallback |
+| Wayland | evdev opt-in (`hotkey_evdev_enabled=true` + `input` group: `sudo usermod -aG input $USER`, then re-login) | clipboard copy + "press Ctrl+V" toast |
+| Headless | none (documented limit) | disabled (fails with a clear error) |
 
-## Portable-core rule (G5)
+The evdev backend is **opt-in and keylogger-adjacent by construction**: any
+reader of `/dev/input` sees all keys. It ships disabled.
 
-The portable core (lwf_core, lwf_tests, lwf-bench, lwf-cloud-bench, the app
-binary) builds and tests with NO desktop libraries installed. Evidence at
-L0: this branch's full build + ctest ran in a bare Debian sandbox with none
-of the packages above present (only g++/make/cmake). The dedicated CI proof
-(a container with only build-essential + cmake) lands with L1, when the
-headless app branch makes the container job meaningful.
+## Full build
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLWF_BUILD_FULL=ON
+cmake --build build -j$(nproc)
+ctest --test-dir build
+```
+
+`LWF_BUILD_FULL=ON` pulls whisper.cpp + llama.cpp + miniaudio + gRPC via
+FetchContent (see AGENTS.md for the offline tarball recipes and the
+`patches/whisper-v1.9.3-ggml-alias.patch` vendor patch). Without it the daemon
+still runs and exercises the hotkey/injector/notifier/TUI planes with a clear
+"built with LWF_BUILD_FULL=OFF" notice.

@@ -9,7 +9,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -17,8 +16,7 @@
 namespace {
 
 std::string TempDir(const char* name) {
-    const std::string dir =
-        (std::filesystem::temp_directory_path() / (std::string("lwf_test_") + name)).string();
+    const std::string dir = (std::filesystem::path("/tmp") / (std::string("lwf_test_") + name)).string();
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
     return dir;
@@ -182,226 +180,25 @@ TEST_CASE("config manager delegates and exposes setters") {
 
 TEST_CASE("path resolver prefers data dir then exe dir then as-is") {
     const std::string dir = TempDir("resolver");
-    const std::string data_dir = (std::filesystem::path(dir) / "data").string();
-    const std::string exe_dir = (std::filesystem::path(dir) / "exe").string();
     std::filesystem::create_directories((std::filesystem::path(dir) / "data" / "models").string());
     std::filesystem::create_directories((std::filesystem::path(dir) / "exe" / "models").string());
-    // ResolveDataPath returns (std::filesystem::path(dir) / candidate).string(),
-    // which mixes separators on Windows; build expectations the same way.
-    const std::string in_data = (std::filesystem::path(data_dir) / "models/m.bin").string();
-    const std::string in_exe = (std::filesystem::path(exe_dir) / "models/m.bin").string();
+    const std::string in_data = (std::filesystem::path(dir) / "data" / "models" / "m.bin").string();
+    const std::string in_exe = (std::filesystem::path(dir) / "exe" / "models" / "m.bin").string();
     WriteFile(in_data, "d");
     WriteFile(in_exe, "e");
 
-    CHECK(ResolveDataPath("/abs/model.bin", data_dir, exe_dir) == "/abs/model.bin");
-    // ResolveDataPath joins with std::filesystem::path, so build expectations the same way.
-    CHECK(ResolveDataPath("models/m.bin", data_dir, exe_dir) == in_data);
+    CHECK(ResolveDataPath("/abs/model.bin", dir + "/data", dir + "/exe") == "/abs/model.bin");
+    CHECK(ResolveDataPath("models/m.bin", dir + "/data", dir + "/exe") == in_data);
     std::filesystem::remove(in_data);
-    CHECK(ResolveDataPath("models/m.bin", data_dir, exe_dir) == in_exe);
+    CHECK(ResolveDataPath("models/m.bin", dir + "/data", dir + "/exe") == in_exe);
     std::filesystem::remove(in_exe);
-    CHECK(ResolveDataPath("models/m.bin", data_dir, exe_dir) == "models/m.bin");
+    CHECK(ResolveDataPath("models/m.bin", dir + "/data", dir + "/exe") == "models/m.bin");
     CHECK(ResolveDataPath("", dir, dir).empty());
 }
 
 TEST_CASE("data dir honors LWF_HOME override") {
     const std::string dir = TempDir("lwfhomedir");
-#if defined(_WIN32)
-    _putenv_s("LWF_HOME", dir.c_str());
-    CHECK(GetDataDir() == dir);
-    // GetDataDir treats an empty LWF_HOME as unset.
-    _putenv_s("LWF_HOME", "");
-#else
     setenv("LWF_HOME", dir.c_str(), 1);
     CHECK(GetDataDir() == dir);
     unsetenv("LWF_HOME");
-#endif
-}
-
-// Source pin (followups D1): the startup wiring and the ApplySettings drain
-// must BOTH build EngineSettings through the one shared LoadEngineSettings
-// mapper. The drain used to re-list a key subset, so the Volume,
-// max-recording and hands-free-silence knobs kept their startup values until
-// restart — every knob in Settings must apply live.
-TEST_CASE("main wiring shares LoadEngineSettings between startup and the ApplySettings drain") {
-    std::ifstream file("src/main.cpp");
-    REQUIRE(static_cast<bool>(file));
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    const std::string source = buffer.str();
-    REQUIRE_FALSE(source.empty());
-
-    // The mapper exists and covers the three keys the old drain skipped.
-    const std::size_t loader = source.find("EngineSettings LoadEngineSettings(");
-    REQUIRE(loader != std::string::npos);
-    const std::string loader_span =
-        source.substr(loader, source.find('}', loader) - loader);
-    CHECK(loader_span.find("sound_volume") != std::string::npos);
-    CHECK(loader_span.find("max_recording_ms") != std::string::npos);
-    CHECK(loader_span.find("hands_free_silence_ms") != std::string::npos);
-
-    // Both call sites go through the mapper.
-    std::size_t calls = 0;
-    for (std::size_t pos = source.find("LoadEngineSettings(config.Store())");
-         pos != std::string::npos;
-         pos = source.find("LoadEngineSettings(config.Store())", pos + 1)) {
-        ++calls;
-    }
-    CHECK(calls == 2);
-
-    // The drain no longer hand-lists keys (a re-listed subset is how the
-    // knobs went stale in the first place).
-    const std::size_t drain = source.find("case UiCommandType::ApplySettings:");
-    REQUIRE(drain != std::string::npos);
-    const std::string drain_span = source.substr(drain, 900);
-    CHECK(drain_span.find("settings = LoadEngineSettings(config.Store());") != std::string::npos);
-    CHECK(drain_span.find("settings.sound_volume =") == std::string::npos);
-    CHECK(drain_span.find("settings.min_hold_ms =") == std::string::npos);
-}
-
-namespace {
-
-std::string ReadSource(const char* path) {
-    std::ifstream file(path);
-    if (!file) {
-        return {};
-    }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
-}
-
-}  // namespace
-
-// Source pin (followups-2 D1): the volume knob must commit WHILE the slider
-// moves (a missed deactivate event can no longer roll the value back) and the
-// row must ask for an immediate sample tone so the change is audible on the
-// spot. The engine half of the chain is pinned behaviourally in
-// test_tone_volume_live.cpp.
-TEST_CASE("volume slider commits live and posts a preview tone") {
-    const std::string main_src = ReadSource("src/main.cpp");
-    REQUIRE_FALSE(main_src.empty());
-
-    // The PreviewTone drain clamps the payload and honours the sound toggle.
-    // Followups-3: the sample is the distinct 160 ms PreviewTone ding (the
-    // 60 ms start blip was easy to miss entirely at low volume) and a dead
-    // output endpoint is surfaced once instead of failing silently.
-    const std::size_t preview = main_src.find("case UiCommandType::PreviewTone:");
-    REQUIRE(preview != std::string::npos);
-    const std::string preview_span = main_src.substr(preview, 1700);
-    CHECK(preview_span.find("std::stod(command.payload)") != std::string::npos);
-    CHECK(preview_span.find("std::clamp(preview_volume, 0.0, 1.0)") != std::string::npos);
-    CHECK(preview_span.find("GetBool(\"sound_enabled\")") != std::string::npos);
-    CHECK(preview_span.find("tone_player.Play(ToneGenerator::PreviewTone(), preview_volume)") !=
-          std::string::npos);
-    CHECK(preview_span.find("ToneGenerator::StartTone(), preview_volume") == std::string::npos);
-
-    // Followups-3 D1: the main loop surfaces a dead output endpoint once per
-    // run (TonePlayer::DeviceFailed), so a machine with no working output
-    // device no longer presents as "the volume slider does nothing".
-    const std::size_t drain = main_src.find("tone_player.DeviceFailed()");
-    REQUIRE(drain != std::string::npos);
-    const std::string drain_span = main_src.substr(drain, 500);
-    CHECK(drain_span.find("attention.Set(") != std::string::npos);
-    CHECK(drain_span.find("tone_failure_surfaced = true") != std::string::npos);
-    CHECK(main_src.find("bool tone_failure_surfaced = false") != std::string::npos);
-
-    const std::string window_src = ReadSource("src/ui/MainWindow.cpp");
-    REQUIRE_FALSE(window_src.empty());
-
-    // The Volume row is its own control: live commit while edited plus a
-    // throttled sample, and the same commit + final sample on release.
-    const std::size_t row = window_src.find("void MainWindow::VolumeRow()");
-    REQUIRE(row != std::string::npos);
-    const std::string row_span = window_src.substr(row, 1200);
-    CHECK(row_span.find("ImGui::SliderFloat(\"##sound_volume\"") != std::string::npos);
-    CHECK(row_span.find("if (ImGui::IsItemEdited())") != std::string::npos);
-    CHECK(row_span.find("SetDouble(\"sound_volume\"") != std::string::npos);
-    CHECK(row_span.find("UiCommandType::PreviewTone") != std::string::npos);
-    CHECK(row_span.find("tone_preview_until_") != std::string::npos);
-
-    // DoubleRow gained the same live-commit guard for every other knob.
-    const std::size_t double_row = window_src.find("void MainWindow::DoubleRow(");
-    REQUIRE(double_row != std::string::npos);
-    const std::string double_span = window_src.substr(double_row, 900);
-    CHECK(double_span.find("if (ImGui::IsItemEdited())") != std::string::npos);
-
-    // The General page routes the Volume row through the new control.
-    const std::size_t call_site = window_src.find("Row(\"##row_sound_volume\"");
-    REQUIRE(call_site != std::string::npos);
-    const std::string call_span = window_src.substr(call_site, 400);
-    CHECK(call_span.find("VolumeRow();") != std::string::npos);
-    CHECK(call_span.find("DoubleRow(\"sound_volume\"") == std::string::npos);
-}
-
-// Source pins (followups-4): the full app must launch WITHOUT a console
-// window and must run on machines that have no MinGW runtime installed.
-// lwf_tests cannot link the full app, so the two guarantees are pinned on
-// the build description and the fatal-error path is pinned on main.cpp.
-TEST_CASE("windows exe is a console-less GUI subsystem app") {
-    const std::string cmake_src = ReadSource("CMakeLists.txt");
-    REQUIRE_FALSE(cmake_src.empty());
-
-    // LWF_CONSOLE (debug escape hatch) defaults OFF and gates the property,
-    // so a plain build is always the GUI subsystem (CMake maps
-    // WIN32_EXECUTABLE to -mwindows on MinGW; the mingw-w64 runtime
-    // supplies the WinMain stub that calls main()).
-    CHECK(cmake_src.find("option(LWF_CONSOLE") != std::string::npos);
-    const std::size_t console_opt = cmake_src.find("option(LWF_CONSOLE");
-    REQUIRE(console_opt != std::string::npos);
-    const std::string console_span = cmake_src.substr(console_opt, 200);
-    CHECK(console_span.find(" OFF)") != std::string::npos);
-    CHECK(cmake_src.find("if(NOT LWF_CONSOLE)") != std::string::npos);
-    const std::size_t gate = cmake_src.find("if(NOT LWF_CONSOLE)");
-    REQUIRE(gate != std::string::npos);
-    const std::string gate_span = cmake_src.substr(gate, 400);
-    CHECK(gate_span.find("WIN32_EXECUTABLE TRUE") != std::string::npos);
-
-    // The GCC runtime is statically linked: a dynamically linked MinGW C++
-    // exe needs libstdc++-6.dll / libgcc_s_seh-1.dll next to it, which do
-    // not exist on a clean machine ("works here, not there").
-    CHECK(cmake_src.find("if(NOT MSVC)") != std::string::npos);
-    const std::size_t msvc_gate = cmake_src.find("if(NOT MSVC)");
-    REQUIRE(msvc_gate != std::string::npos);
-    const std::string msvc_span = cmake_src.substr(msvc_gate, 300);
-    CHECK(msvc_span.find("-static -static-libgcc -static-libstdc++") != std::string::npos);
-
-    // With no console, a fatal startup error must still reach the user:
-    // the catch-all shows a message box instead of an invisible cerr.
-    const std::string main_src = ReadSource("src/main.cpp");
-    REQUIRE_FALSE(main_src.empty());
-    const std::size_t fatal = main_src.find("Echo flow failed to start:");
-    REQUIRE(fatal != std::string::npos);
-    const std::string fatal_span = main_src.substr(fatal - 700, 900);
-    CHECK(fatal_span.find("MessageBoxA") != std::string::npos);
-    CHECK(fatal_span.find("lwf::Log::Error") != std::string::npos);
-}
-
-// Source pin (followups-4): the packaging script audits the import table
-// so a foreign-DLL regression fails at package time, and it ships the
-// exe-side payloads the app needs on a clean machine.
-TEST_CASE("packaging script audits dlls and ships the exe-side payloads") {
-    const std::string script = ReadSource("scripts/package_windows.ps1");
-    REQUIRE_FALSE(script.empty());
-
-    // The audit: parse objdump's "DLL Name:" lines and fail on anything
-    // outside the system whitelist.
-    CHECK(script.find("'DLL Name:'") != std::string::npos);
-    CHECK(script.find("$SystemDlls") != std::string::npos);
-    CHECK(script.find("kernel32") != std::string::npos);
-    CHECK(script.find("msvcrt") != std::string::npos);
-    // The MinGW runtime DLLs are named in the failure message so the
-    // regression is identifiable from the error alone.
-    CHECK(script.find("libstdc++-6.dll") != std::string::npos);
-    CHECK(script.find("non-system DLL") != std::string::npos);
-
-    // The exe renames to EchoFlow.exe and the first-run model catalog
-    // travels next to it (Onboarding reads GetExeDir()\models.json).
-    CHECK(script.find("EchoFlow.exe") != std::string::npos);
-    CHECK(script.find("models.json") != std::string::npos);
-    CHECK(script.find("Compress-Archive") != std::string::npos);
-    CHECK(script.find("win64.zip") != std::string::npos);
-
-    // The gitignored output dir is declared so the repo stays clean.
-    const std::string gitignore = ReadSource(".gitignore");
-    CHECK(gitignore.find("dist/") != std::string::npos);
 }

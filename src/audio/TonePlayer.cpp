@@ -1,11 +1,8 @@
 #include "audio/TonePlayer.h"
 
-#include "core/Log.h"
-
 #include <miniaudio.h>
 
 #include <algorithm>
-#include <cstdio>
 
 namespace ToneGenerator {
 
@@ -13,19 +10,14 @@ namespace {
 
 constexpr int kToneSampleRate = 16000;
 
-// Followups-3 D1: cap on how long the worker waits for the previous tone to
-// drain before replacing it. A healthy 160 ms tone drains in ~160 ms; only a
-// dead/stalled audio callback hits the cap, and without it the worker would
-// block forever and silently swallow every later tone (perceived as "the
-// volume slider does nothing").
-constexpr auto kToneDrainTimeout = std::chrono::milliseconds(2000);
-
-std::string DescribeResult(ma_result result) {
-    const char* description = ma_result_description(result);
-    return description != nullptr ? description : "unknown error";
 }
 
-}
+struct DeviceState {
+    std::mutex mutex;
+    std::condition_variable done_cv;
+    std::vector<float> active;
+    std::size_t position = 0;
+};
 
 static void ToneDataCallback(ma_device* device, void* output, const void*, std::uint32_t frames) {
     auto* state = static_cast<DeviceState*>(device->pUserData);
@@ -62,13 +54,6 @@ void TonePlayer::Play(const ToneSpec& spec, double volume) {
         volume_ = volume;
         queue_.push_back(spec);
     }
-    // Followups-3 D1 diagnosability: every requested tone is logged (spec +
-    // amplitude), so "the slider does nothing" reports become answerable
-    // from the log ring alone.
-    char line[128];
-    std::snprintf(line, sizeof(line), "tone: %.1f Hz %d ms vol %.2f", spec.frequency_hz,
-                  spec.duration_ms, volume);
-    lwf::Log::Debug(line);
     condition_.notify_one();
 }
 
@@ -106,37 +91,19 @@ void TonePlayer::EnsureDeviceLocked() {
     config.sampleRate = kToneSampleRate;
     config.dataCallback = &ToneDataCallback;
     config.pUserData = state_.get();
-    const ma_result init_result = ma_device_init(nullptr, &config, device);
-    if (init_result != MA_SUCCESS) {
-        // Followups-3 D1: this used to fail with no trace at all, so a machine
-        // with no usable output device dropped every tone in silence and the
-        // volume slider looked broken. Log it and flag it for the UI.
-        lwf::Log::Warning("TonePlayer: playback device init failed: " +
-                          DescribeResult(init_result));
+    if (ma_device_init(nullptr, &config, device) != MA_SUCCESS) {
         delete device;
         state_.reset();
-        device_failed_ = true;
         return;
     }
-    const ma_result start_result = ma_device_start(device);
-    if (start_result != MA_SUCCESS) {
-        lwf::Log::Warning("TonePlayer: playback device start failed: " +
-                          DescribeResult(start_result));
+    if (ma_device_start(device) != MA_SUCCESS) {
         ma_device_uninit(device);
         delete device;
         state_.reset();
-        device_failed_ = true;
         return;
     }
-    lwf::Log::Info("TonePlayer: playback device ready");
     device_ = device;
     device_ready_ = true;
-    device_failed_ = false;
-}
-
-bool TonePlayer::DeviceFailed() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return device_failed_;
 }
 
 void TonePlayer::WorkerLoop() {
@@ -167,15 +134,7 @@ void TonePlayer::WorkerLoop() {
             Generate(kToneSampleRate, spec.frequency_hz, spec.duration_ms, 10, volume_);
         {
             std::unique_lock<std::mutex> lock(state_->mutex);
-            // Followups-3 D1: bounded drain wait. The old unbounded wait could
-            // block the worker forever when the audio callback stopped firing
-            // (dead endpoint mid-session), silently swallowing every later
-            // tone; the cap replaces the stale buffer instead and logs it.
-            if (!state_->done_cv.wait_for(lock, kToneDrainTimeout,
-                                          [this] { return state_->active.empty(); })) {
-                lwf::Log::Warning("TonePlayer: audio callback stalled; dropping stale tone");
-                state_->active.clear();
-            }
+            state_->done_cv.wait(lock, [this] { return state_->active.empty(); });
             state_->active = samples;
             state_->position = 0;
         }

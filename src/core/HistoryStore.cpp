@@ -31,7 +31,7 @@ bool HistoryStore::Enabled() const {
     return enabled_;
 }
 
-std::int64_t HistoryStore::NowSeconds() {
+std::int64_t HistoryStore::NowSeconds() const {
     return std::chrono::duration_cast<std::chrono::seconds>(
                std::chrono::system_clock::now().time_since_epoch())
         .count();
@@ -39,10 +39,6 @@ std::int64_t HistoryStore::NowSeconds() {
 
 void HistoryStore::LoadAllLocked() {
     entries_.clear();
-    std::error_code rc_ec;
-    if (!std::filesystem::is_regular_file(path_, rc_ec) || rc_ec) {
-        return;
-    }
     std::ifstream file(path_);
     if (!file.is_open()) {
         return;
@@ -188,8 +184,4 @@ bool HistoryStore::Export(const std::string& path) const {
 std::size_t HistoryStore::Size() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return entries_.size();
-}
-
-const std::string& HistoryStore::Path() const {
-    return path_;
 }

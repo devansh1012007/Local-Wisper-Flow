@@ -4,8 +4,6 @@
 #include "stt/cloud/MultipartBuilder.h"
 #include "stt/cloud/WavEncoder.h"
 
-#include <nlohmann/json.hpp>
-
 #include <stdexcept>
 
 namespace {
@@ -53,25 +51,16 @@ HttpRequest BuildGnaniRequest(const std::vector<float>& audio_pcm, std::uint32_t
     if (!options.language.empty()) {
         builder.AddField(GnaniContract::kLanguageField, options.language);
     }
-    std::vector<std::string> keyterms;
-    keyterms.reserve(options.keyterms.size());
+    std::size_t used = 0;
     for (const std::string& term : options.keyterms) {
-        if (keyterms.size() >= GnaniContract::kKeytermsCap) {
+        if (used >= GnaniContract::kKeytermsCap) {
             break;
         }
         if (!SafeKeyterm(term)) {
             continue;
         }
-        keyterms.push_back(term);
-    }
-    if (!keyterms.empty()) {
-        // DECISION: Gnani docs show keyterms as a single JSON-array string form
-        // field (docs checked 2026-11-08), not repeated fields.
-        nlohmann::json terms_json = nlohmann::json::array();
-        for (const std::string& term : keyterms) {
-            terms_json.push_back(term);
-        }
-        builder.AddField(GnaniContract::kKeytermsField, terms_json.dump());
+        builder.AddField(GnaniContract::kKeytermsField, term);
+        ++used;
     }
     builder.AddFile(GnaniContract::kAudioField, GnaniContract::kAudioFilename,
                     GnaniContract::kAudioContentType, EncodeWav16Mono(audio_pcm, sample_rate));

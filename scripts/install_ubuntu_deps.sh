@@ -1,38 +1,66 @@
 #!/bin/sh
-# Canonical Ubuntu 24.04 dependency install for Echo flow's Linux port.
-# docs/UBUNTU_DEPS.md documents every entry (noble version, purpose,
-# verification method); the linux-ubuntu-24 CI job runs this script, so an
-# unknown package name fails CI - that is the R5 name check.
+# Ubuntu 24.04 dependency installer for the Linux port (plan 2026-11-21,
+# change C08). Idempotent: safe to re-run; everything already satisfied is a
+# no-op. Run WITHOUT sudo; it elevates only for apt.
 #
-# Requires root (run via sudo). Runtime-only packages (AppImage libfuse2t64,
-# GNOME AppIndicator extension) are deliberately NOT here - see
-# docs/UBUNTU_DEPS.md "Runtime-only".
+# Layers:
+#   1. build tools + platform libs (X11/Xtst hotkey+injection, ncurses TUI,
+#      libnotify-bin for notify-send toasts, clipboard helpers)
+#   2. ONNX Runtime (prebuilt, never fetched by cmake) into
+#      third_party/onnxruntime for the Silero VAD
+#   3. silero_vad.onnx model into the user data dir
+
 set -eu
-export DEBIAN_FRONTEND=noninteractive
 
-apt-get update
+NEED_SUDO=""
+if [ "$(id -u)" -ne 0 ]; then
+    NEED_SUDO="sudo"
+fi
 
-apt-get install -y --no-install-recommends \
-    build-essential \
-    pkg-config \
-    ninja-build \
-    libx11-dev \
-    libxrandr-dev \
-    libxinerama-dev \
-    libxcursor-dev \
-    libxi-dev \
-    libgl-dev \
-    libegl-dev \
-    libxtst-dev \
-    libxkbcommon-dev \
-    libwayland-dev \
-    libdbus-1-dev \
-    libnotify-dev \
-    libcurl4-openssl-dev \
-    xvfb \
-    xauth \
-    xclip \
-    wl-clipboard \
-    xdg-desktop-portal
+echo "== [1/3] apt packages =="
+$NEED_SUDO apt-get update -qq
+$NEED_SUDO apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build git \
+    libx11-dev libxtst-dev libxi-dev \
+    libncurses-dev \
+    libnotify-bin \
+    wl-clipboard xclip
 
-echo "ubuntu deps: OK (see docs/UBUNTU_DEPS.md for the annotated list)"
+echo "== [2/3] ONNX Runtime (for the Silero VAD) =="
+ONNXRUNTIME_VERSION=1.20.1
+ONNXRUNTIME_DIR="third_party/onnxruntime"
+ONNXRUNTIME_TARBALL="/tmp/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz"
+ONNXRUNTIME_URL="https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-x64-${ONNXRUNTIME_VERSION}.tgz"
+
+if [ -f "${ONNXRUNTIME_DIR}/include/onnxruntime_cxx_api.h" ]; then
+    echo "    already present: ${ONNXRUNTIME_DIR}"
+else
+    if [ ! -f "${ONNXRUNTIME_TARBALL}" ]; then
+        echo "    downloading ${ONNXRUNTIME_URL}"
+        curl -fSL "${ONNXRUNTIME_URL}" -o "${ONNXRUNTIME_TARBALL}"
+    fi
+    mkdir -p "${ONNXRUNTIME_DIR}"
+    tar -xzf "${ONNXRUNTIME_TARBALL}" -C "${ONNXRUNTIME_DIR}" --strip-components=1
+    echo "    installed into ${ONNXRUNTIME_DIR}"
+fi
+
+echo "== [3/3] silero_vad.onnx =="
+DATA_DIR="${LWF_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/LocalWisperFlow}"
+MODELS_DIR="${DATA_DIR}/models"
+SILERO_URL="https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"
+if [ -f "${MODELS_DIR}/silero_vad.onnx" ]; then
+    echo "    already present: ${MODELS_DIR}/silero_vad.onnx"
+else
+    mkdir -p "${MODELS_DIR}"
+    curl -fSL "${SILERO_URL}" -o "${MODELS_DIR}/silero_vad.onnx"
+    echo "    installed into ${MODELS_DIR}/silero_vad.onnx"
+fi
+
+echo
+echo "All dependencies satisfied. Build with:"
+echo "  cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLWF_BUILD_FULL=ON"
+echo "  cmake --build build -j\$(nproc)"
+echo "  ctest --test-dir build"
+echo
+echo "Wayland hotkey (optional, needs re-login once):"
+echo "  sudo usermod -aG input \$USER"

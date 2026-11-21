@@ -1,3 +1,3 @@
-#include "core/IActiveWindow.h"
+#include "os/ActiveWindow.h"
 
 IActiveWindow* CreateActiveWindow();

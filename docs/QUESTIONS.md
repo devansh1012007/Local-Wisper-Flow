@@ -8,16 +8,6 @@ evidence gathered so far.
    `src/ui/*.cpp` or the `_WIN32` branch of `main.cpp` records G3 as pending.
    Options: install zig here, or run `zig c++ -fsyntax-only -target
    x86_64-windows-gnu -Isrc <file>` on a machine that has it.
-   Redesign note (2026-11-08, `ops/ui-full-redesign` Ph2-ShimDel + Ph7 docs):
-   G3 remains pending here — no zig on the dev box; Ph7 changes are docs
-   only (no build needed). T13a (2026-11-09, `ops/ui-redesign-v2`):
-   G3 again pending — no zig; touches `src/ui/MainWindow.{h,cpp}` +
-   `src/core/Onboarding.{h,cpp}` with `os/WindowsDownloader.h` from the
-   UI TU (`zig c++ -fsyntax-only -target x86_64-windows-gnu -Isrc
-   src/ui/MainWindow.cpp` owed).
-   T16/T17 (2026-11-10, `ops/ui-redesign-v2`): docs-only sweep + external
-   skill rewrite — no Windows sources touched, so nothing new for zig; the
-   T13a owed syntax-only run above still stands.
 
 2. D8 model hashes: model URLs and SHA-256 values in `models.json` must be copied
    from the real model pages, never invented. Unverified entries ship with
@@ -52,13 +42,11 @@ evidence gathered so far.
    docs/BENCHMARKS.md, supply the current per-hour prices from the vendor
    pages.
 
-7. Streaming double-commit race: FIXED 2026-11-06/07 on `fix/gui-typography-dpi`.
-   `DictationEngine::MaybeCommitStreamingSegment` now holds `commit_mutex_` for
-   the whole check-slice-advance-commit sequence, so two concurrent `Tick`
-   callers cannot commit the same segment twice (commit 8223834). Verified by a
-   deterministic 8-thread barrier regression test (fail-before verified: 4/4 runs
-   produced 8 duplicate commits; pass-after 5/5). The `Tick` header comment was
-   narrowed to the actual guarantee (serialized commit only; concurrent
-   `StopAndTranscribe` double-run still possible and now documented, b0cfe38).
-   Remaining follow-up: a Tick-serialization task if the engine ever calls Tick
-   from more than one thread.
+7. G3 zig type-check of the Windows sources stays pending on this box (no
+   zig, no Windows): the Linux-port commits touch no Windows sources except
+   the shared SettingsStore schema (additive) and the ONNX block in CMake
+   (adds SileroVadProvider.cpp + onnxruntime link to the app target on both
+   platforms — worth a Windows build check when merging, since the snapshot
+   main never compiled SileroVadProvider into the app). The Windows main in
+   this snapshot also never calls engine.Start() (the Linux daemon does);
+   verify against the operator's newer main before merging.

@@ -3,7 +3,6 @@
 #include "core/PersonalDictionary.h"
 #include "core/SnippetStore.h"
 #include "core/SpokenCommandProcessor.h"
-#include "core/TextDiff.h"
 
 #include <cctype>
 
@@ -72,7 +71,7 @@ std::string TextPipeline::NormalizeLines(const std::string& text) {
     return out;
 }
 
-ProcessResult TextPipeline::ProcessWithStats(const std::string& raw) {
+std::string TextPipeline::Process(const std::string& raw) {
     const std::string normalized = NormalizeWhitespace(raw);
 
     std::string sentineled = normalized;
@@ -94,24 +93,13 @@ ProcessResult TextPipeline::ProcessWithStats(const std::string& raw) {
         cleaned = spoken_->ExpandSentinels(cleaned);
     }
 
-    std::size_t dict_fixes = 0;
     if (dictionary_ != nullptr && dictionary_->Loaded()) {
-        cleaned = dictionary_->Enforce(cleaned, true, &dict_fixes);
+        cleaned = dictionary_->Enforce(cleaned, true);
     }
 
     if (snippets_ != nullptr && snippets_->Loaded()) {
         cleaned = snippets_->Expand(cleaned);
     }
 
-    const std::string final_text = NormalizeLines(cleaned);
-    const lwf::DiffResult diff = lwf::Diff(raw, final_text);
-    ProcessResult result;
-    result.text = final_text;
-    result.words_corrected = static_cast<std::int64_t>(diff.replaced + diff.inserted + diff.deleted);
-    result.dictionary_fixes = static_cast<std::int64_t>(dict_fixes);
-    return result;
-}
-
-std::string TextPipeline::Process(const std::string& raw) {
-    return ProcessWithStats(raw).text;
+    return NormalizeLines(cleaned);
 }

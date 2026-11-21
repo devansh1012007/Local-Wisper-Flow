@@ -2,7 +2,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include <filesystem>
 #include <fstream>
 #include <stdexcept>
 #include <utility>
@@ -34,10 +33,6 @@ TransformManager::TransformManager(ILlmProvider& provider, const std::string& tr
 
 std::vector<TransformManager::Entry> TransformManager::LoadFile(
     const std::string& path) const {
-    std::error_code rc_ec;
-    if (!std::filesystem::is_regular_file(path, rc_ec) || rc_ec) {
-        throw std::runtime_error("TransformManager: cannot open '" + path + "'");
-    }
     std::ifstream file(path);
     if (!file.is_open()) {
         throw std::runtime_error("TransformManager: cannot open '" + path + "'");
@@ -51,39 +46,17 @@ std::vector<TransformManager::Entry> TransformManager::LoadFile(
                                  e.what());
     }
 
-    nlohmann::json items;
-    if (json.is_array()) {
-        items = json;
-    } else if (json.is_object()) {
-        if (json.contains("slots") && json["slots"].is_array()) {
-            items = json["slots"];
-        } else if (json.contains("transforms") && json["transforms"].is_array()) {
-            items = json["transforms"];
-        } else {
-            throw std::runtime_error("TransformManager: '" + path +
-                                     "' must contain an array or slots object");
-        }
-    } else {
+    if (!json.is_array()) {
         throw std::runtime_error("TransformManager: '" + path + "' must contain an array");
     }
 
     std::vector<Entry> entries;
-    entries.reserve(items.size());
-    const bool from_slots = json.is_object();
-    for (const auto& element : items) {
-        if (!element.is_object() || !element.contains("name") ||
-            !element.contains("prompt")) {
-            if (from_slots) {
-                continue;
-            }
-        }
+    entries.reserve(json.size());
+    for (const auto& element : json) {
         Entry entry;
-        entry.name = TrimCopy(element.value("name", std::string()));
-        entry.prompt = element.value("prompt", std::string());
+        entry.name = TrimCopy(element.at("name").get<std::string>());
+        entry.prompt = element.at("prompt").get<std::string>();
         if (entry.name.empty()) {
-            if (from_slots) {
-                continue;
-            }
             throw std::runtime_error("TransformManager: transform with empty name in '" + path +
                                      "'");
         }

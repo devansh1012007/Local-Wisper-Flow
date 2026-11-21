@@ -17,6 +17,8 @@
 
 namespace {
 
+using namespace lwf_test;
+
 class UnavailableMic final : public IAudioCapture {
 public:
     void Start() override { throw std::runtime_error("no mic device"); }
@@ -38,7 +40,7 @@ TEST_CASE("each failure kind maps to exactly one error code and idle fsm") {
     }
     SUBCASE("inject failure") {
         Harness h;
-        h.injector.fail_inject = true;
+        h.injector.fail = true;
         auto engine = MakeEngine(h);
         PressAndSpeak(h, *engine);
         REQUIRE(h.sink.errors.size() == 1);
@@ -79,8 +81,8 @@ TEST_CASE("each failure kind maps to exactly one error code and idle fsm") {
                                                              h.settings);
         PressAndSpeak(h, *engine);
         CHECK(h.sink.errors.empty());
-        REQUIRE(h.injector.InjectionCount() == 1);
-        CHECK(h.injector.Injected()[0] == "hello world");
+        REQUIRE(h.injector.injected.size() == 1);
+        CHECK(h.injector.injected[0] == "hello world");
         CHECK(h.fsm.GetCurrentState() == State::IDLE);
     }
 }

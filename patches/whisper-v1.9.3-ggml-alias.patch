@@ -1,15 +1,15 @@
-diff --git a/ggml/src/CMakeLists.txt b/ggml/src/CMakeLists.txt
-index 82e9480..67a9519 100644
---- a/ggml/src/CMakeLists.txt
-+++ b/ggml/src/CMakeLists.txt
-@@ -242,7 +242,9 @@ endif()
- add_library(ggml
-             ggml-backend-dl.cpp
-             ggml-backend-reg.cpp)
--add_library(ggml::ggml ALIAS ggml)
-+if(NOT TARGET ggml::ggml)
-+    add_library(ggml::ggml ALIAS ggml)
-+endif()
- 
- set_target_properties(ggml PROPERTIES
-     VERSION ${GGML_VERSION}
+--- a/CMakeLists.txt	2026-08-20 09:47:03.000000000 +0000
++++ b/CMakeLists.txt	2026-11-21 16:10:45.195275843 +0000
+@@ -162,7 +162,11 @@
+         if (NOT ggml_FOUND)
+             message(FATAL_ERROR "System-installed GGML library not found.")
+         endif()
+-        add_library(ggml ALIAS ggml::ggml)
++        # Local Wisper Flow: guard the alias so llama's installed package can
++        # define the ggml::ggml namespace target first (see AGENTS.md).
++        if (NOT TARGET ggml::ggml)
++            add_library(ggml ALIAS ggml::ggml)
++        endif()
+     else()
+         add_subdirectory(ggml)
+         if(WIN32)

@@ -1,9 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <condition_variable>
-#include <cstdint>
-#include <mutex>
 #include <vector>
 
 namespace ToneGenerator {
@@ -19,23 +16,11 @@ struct GeneratedTone {
     int sample_rate = 16000;
 };
 
-struct DeviceState {
-    std::mutex mutex;
-    std::condition_variable done_cv;
-    std::vector<float> active;
-    std::size_t position = 0;
-};
-
 std::vector<float> Generate(int sample_rate, double frequency_hz, int duration_ms,
                             int fade_ms, double volume);
 
 ToneSpec StartTone();
 ToneSpec StopTone();
 ToneSpec ErrorTone();
-
-// Volume-slider sample (followups-3 D1): deliberately longer and lower than
-// the 60 ms start/stop blips so the dragged amplitude is clearly audible on
-// laptop speakers. Same fade envelope as the other presets.
-ToneSpec PreviewTone();
 
 }

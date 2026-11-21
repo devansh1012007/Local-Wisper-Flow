@@ -4,39 +4,25 @@ project(LocalWisperFlow VERSION 0.1.0 LANGUAGES C CXX)
 
 if(WIN32)
     add_compile_definitions(_USE_MATH_DEFINES)
-    # windows.h defines global min/max macros unless NOMINMAX is defined,
-    # which breaks std::min/std::max in any translation unit that pulls in
-    # windows.h (e.g. glfw3native.h -> windows.h). Define it project-wide,
-    # the same guard already used per-file in src/os/*.cpp.
-    add_compile_definitions(NOMINMAX)
 endif()
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING
     "Compat shim: vendored deps declare pre-3.5 minimums which CMake >= 4 rejects")
-
-# Echo flow Windows resources (exe icon + VERSIONINFO). Generated from
-# assets/app.rc.in so FileVersion/ProductVersion come from project(VERSION)
-# - the single version source (docs/RELEASE.md). The .rc references the
-# icon by absolute path (RC quoted paths resolve relative to the .rc file,
-# and the generated file lives in the build dir).
-set(LWF_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets")
-configure_file("${LWF_ASSETS_DIR}/app.rc.in"
-               "${CMAKE_CURRENT_BINARY_DIR}/EchoFlow.rc" @ONLY)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(LWF_BUILD_FULL "Build the full app with whisper/llama/grpc/onnx providers" OFF)
-# Followups-4 ("cmd opens when I run the app"): the full app is a GUI
-# subsystem executable - no console window. Keep the console only for
-# debugging sessions where stdout/stderr on a terminal is wanted.
-option(LWF_CONSOLE "Attach a console window to the full app (debug builds)" OFF)
 if(WIN32)
     set(LWF_BUILD_FULL ON CACHE BOOL "" FORCE)
 endif()
 
 include(FetchContent)
+
+# Threads for the portable core (engine worker, hotkey threads). No-op on
+# Windows, required on Linux.
+find_package(Threads REQUIRED)
 
 FetchContent_Declare(
     json
@@ -54,31 +40,11 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(doctest)
 
-# TonePlayer.cpp is part of lwf_core (always built) and #includes <miniaudio.h>,
-# so miniaudio is a genuine core dependency: declare it unconditionally here,
-# next to the other always-fetched deps. (It previously lived under
-# if(LWF_BUILD_FULL), which broke non-FULL Linux builds lacking the
-# gitignored _deps-src/ checkout.)
-FetchContent_Declare(
-    miniaudio
-    GIT_REPOSITORY https://github.com/mackron/miniaudio.git
-    GIT_TAG        0.11.25
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(miniaudio)
-if(NOT TARGET miniaudio)
-    add_library(miniaudio INTERFACE)
-    target_include_directories(miniaudio INTERFACE "${miniaudio_SOURCE_DIR}")
-endif()
-
 set(LWF_CORE_SOURCES
     src/core/AppContextResolver.cpp
-    src/core/ApiKeyStore.cpp
-    src/core/AtomicFile.cpp
     src/core/AudioGain.cpp
     src/core/CommandModeController.cpp
     src/core/ConfigManager.cpp
-    src/core/VersionCheck.cpp
     src/core/ConsentGate.cpp
     src/core/SttRouter.cpp
     src/stt/cloud/ClipSplitter.cpp
@@ -95,20 +61,16 @@ set(LWF_CORE_SOURCES
     src/stt/cloud/MuseRequest.cpp
     src/stt/cloud/MuseResponse.cpp
     src/stt/cloud/MuseProvider.cpp
-    src/llm/OpenRouterProvider.cpp
-    src/llm/OpenRouterModels.cpp
     src/core/DictationCleanup.cpp
     src/core/DictationEngine.cpp
     src/core/CrashReporter.cpp
     src/core/DictationFSM.cpp
-    src/core/DictionaryStore.cpp
     src/core/ErrorCode.cpp
     src/core/HotkeyBinding.cpp
     src/core/HotkeyTracker.cpp
     src/core/HistoryStore.cpp
     src/core/IClock.cpp
     src/core/InjectorDecorators.cpp
-    src/core/InsightsModel.cpp
     src/core/Languages.cpp
     src/core/Log.cpp
     src/core/PersonalDictionary.cpp
@@ -117,40 +79,77 @@ set(LWF_CORE_SOURCES
     src/core/ProviderRouter.cpp
     src/core/RateLimiter.cpp
     src/core/SpokenCommandProcessor.cpp
-    src/core/StatsStore.cpp
     src/core/Onboarding.cpp
     src/core/StreamingDictation.cpp
     src/core/SettingsStore.cpp
     src/core/SettingsUiModel.cpp
     src/core/Sha256.cpp
     src/core/SnippetStore.cpp
-    src/core/TextDiff.cpp
     src/core/TextPipeline.cpp
     src/core/ToneGenerator.cpp
     src/core/TransformManager.cpp
-    src/core/TransformStore.cpp
     src/core/UiBus.cpp
-    src/core/WhisperText.cpp
-    src/audio/TonePlayer.cpp
 )
 
 add_library(lwf_core STATIC ${LWF_CORE_SOURCES})
-# WindowsHttpClient.cpp unconditionally #includes <windows.h>/<winhttp.h>; like
-# the src/os/* adapters it must stay out of the non-Windows build. Its only
-# consumer (main.cpp) is inside #ifdef _WIN32, so gating here is behavior-neutral.
-if(WIN32)
-    target_sources(lwf_core PRIVATE src/stt/cloud/WindowsHttpClient.cpp)
-endif()
 target_include_directories(lwf_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_definitions(lwf_core PUBLIC LWF_APP_VERSION="${PROJECT_VERSION}")
-target_link_libraries(lwf_core PUBLIC nlohmann_json::nlohmann_json miniaudio)
+target_link_libraries(lwf_core PUBLIC nlohmann_json::nlohmann_json Threads::Threads)
 
 add_executable(local-wisper-flow src/main.cpp src/os/ActiveWindow.cpp src/os/CrashHandler.cpp src/os/DataDir.cpp src/os/WindowStyles.cpp)
 target_link_libraries(local-wisper-flow PRIVATE lwf_core)
-# Branding (followups-6): ship as EchoFlow.exe. The CMake target keeps the
-# historical local-wisper-flow name - scripts, CI and docs build the target
-# name; only the produced binary is renamed.
-set_target_properties(local-wisper-flow PROPERTIES OUTPUT_NAME EchoFlow)
+
+# --- Linux platform layer (plan 2026-11-21, change C01) ---------------------
+# The daemon/TUI sources build on every Linux system; X11 (hotkey), Xtst
+# (direct typing) and ncurses (TUI) are probed and optional so a configure on
+# a minimal box still produces a working daemon with graceful degradation
+# (clipboard-only injection, no TUI, documented in docs/UBUNTU_DEPS.md).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(LWF_LINUX_SOURCES
+        src/os/LinuxKeysym.cpp
+        src/os/LinuxProcess.cpp
+        src/os/LinuxNotifier.cpp
+        src/os/LinuxPlatform.cpp
+        src/os/LinuxHotkeyEvdev.cpp
+        src/os/LinuxTextInjector.cpp
+        src/os/SingleInstance.cpp
+        src/ui/tui/SettingsMenuModel.cpp
+    )
+
+    find_package(X11 QUIET)
+    if(X11_FOUND)
+        list(APPEND LWF_LINUX_SOURCES src/os/LinuxHotkeyListener.cpp)
+    else()
+        message(STATUS "X11 not found: global hotkey (X11) and XTest injection are disabled")
+    endif()
+
+    if(X11_Xtst_FOUND)
+        message(STATUS "Xtst found: direct-typing injection enabled")
+    endif()
+
+    find_package(Curses QUIET)
+    if(CURSES_FOUND)
+        list(APPEND LWF_LINUX_SOURCES src/ui/tui/TuiApp.cpp)
+    else()
+        message(STATUS "ncurses not found: the interactive TUI is disabled (banner mode only)")
+    endif()
+
+    target_sources(local-wisper-flow PRIVATE ${LWF_LINUX_SOURCES})
+    if(X11_FOUND)
+        target_include_directories(local-wisper-flow PRIVATE ${X11_INCLUDE_DIR})
+        target_compile_definitions(local-wisper-flow PRIVATE LWF_HAVE_X11)
+        target_link_libraries(local-wisper-flow PRIVATE ${X11_LIBRARIES})
+        if(X11_Xtst_FOUND)
+            target_compile_definitions(local-wisper-flow PRIVATE LWF_HAVE_XTST)
+            target_link_libraries(local-wisper-flow PRIVATE ${X11_Xtst_LIB})
+        endif()
+    endif()
+    if(CURSES_FOUND)
+        target_include_directories(local-wisper-flow PRIVATE ${CURSES_INCLUDE_DIRS})
+        target_compile_definitions(local-wisper-flow PRIVATE LWF_HAVE_CURSES)
+        target_link_libraries(local-wisper-flow PRIVATE ${CURSES_LIBRARIES})
+    endif()
+endif()
 
 enable_testing()
 
@@ -158,12 +157,10 @@ add_executable(lwf_tests
     src/os/ActiveWindow.cpp
     src/os/CrashHandler.cpp
     src/os/DataDir.cpp
-    src/os/FileDialogs.cpp
     src/os/WindowStyles.cpp
     tests/main.cpp
     tests/test_cleanup.cpp
     tests/test_appcontext.cpp
-    tests/test_atomicfile.cpp
     tests/test_config_compat.cpp
     tests/consent_test.cpp
     tests/secrets_redaction_test.cpp
@@ -178,46 +175,46 @@ add_executable(lwf_tests
     tests/test_fsm.cpp
     tests/test_gain.cpp
     tests/test_history.cpp
-    tests/test_history_page.cpp
-    tests/test_profiles_page.cpp
     tests/test_hotkey.cpp
-    tests/test_insights.cpp
-    tests/test_dictionary_page.cpp
-    tests/test_insights_page.cpp
-    tests/test_snippets_page.cpp
-    tests/test_transforms_page.cpp
     tests/test_languages.cpp
     tests/test_errors.cpp
     tests/test_log.cpp
     tests/test_dictionary.cpp
-    tests/test_dictionarystore.cpp
     tests/test_onboarding.cpp
-    tests/test_versioncheck.cpp
-    tests/test_openrouter.cpp
     tests/test_overlay_settings_ui.cpp
     tests/test_resilience.cpp
     tests/test_privacy.cpp
     tests/test_router.cpp
     tests/test_spoken.cpp
-    tests/test_statsstore.cpp
     tests/test_streaming.cpp
     tests/test_settings.cpp
     tests/test_snippets.cpp
-    tests/test_snippetstore_v2.cpp
-    tests/test_textdiff.cpp
     tests/test_tones.cpp
     tests/test_transform.cpp
-    tests/test_transform_runflow.cpp
-    tests/test_transformstore.cpp
     tests/test_uibus.cpp
-    tests/test_apikeystore.cpp
-    tests/test_tone_volume_live.cpp
-    tests/whisperfilter_test.cpp
 )
 target_include_directories(lwf_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(lwf_tests PRIVATE LWF_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(lwf_tests PRIVATE lwf_core doctest::doctest)
 add_test(NAME lwf-tests COMMAND lwf_tests WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
+
+# Linux platform unit tests (plan 2026-11-21, changes C03-C07): compiled
+# without the X11/Xtst defines so they exercise the portable paths (keysym
+# tables, subprocess runner, session detection, clipboard tool choice, menu
+# model) on any Linux box.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(lwf_tests PRIVATE
+        src/os/LinuxKeysym.cpp
+        src/os/LinuxProcess.cpp
+        src/os/LinuxNotifier.cpp
+        src/os/LinuxTextInjector.cpp
+        src/ui/tui/SettingsMenuModel.cpp
+        tests/test_linux_keysym.cpp
+        tests/test_linux_process.cpp
+        tests/test_linux_injector.cpp
+        tests/test_tui_model.cpp
+    )
+endif()
 
 add_executable(lwf-bench bench/lwf_bench.cpp)
 target_link_libraries(lwf-bench PRIVATE lwf_core)
@@ -285,6 +282,18 @@ if(LWF_BUILD_FULL)
                        "afterwards so the full static-link closure is picked up")
     endif()
 
+    FetchContent_Declare(
+        miniaudio
+        GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+        GIT_TAG        0.11.25
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(miniaudio)
+    if(NOT TARGET miniaudio)
+        add_library(miniaudio INTERFACE)
+        target_include_directories(miniaudio INTERFACE "${miniaudio_SOURCE_DIR}")
+    endif()
+
     set(BUILD_SHARED_LIBS      OFF CACHE BOOL "" FORCE)
     set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(WHISPER_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
@@ -319,17 +328,6 @@ if(LWF_BUILD_FULL)
     set(protobuf_BUILD_TESTS     OFF CACHE BOOL "" FORCE)
     set(protobuf_INSTALL         OFF CACHE BOOL "" FORCE)
     set(utf8_range_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-
-    # MinGW + GCC cannot drive BoringSSL's vendored GNU-asm field-element
-    # backends (the fiat_*.S files are ELF/Apple-gated, and BoringSSL's generated
-    # NASM sources do not include them), which leaves bssl.exe with undefined
-    # fiat_p256_adx_mul/sqr references. Fall back to the portable C field-element
-    # arithmetic via OPENSSL_NO_ASM (the same fallback gRPC's Bazel config uses).
-    # Reaching the subproject through CMAKE_C_FLAGS/CMAKE_CXX_FLAGS (rather than
-    # only the subproject's own compiler-ID checks) keeps the flag visible to the
-    # BoringSSL add_subdirectory scope.
-    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -DOPENSSL_NO_ASM")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DOPENSSL_NO_ASM")
 
     FetchContent_Declare(
         grpc
@@ -377,7 +375,6 @@ if(LWF_BUILD_FULL)
         target_sources(local-wisper-flow PRIVATE
             src/os/ActiveWindow.cpp
             src/os/DataDir.cpp
-            src/os/FileDialogs.cpp
             src/os/SingleInstance.cpp
             src/os/WindowsDownloader.cpp
             src/os/WindowsHotkeyListener.cpp
@@ -386,43 +383,10 @@ if(LWF_BUILD_FULL)
             src/os/WindowsTray.cpp
             src/ui/MainWindow.cpp
             src/ui/Overlay.cpp
-            src/ui/pages/DictionaryPage.cpp
-            src/ui/pages/InsightsPage.cpp
-            src/ui/pages/TransformsPage.cpp
-            src/ui/pages/SnippetsPage.cpp
-            src/ui/pages/HistoryPage.cpp
-            src/ui/pages/ProfilesPage.cpp
             src/ui/theme/ThemePalette.cpp
-            src/ui/widgets/Buttons.cpp
-            src/ui/widgets/Display.cpp
-            src/ui/widgets/Overlays.cpp
         )
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/source/app.manifest")
             target_sources(local-wisper-flow PRIVATE source/app.manifest)
-        endif()
-        # Exe icon + VERSIONINFO (followups-6): Explorer uses the first icon
-        # resource for the exe tile; the tray and the window/taskbar (via
-        # WindowStyles::ApplyAppIcon -> WM_SETICON) load resource id 1.
-        enable_language(RC)
-        target_sources(local-wisper-flow PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/EchoFlow.rc")
-        # Followups-4: GUI subsystem (no console window on double-click).
-        # CMake maps WIN32_EXECUTABLE to -mwindows on MinGW, and the mingw-w64
-        # runtime provides the WinMain stub that forwards to main(), so the
-        # plain main() keeps working. LWF_CONSOLE=ON restores the console for
-        # debug builds (-mconsole, i.e. the previous behaviour).
-        if(NOT LWF_CONSOLE)
-            set_target_properties(local-wisper-flow PROPERTIES WIN32_EXECUTABLE TRUE)
-        endif()
-        # Followups-4 ("share the exe, must work on other PCs"): statically
-        # link the GCC runtime. A dynamically linked MinGW C++ exe needs
-        # libstdc++-6.dll / libgcc_s_seh-1.dll (libwinpthread-1.dll for
-        # std::thread) next to it - none of which exist on a clean machine,
-        # which is the classic "works here, not there" failure. With -static
-        # the import table drops to system DLLs only (KERNEL32, msvcrt,
-        # USER32, ...). scripts/package_windows.ps1 audits this and fails the
-        # package if a foreign DLL reappears.
-        if(NOT MSVC)
-            target_link_options(local-wisper-flow PRIVATE -static -static-libgcc -static-libstdc++)
         endif()
         target_link_libraries(local-wisper-flow PRIVATE user32 wtsapi32 winhttp bcrypt shell32 advapi32 dwmapi)
 
@@ -483,6 +447,14 @@ if(LWF_BUILD_FULL)
             set_target_properties(onnxruntime PROPERTIES
                 IMPORTED_LOCATION "${ONNXRUNTIME_DIR}/lib/libonnxruntime.so"
             )
+        endif()
+
+        # The app consumes the VAD provider too (silence gating), not just
+        # the self-test target; wire the source, include path and define.
+        if(TARGET local-wisper-flow)
+            target_sources(local-wisper-flow PRIVATE src/vad/SileroVadProvider.cpp)
+            target_compile_definitions(local-wisper-flow PRIVATE LWF_HAVE_VAD)
+            target_link_libraries(local-wisper-flow PRIVATE onnxruntime)
         endif()
 
         add_executable(vad-selftest

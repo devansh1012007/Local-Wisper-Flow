@@ -1,13 +1,11 @@
 #include "core/ConfigManager.h"
 
-#include <algorithm>
 #include <iostream>
 #include <string>
 
 #ifdef _WIN32
 #include "audio/MiniaudioCapture.h"
 #include "audio/TonePlayer.h"
-#include "core/ApiKeyStore.h"
 #include "core/AppContextResolver.h"
 #include "core/CommandModeController.h"
 #include "core/DictationCleanup.h"
@@ -18,12 +16,7 @@
 #include "core/HotkeyBinding.h"
 #include "core/HotkeyTracker.h"
 #include "core/ILlmProvider.h"
-#include "core/IEngineSink.h"
 #include "core/IInferenceProvider.h"
-#include "core/IVadProvider.h"
-#include "core/IClock.h"
-#include "core/DictationEngine.h"
-#include "core/ToneGenerator.h"
 #include "core/InjectionException.h"
 #include "core/ITextInjector.h"
 #include "core/Log.h"
@@ -31,20 +24,14 @@
 #include "core/SettingsStore.h"
 #include "core/SnippetStore.h"
 #include "core/SpokenCommandProcessor.h"
-#include "core/StatsStore.h"
 #include "core/TextPipeline.h"
-#include "core/TransformStore.h"
 #include "core/AppVersion.h"
 #include "core/ConsentGate.h"
 #include "core/CrashReporter.h"
-#include "core/DictionaryStore.h"
 #include "core/SttRouter.h"
 #include "core/UiBus.h"
 #include "core/UnavailableProviders.h"
-#include "core/VersionCheck.h"
 #include "llm/LocalLlamaProvider.h"
-#include "llm/OpenRouterModels.h"
-#include "llm/OpenRouterProvider.h"
 #include "os/ActiveWindow.h"
 #include "os/CrashHandler.h"
 #include "os/DataDir.h"
@@ -61,13 +48,6 @@
 #include "stt/LocalWhisperProvider.h"
 #include "ui/MainWindow.h"
 #include "ui/Overlay.h"
-#include "ui/theme/ThemePalette.h"
-#include "ui/pages/DictionaryPage.h"
-#include "ui/pages/InsightsPage.h"
-#include "ui/pages/SnippetsPage.h"
-#include "ui/pages/HistoryPage.h"
-#include "ui/pages/ProfilesPage.h"
-#include "ui/pages/TransformsPage.h"
 
 #include <atomic>
 #include <chrono>
@@ -83,41 +63,9 @@
 #include <utility>
 #include <vector>
 
-#ifdef _WIN32
-extern "C" __declspec(dllimport) int __stdcall ShellExecuteA(void*, const char*, const char*, const char*, const char*, int);
-// Followups-4: the fatal box needs MessageBoxA without pulling the Win32
-// umbrella header into main.cpp (hygiene gate G4 confines it to src/os/
-// and the cloud HTTP client). In C++ mode mingw-w64 types HWND as
-// `struct HWND__*` (not void*), so the redeclaration spells the parameter
-// that way - it then matches winuser.h exactly whether some transitively
-// included header got there first or not.
-struct HWND__;
-extern "C" __declspec(dllimport) int __stdcall MessageBoxA(struct HWND__*, const char*, const char*, unsigned int);
-#endif
-
 namespace {
 
 constexpr std::uint32_t kSampleRate = 16000;
-
-// Maps every engine-facing config key onto EngineSettings. Single source
-// for BOTH the startup wiring and the ApplySettings drain, so a slider
-// changed in Settings applies live. History: the drain used to re-list a
-// subset of keys and silently skipped sound_volume, max_recording_ms and
-// hands_free_silence_ms — those knobs stayed at their startup values until
-// the app restarted ("volume knob is not dynamic" report).
-EngineSettings LoadEngineSettings(const SettingsStore& store) {
-    EngineSettings settings;
-    settings.min_hold_ms = store.GetInt("min_hold_ms");
-    settings.max_recording_ms = store.GetInt("max_recording_ms");
-    settings.hands_free_silence_ms = store.GetInt("hands_free_silence_ms");
-    settings.quiet_speech_boost = store.GetBool("quiet_speech_boost");
-    settings.sound_enabled = store.GetBool("sound_enabled");
-    settings.sound_volume = store.GetDouble("sound_volume");
-    settings.streaming_stt = store.GetBool("streaming_stt");
-    settings.streaming_min_segment_ms = store.GetInt("streaming_min_segment_ms");
-    settings.streaming_pause_ms = store.GetInt("streaming_pause_ms");
-    return settings;
-}
 
 // Single-slot attention message written by the engine thread and drained by
 // the main loop. Keeps every UI call on the main thread.
@@ -310,7 +258,7 @@ void RunEngine(MiniaudioCapture& audio, IInferenceProvider& stt, ITextInjector& 
 
 int main() {
     try {
-        SingleInstance instance("EchoFlowSingleInstanceMutex");
+        SingleInstance instance("LwfSingleInstanceMutex");
         if (!instance.IsFirstInstance()) {
             instance.SignalOpenSettings();
             std::cout << "Another instance is already running." << std::endl;
@@ -319,7 +267,7 @@ int main() {
 
         const std::string data_dir = GetDataDir();
         lwf::Log::Init(data_dir + "\\logs");
-        lwf::Log::Info(std::string("Echo flow ") + lwf::AppVersion() +
+        lwf::Log::Info(std::string("Local Wisper Flow ") + lwf::AppVersion() +
                        " starting, data dir " + data_dir);
 
         static std::atomic<int> g_fsm_diag{0};
@@ -341,8 +289,6 @@ int main() {
         }
         config.Store().SetBool("first_run", config.Store().GetBool("first_run"));
 
-        ApiKeyStore api_keys(data_dir + "\\api_keys.json");
-
         UiBus ui_bus;
         AttentionBox attention;
         Overlay overlay;
@@ -356,9 +302,7 @@ int main() {
                 "config.json was corrupt and has been moved aside; defaults loaded");
         }
 
-        // INVARIANT: config.Store() is loaded in the ConfigManager/SettingsStore ctor
-        // above, so mic_device (hot_apply=false, restart banner) is readable here.
-        MiniaudioCapture audio(kSampleRate, 1, config.Store().GetString("mic_device"));
+        MiniaudioCapture audio(kSampleRate, 1);
         std::unique_ptr<LocalWhisperProvider> local_stt;
         try {
             local_stt = std::make_unique<LocalWhisperProvider>(
@@ -392,74 +336,29 @@ int main() {
 
         PassthroughLlm passthrough_llm;
         std::optional<LocalLlamaProvider> llama_provider;
-        std::optional<OpenRouterProvider> openrouter_provider;
-        WindowsHttpClient openrouter_http;
         ILlmProvider* llm = &passthrough_llm;
         bool cleanup_llm_available = false;
-        const std::string llm_provider_name = config.Store().GetString("llm_provider");
-        if (llm_provider_name == OpenRouterContract::kApiKeyProvider) {
-            std::string openrouter_key = api_keys.Get(OpenRouterContract::kApiKeyProvider);
-            if (openrouter_key.empty()) {
-                const char* env_key = std::getenv(OpenRouterContract::kApiKeyEnv);
-                if (env_key != nullptr) {
-                    openrouter_key = env_key;
-                }
-            }
-            const std::string openrouter_model = config.Store().GetString("openrouter_model");
-            if (openrouter_key.empty() || openrouter_model.empty()) {
-                lwf::Log::Warning("llm_provider=openrouter ignored: api key or openrouter_model "
-                                  "is missing; cleanup is disabled");
+        const std::string llm_model_path = ResolveModelPath(config.LlmModelPath());
+        if (!llm_model_path.empty()) {
+            try {
+                llama_provider.emplace(llm_model_path);
+                llm = &*llama_provider;
+                cleanup_llm_available = true;
+                lwf::Log::Info("llm model loaded: " + llm_model_path);
+            } catch (const std::bad_alloc&) {
+                lwf::Log::Error("llm model load ran out of memory");
+                startup_errors.emplace_back(
+                    ErrorCode::ModelLoadFailed,
+                    "not enough memory to load the language model; pick a smaller model in Settings");
+            } catch (const std::exception& e) {
+                lwf::Log::Warning(std::string("llm disabled: ") + e.what());
                 startup_errors.emplace_back(ErrorCode::ModelMissing,
-                                            "openrouter api key or model is missing; cleanup is disabled");
-            } else {
-                try {
-                    OpenRouterSettings openrouter_settings;
-                    openrouter_settings.api_key = openrouter_key;
-                    openrouter_settings.model = openrouter_model;
-                    openrouter_settings.timeout_ms = OpenRouterContract::kDefaultTimeoutMs;
-                    openrouter_provider.emplace(openrouter_http, openrouter_settings);
-                    llm = &*openrouter_provider;
-                    cleanup_llm_available = true;
-                    lwf::Log::Info("llm provider openrouter enabled (model " + openrouter_model +
-                                   ")");
-                } catch (const std::bad_alloc&) {
-                    lwf::Log::Error("openrouter provider setup ran out of memory");
-                    startup_errors.emplace_back(
-                        ErrorCode::ModelLoadFailed,
-                        "not enough memory to set up the openrouter provider; cleanup is disabled");
-                } catch (const std::exception& e) {
-                    lwf::Log::Warning(std::string("llm disabled: ") + e.what());
-                    startup_errors.emplace_back(ErrorCode::ModelMissing,
-                                                "language model is missing; cleanup is disabled");
-                }
-            }
-        } else {
-            if (!llm_provider_name.empty() && llm_provider_name != "local") {
-                lwf::Log::Warning("unknown llm_provider '" + llm_provider_name + "'; using local");
-            }
-            const std::string llm_model_path = ResolveModelPath(config.LlmModelPath());
-            if (!llm_model_path.empty()) {
-                try {
-                    llama_provider.emplace(llm_model_path);
-                    llm = &*llama_provider;
-                    cleanup_llm_available = true;
-                    lwf::Log::Info("llm model loaded: " + llm_model_path);
-                } catch (const std::bad_alloc&) {
-                    lwf::Log::Error("llm model load ran out of memory");
-                    startup_errors.emplace_back(
-                        ErrorCode::ModelLoadFailed,
-                        "not enough memory to load the language model; pick a smaller model in Settings");
-                } catch (const std::exception& e) {
-                    lwf::Log::Warning(std::string("llm disabled: ") + e.what());
-                    startup_errors.emplace_back(ErrorCode::ModelMissing,
-                                                "language model is missing; cleanup is disabled");
-                }
+                                            "language model is missing; cleanup is disabled");
             }
         }
 
         PersonalDictionary dictionary;
         dictionary.Load(data_dir + "\\dictionary.json");
-        DictionaryStore dictionary_store(data_dir + "\\dictionary.json");
         SnippetStore snippets;
         if (!snippets.Load(data_dir + "\\snippets.json")) {
             snippets.SetEntries({});
@@ -486,7 +385,9 @@ int main() {
         std::unique_ptr<ISttProvider> cloud_provider;
         WindowsHttpClient http_client;
         if (IsKnownCloudProvider(stt_provider_name)) {
-            const std::string api_key = ResolveApiKey(stt_provider_name, api_keys);
+            const char* key_env = ApiKeyEnvFor(stt_provider_name);
+            const char* key_value = key_env != nullptr ? std::getenv(key_env) : nullptr;
+            const std::string api_key = key_value != nullptr ? key_value : "";
             SttConsentInputs consent_inputs;
             consent_inputs.provider = stt_provider_name;
             consent_inputs.consent_accepted = stt_consent;
@@ -532,8 +433,10 @@ int main() {
         SttRoutingConfig stt_routing;
         stt_routing.provider = stt_provider_name;
         stt_routing.consent_accepted = stt_consent;
-        stt_routing.api_key_source = [stt_provider_name, &api_keys] {
-            return ResolveApiKey(stt_provider_name, api_keys);
+        stt_routing.api_key_source = [stt_provider_name] {
+            const char* env_name = ApiKeyEnvFor(stt_provider_name);
+            const char* key = env_name != nullptr ? std::getenv(env_name) : nullptr;
+            return key != nullptr ? std::string(key) : std::string();
         };
         auto local_chain = std::make_unique<LocalProviderStack>(local_stack, passthrough_llm);
         SttRouter stt_router(std::move(local_chain), std::move(cloud_provider), stt_routing);
@@ -543,10 +446,6 @@ int main() {
                              config.Store().GetBool("keep_raw_in_history"),
                              config.Store().GetInt("history_max_entries"),
                              config.Store().GetInt("history_max_age_days"));
-
-        StatsStore usage_stats(data_dir + "\\stats.json", config.Store().GetBool("keep_usage_stats"));
-        TransformStore transforms;
-        transforms.Load(data_dir + "\\transforms.json");
 
         EngineBridge bridge(attention, tray, history);
         for (const auto& notice : startup_errors) {
@@ -558,34 +457,42 @@ int main() {
             lwf::CrashReporter::MarkSeen(unseen_crash);
         }
 
-        ToneGenerator::TonePlayer tone_player;
+        TonePlayer tone_player;
         WindowsSelectionCapture selection_capture;
         CommandModeController command_controller(selection_capture, llm, injector);
-        // Startup and the ApplySettings drain share LoadEngineSettings so no
-        // knob can go stale between the two paths (see its comment).
-        EngineSettings settings = LoadEngineSettings(config.Store());
+        lwf::EngineSettings settings;
+        settings.min_hold_ms = config.Store().GetInt("min_hold_ms");
+        settings.max_recording_ms = config.Store().GetInt("max_recording_ms");
+        settings.hands_free_silence_ms = config.Store().GetInt("hands_free_silence_ms");
+        settings.quiet_speech_boost = config.Store().GetBool("quiet_speech_boost");
+        settings.sound_enabled = config.Store().GetBool("sound_enabled");
+        settings.sound_volume = config.Store().GetDouble("sound_volume");
+        settings.streaming_stt = config.Store().GetBool("streaming_stt");
+        settings.streaming_min_segment_ms = config.Store().GetInt("streaming_min_segment_ms");
+        settings.streaming_pause_ms = config.Store().GetInt("streaming_pause_ms");
 
         DictationFSM fsm;
         fsm.SetTransitionListener([](State, Trigger, State current) {
             g_fsm_diag.store(static_cast<int>(current), std::memory_order_relaxed);
         });
         RealClock clock;
-        IVadProvider* vad = nullptr;
-        DictationEngine engine(audio, vad, stt_router, pipeline, injector, fsm, clock,
-                               bridge, settings);
+        std::unique_ptr<SileroVadProvider> vad_provider;
+        try {
+            vad_provider = std::make_unique<SileroVadProvider>(
+                data_dir + "\\models\\silero_vad.onnx",
+                static_cast<float>(config.VadThreshold()));
+        } catch (const std::exception& e) {
+            lwf::Log::Error(std::string("vad model failed to load; running without silence gating: ") +
+                            e.what());
+            bridge.OnError(ErrorCode::ModelMissing,
+                           "voice activity model is missing; running without silence gating");
+        }
+        DictationEngine engine(audio, vad_provider.get(), stt_router, pipeline, injector, fsm,
+                               clock, bridge, settings);
         engine.SetToneFeedback(&tone_player);
         engine.SetCommandController(&command_controller);
-        engine.SetStatsStore(&usage_stats);
-        engine.SetActiveWindow(CreateActiveWindow());
-        engine.SetAppContextResolver(&app_context);
-        engine.SetHistoryStore(&history);
-        engine.SetTransformStore(&transforms);
-        engine.SetTransformLlm(llm);
-        engine.SetSelectionCapture(&selection_capture);
 
         std::vector<Binding> hotkey_bindings = LoadBindings(config.Store());
-        transforms.SetHotkeyBindings(hotkey_bindings);
-        engine.Start();
         HotkeyTracker::Options hotkey_options;
         hotkey_options.avoid_altgr_conflict = config.Store().GetBool("avoid_altgr_conflict");
         hotkey_options.double_tap_window_ms = config.Store().GetInt("double_tap_window_ms");
@@ -595,83 +502,6 @@ int main() {
         tray.Start();
 
         MainWindow full(fsm, audio, config.Store(), ui_bus);
-        // DECISION: non-owning transport for the Cleanup model list Refresh.
-        // openrouter_http is declared before `full`, so it outlives the
-        // window; ~MainWindow joins the fetch worker before `full` is
-        // destroyed, so the worker never uses a dead transport.
-        full.SetModelsTransport(&openrouter_http);
-        // Composition root maps the Task-A fetch result onto the UI-facing
-        // primitives (ok/empty/ids/error) so MainWindow never includes the
-        // backend model tree (the F9 copy lint scans src/ui literals,
-        // including #include paths). Fetch errors share one UI message;
-        // errorDetail is already redacted + capped in Task A.
-        full.SetModelsFetcher([](IHttpTransport& transport,
-                                 const std::string& api_key) -> MainWindow::ModelListResult {
-            MainWindow::ModelListResult mapped;
-            const auto result = OpenRouterModels::FetchOpenRouterModels(transport, api_key);
-            switch (result.status) {
-                case OpenRouterModels::FetchStatus::Ok:
-                    mapped.ok = true;
-                    mapped.ids = result.modelIds;
-                    break;
-                case OpenRouterModels::FetchStatus::Empty:
-                    mapped.ok = true;
-                    mapped.empty = true;
-                    break;
-                default:
-                    mapped.error = result.errorDetail;
-                    break;
-            }
-            return mapped;
-        });
-        // Update check (followups-6): the same IHttpTransport seam, mapped
-        // onto MainWindow primitives. One GET of the redirect-stable
-        // latest.json per check; no telemetry, nothing sent beyond the URL.
-        full.SetUpdateFetcher([](const std::string& url) -> MainWindow::UpdateFetchResult {
-            MainWindow::UpdateFetchResult mapped;
-            lwf::UrlParts parts;
-            if (!lwf::SplitHttpsUrl(url, parts)) {
-                mapped.error = "update check: the update URL is not https";
-                return mapped;
-            }
-            HttpRequest request;
-            request.host = parts.host;
-            request.path = parts.path;
-            request.timeout_ms = 8000;
-            const HttpResponse response = http_client.Get(request);
-            if (response.status != 200) {
-                mapped.error = "update check: server answered HTTP " +
-                               std::to_string(response.status);
-                return mapped;
-            }
-            mapped.ok = true;
-            mapped.body.assign(response.body.begin(), response.body.end());
-            return mapped;
-        });
-        full.SetDictionaryPage(
-            std::make_unique<lwf::ui::pages::DictionaryPage>(dictionary_store, &dictionary));
-        full.SetInsightsPage(std::make_unique<lwf::ui::insights::InsightsPage>(usage_stats));
-        lwf::ui::EngineDiffSource transforms_diff_source(&engine);
-        full.SetTransformsPage(std::make_unique<lwf::ui::TransformsPage>(transforms, &ui_bus,
-                                                                          &transforms_diff_source));
-        full.SetSnippetsPage(std::make_unique<lwf::ui::pages::SnippetsPage>(snippets));
-        full.SetHistoryPage(std::make_unique<lwf::ui::pages::HistoryPage>(
-            history, config.Store(),
-            [&full](const std::string& p) { ShellExecuteA(nullptr, "open", p.c_str(), nullptr, nullptr, 1); },
-            [&full]() { full.OpenSettingsPrivacy(); }));
-        full.SetProfilesPage(std::make_unique<lwf::ui::pages::ProfilesPage>(
-            app_context, config.Store(), data_dir));
-        {
-            MainWindow::DataResetStores reset_stores;
-            reset_stores.dictionary = &dictionary_store;
-            reset_stores.snippets = &snippets;
-            reset_stores.stats = &usage_stats;
-            reset_stores.transforms = &transforms;
-            reset_stores.api_keys = &api_keys;
-            reset_stores.history = &history;
-            reset_stores.dictionary_legacy = &dictionary;
-            full.SetDataResetStores(reset_stores);
-        }
         if (!full.Init()) {
             lwf::Log::Error("full window init failed");
             tray.Stop();
@@ -684,10 +514,6 @@ int main() {
         // (negative sentinel = never moved: default anchor above the tray).
         overlay.SetSavedPosition(config.Store().GetInt("mini_x"),
                                  config.Store().GetInt("mini_y"));
-        // T2b: Overlay has no SettingsStore ref, so the startup theme is
-        // fed here (before Init, which promotes the pending selection). The
-        // Full window reads the store in its own Init.
-        overlay.SetTheme(lwf::ui::PaletteForTheme(config.Store().GetString("theme")));
         overlay.SetPositionPersistHandler([&config](int x, int y) {
             config.Store().SetInt("mini_x", x);
             config.Store().SetInt("mini_y", y);
@@ -709,8 +535,6 @@ int main() {
         State previous_state = State::IDLE;
         auto done_flash_until = std::chrono::steady_clock::time_point{};
         const auto done_flash_duration = std::chrono::milliseconds(600);
-        // Followups-3 D1: one-shot latch for the dead-output-endpoint notice.
-        bool tone_failure_surfaced = false;
         while (!quit.load()) {
             glfwPollEvents();
 
@@ -721,114 +545,44 @@ int main() {
                         full.SetVisible(true);
                         break;
                     case UiCommandType::OpenHistory:
-                        full.SetVisible(true);
-                        full.OpenHistoryPage();
-                        break;
                     case UiCommandType::OpenLogsFolder:
                         ShellExecuteA(nullptr, "open", (data_dir + "\\logs").c_str(), nullptr,
-                                      nullptr, 1);
+                                      nullptr, SW_SHOWNORMAL);
                         break;
                     case UiCommandType::SetEnabled:
                         config.Store().SetBool("dictation_enabled", command.payload == "1");
                         break;
-                    case UiCommandType::StartLearnHotkey: {
-                        const std::string target = UiBus::ParseStartLearnTarget(command.payload);
-                        if (HotkeyBinding::IsConfigHotkeyKey(target)) {
-                            hotkey.BeginLearnMode(target);
-                        } else {
-                            lwf::Log::Warning("learn: unknown target ignored");
-                        }
+                    case UiCommandType::StartLearnHotkey:
+                        hotkey.BeginLearnMode();
                         break;
-                    }
                     case UiCommandType::ApplySettings:
                         config.Save();
-                        {
-                            const std::vector<Binding> bindings = LoadBindings(config.Store());
-                            hotkey.UpdateBindings(bindings);
-                            transforms.SetHotkeyBindings(bindings);
-                        }
-                        // Full reload through the shared mapper: every
-                        // engine-facing knob (volume, record limits, silence
-                        // timeout, ...) applies live, not just the old subset.
-                        settings = LoadEngineSettings(config.Store());
-                        engine.SetSettings(settings);
+                        hotkey.UpdateBindings(LoadBindings(config.Store()));
+                        settings.min_hold_ms = config.Store().GetInt("min_hold_ms");
+                        settings.quiet_speech_boost = config.Store().GetBool("quiet_speech_boost");
+                        settings.sound_enabled = config.Store().GetBool("sound_enabled");
+                        settings.streaming_stt = config.Store().GetBool("streaming_stt");
+                        settings.streaming_min_segment_ms = config.Store().GetInt("streaming_min_segment_ms");
+                        settings.streaming_pause_ms = config.Store().GetInt("streaming_pause_ms");
                         spoken.SetAggressive(config.Store().GetBool("spoken_commands_aggressive"));
                         snippets.SetMode(config.Store().GetString("snippet_mode"));
                         overlay.SetReduceMotion(config.Store().GetBool("reduce_motion"));
-                        usage_stats.SetUsageStatsEnabled(config.Store().GetBool("keep_usage_stats"));
-                        // T2b live theme swap (hot_apply=true, no restart).
-                        // The ApplyTheme/SetTheme calls only queue the
-                        // palette; each window re-styles inside its own
-                        // frame where its ImGui context is current, so this
-                        // drain never colors another window's context.
-                        {
-                            const lwf::ui::Palette& theme_palette =
-                                lwf::ui::PaletteForTheme(config.Store().GetString("theme"));
-                            full.ApplyTheme(theme_palette);
-                            overlay.SetTheme(theme_palette);
-                        }
+                        break;
+                    case UiCommandType::ToggleAutostart:
+                        Autostart::SetEnabled(!Autostart::IsEnabled());
                         break;
                     case UiCommandType::Quit:
                         quit.store(true);
-                        break;
-                    case UiCommandType::StartTransform: {
-                        int slot = 0;
-                        try {
-                            if (!command.payload.empty()) {
-                                slot = std::stoi(command.payload);
-                            }
-                        } catch (const std::exception&) {
-                            slot = 0;
-                        }
-                        engine.RequestTransform(slot);
-                        break;
-                    }
-                    case UiCommandType::PreviewTone:
-                        // Followups-2 D1: the Volume slider asks for an
-                        // immediate sample at the dragged amplitude so the
-                        // change is audible on the spot (the next dictation
-                        // tone uses it too, via the ApplySettings drain).
-                        // Followups-3 D1: the sample is the distinct 160 ms
-                        // middle-C ding (PreviewTone), not the 60 ms start
-                        // blip - short blips at low volume were easy to miss
-                        // entirely, which read as "the slider does nothing".
-                        {
-                            double preview_volume = 0.0;
-                            try {
-                                preview_volume = std::stod(command.payload);
-                            } catch (const std::exception&) {
-                                preview_volume = 0.0;
-                            }
-                            preview_volume = std::clamp(preview_volume, 0.0, 1.0);
-                            if (config.Store().GetBool("sound_enabled")) {
-                                tone_player.Play(ToneGenerator::PreviewTone(), preview_volume);
-                            }
-                        }
                         break;
                 }
             }
 
             std::string learned;
-            std::string target;
-            if (hotkey.TryTakeLearnedBinding(learned, target)) {
-                if (!HotkeyBinding::IsConfigHotkeyKey(target)) {
-                    lwf::Log::Warning("learn: unknown target ignored");
-                } else {
-                    const auto role = HotkeyBinding::RoleForConfigKey(target);
-                    const std::vector<Binding> registry = LoadBindings(config.Store());
-                    const std::string error =
-                        HotkeyBinding::ValidateRecorderChord(learned, registry, *role);
-                    if (!error.empty()) {
-                        full.SetRecorderError(target, error);
-                    } else {
-                        config.Store().SetString(target, learned);
-                        config.Save();
-                        const std::vector<Binding> bindings = LoadBindings(config.Store());
-                        hotkey.UpdateBindings(bindings);
-                        transforms.SetHotkeyBindings(bindings);
-                        full.SetLearnedHotkey(target, learned);
-                    }
-                }
+            if (hotkey.TryTakeLearnedBinding(learned)) {
+                config.Store().SetString("hotkey_ptt", learned);
+                config.Save();
+                hotkey.UpdateBindings(LoadBindings(config.Store()));
+                full.SetDetectedHotkey(learned);
             }
 
             EngineEvent event;
@@ -846,19 +600,6 @@ int main() {
             status.enabled = config.Store().GetBool("dictation_enabled");
             ui_bus.PublishStatus(status);
             overlay.PushLevel(audio.AudioLevel());
-
-            // Followups-3 D1: a dead output endpoint used to drop every tone
-            // with no trace, presenting exactly as "the volume slider does
-            // nothing". TonePlayer flags the failure once a tone has been
-            // requested; surface it once per run on the mini badge and stop
-            // checking (no spam while it stays broken).
-            if (!tone_failure_surfaced && tone_player.DeviceFailed()) {
-                tone_failure_surfaced = true;
-                attention.Set(
-                    "Sound effects are unavailable - no working output device. "
-                    "The volume slider will have no effect until one is connected.");
-                lwf::Log::Error("tone device failed: sound effects disabled for this run");
-            }
 
             // Mini badge state, derived here so the engine thread never
             // touches the UI. Attention beats the done flash, which beats
@@ -910,31 +651,481 @@ int main() {
     } catch (const std::exception& e) {
         lwf::Log::Error(std::string("fatal: ") + e.what());
         std::cerr << "Fatal: " << e.what() << std::endl;
-#ifdef _WIN32
-        // Followups-4: the full app is a GUI-subsystem executable (no
-        // console), so the cerr line above goes nowhere the user can see.
-        // Show the fatal text in a message box instead - without it a
-        // startup failure on a shared machine is indistinguishable from
-        // "the exe does nothing when I double-click it".
-        MessageBoxA(nullptr, (std::string("Echo flow failed to start:\n\n") + e.what()).c_str(),
-                    "Echo flow", 0x10u /* MB_ICONERROR */);
-#endif
         return 1;
     }
 }
 
 #else
 
-int main() {
-    try {
-        ConfigManager config("config.json");
-        std::cout << "Echo flow core build: hotkey=" << config.HotkeyCode()
-                  << " model=" << config.WhisperModelPath()
-                  << " stt_provider=" << config.SttProvider()
-                  << " stt_consent=" << (config.SttConsentAccepted() ? "true" : "false")
-                  << std::endl;
+// Linux entry (plan 2026-11-21): a background daemon plus an interactive
+// TUI control plane. --daemon wires the composition root (hotkey -> engine
+// -> STT -> injector) and runs until SIGINT/SIGTERM; the default mode opens
+// the ncurses settings UI; --smoke keeps the old banner contract.
+
+#include "core/ConfigManager.h"
+#ifdef LWF_BUILD_FULL
+#include "audio/MiniaudioCapture.h"
+#endif
+#include "core/AppVersion.h"
+#include "core/CrashReporter.h"
+#include "core/DictationCleanup.h"
+#include "core/DictationEngine.h"
+#include "core/DictationFSM.h"
+#include "core/EngineTypes.h"
+#include "core/HistoryStore.h"
+#include "core/HotkeyBinding.h"
+#include "core/HotkeyTracker.h"
+#include "core/IClock.h"
+#include "core/IEngineSink.h"
+#include "core/IHotkeyListener.h"
+#include "core/IInferenceProvider.h"
+#include "core/InjectionException.h"
+#include "core/ITextInjector.h"
+#include "core/Log.h"
+#include "core/PersonalDictionary.h"
+#include "core/SettingsStore.h"
+#include "core/SnippetStore.h"
+#include "core/SpokenCommandProcessor.h"
+#include "core/SttRouter.h"
+#include "core/TextPipeline.h"
+#include "core/UnavailableProviders.h"
+#ifdef LWF_BUILD_FULL
+#include "llm/LocalLlamaProvider.h"
+#include "stt/LocalWhisperProvider.h"
+#endif
+#ifdef LWF_HAVE_VAD
+#include "vad/SileroVadProvider.h"
+#endif
+#include "os/CrashHandler.h"
+#include "os/DataDir.h"
+#include "os/LinuxNotifier.h"
+#include "os/LinuxPlatform.h"
+#include "os/LinuxTextInjector.h"
+#include "os/SingleInstance.h"
+#ifdef LWF_HAVE_CURSES
+#include "ui/tui/TuiApp.h"
+#endif
+
+#include <unistd.h>
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <csignal>
+#include <cstring>
+#include <deque>
+#include <filesystem>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace {
+
+constexpr std::uint32_t kSampleRate = 16000;
+
+// SIGINT/SIGTERM/SIGHUP are converted to flags; everything else stays
+// async-signal-safe.
+volatile std::sig_atomic_t g_quit_requested = 0;
+volatile std::sig_atomic_t g_reload_requested = 0;
+
+extern "C" void DaemonSignalHandler(int signal_number) {
+    if (signal_number == SIGHUP) {
+        g_reload_requested = 1;
+    } else {
+        g_quit_requested = 1;
+    }
+}
+
+void InstallSignalHandlers() {
+    struct sigaction action{};
+    action.sa_handler = &DaemonSignalHandler;
+    action.sa_flags = SA_RESTART;
+    ::sigemptyset(&action.sa_mask);
+    ::sigaction(SIGINT, &action, nullptr);
+    ::sigaction(SIGTERM, &action, nullptr);
+    ::sigaction(SIGHUP, &action, nullptr);
+    // A dead wl-copy/xclip child must not take the daemon down.
+    ::signal(SIGCHLD, SIG_IGN);
+}
+
+// Light builds (LWF_BUILD_FULL=OFF) still run the daemon loop, but capture
+// and STT are absent: the engine discards cleanly and the startup notice
+// explains why.
+class NullAudioCapture final : public IAudioCapture {
+public:
+    void Start() override {}
+    void Stop() override {}
+    std::vector<float> GetRecordedAudio() override { return {}; }
+};
+
+class PassthroughLlm final : public ILlmProvider {
+public:
+    std::string Process(const std::string& text, const std::string&) override { return text; }
+};
+
+class LocalProviderStack final : public IInferenceProvider {
+public:
+    LocalProviderStack(IInferenceProvider& stt, ILlmProvider& llm) : stt_(stt), llm_(llm) {}
+
+    std::string Transcribe(const std::vector<float>& audio_pcm) override {
+        return stt_.Transcribe(audio_pcm);
+    }
+
+    std::string ProcessText(const std::string& text, const std::string& system_prompt) override {
+        return llm_.Process(text, system_prompt);
+    }
+
+private:
+    IInferenceProvider& stt_;
+    ILlmProvider& llm_;
+};
+
+// Engine surface for the daemon: log everything, toast the user-visible
+// transitions, keep history.
+class DaemonBridge final : public IEngineSink {
+public:
+    DaemonBridge(LinuxNotifier& notifier, HistoryStore& history,
+                 const SettingsStore& settings)
+        : notifier_(notifier), history_(history), settings_(settings) {}
+
+    void OnStatus(const std::string& message) override {
+        lwf::Log::Info("engine: " + message);
+    }
+
+    void OnError(ErrorCode code, const std::string& detail) override {
+        lwf::Log::Error(std::string(ToString(code)) + ": " + detail);
+        notifier_.NotifyError(code, detail);
+    }
+
+    void RecordHistory(const HistoryEntry& entry) {
+        if (settings_.GetBool("history_enabled")) {
+            history_.Append(entry);
+        }
+    }
+
+private:
+    LinuxNotifier& notifier_;
+    HistoryStore& history_;
+    const SettingsStore& settings_;
+};
+
+void PrintBanner(ConfigManager& config) {
+    std::cout << "Local Wisper Flow core build: hotkey=" << config.HotkeyCode()
+              << " model=" << config.WhisperModelPath()
+              << " stt_provider=" << config.SttProvider()
+              << " stt_consent=" << (config.SttConsentAccepted() ? "true" : "false")
+              << std::endl;
+}
+
+std::string ConfigPath(const std::string& data_dir) {
+    // First run: import a config.json sitting next to the binary, mirroring
+    // the Windows bootstrap.
+    const std::string config_path = data_dir + "/config.json";
+    if (!std::filesystem::exists(config_path)) {
+        const std::string exe_side = GetExeDir() + "/config.json";
+        std::error_code import_ec;
+        if (std::filesystem::exists(exe_side)) {
+            std::filesystem::copy_file(exe_side, config_path,
+                                       std::filesystem::copy_options::overwrite_existing,
+                                       import_ec);
+        }
+    }
+    return config_path;
+}
+
+int RunDaemon() {
+    SingleInstance instance("localwisperflow-daemon");
+    if (!instance.IsFirstInstance()) {
+        std::cout << "Local Wisper Flow daemon is already running." << std::endl;
         return 0;
+    }
+
+    const std::string data_dir = GetDataDir();
+    const std::string logs_dir = data_dir + "/logs";
+    lwf::Log::Init(logs_dir);
+    lwf::Log::Info(std::string("Local Wisper Flow daemon ") + lwf::AppVersion() +
+                   " starting, data dir " + data_dir + ", session " +
+                   lwf::linuxplatform::ToString(lwf::linuxplatform::DetectSession()));
+
+    static std::atomic<int> g_fsm_diag{0};
+    lwf::CrashHandler::Install(logs_dir, &g_fsm_diag);
+
+    InstallSignalHandlers();
+
+    ConfigManager config(ConfigPath(data_dir));
+    for (const std::string& clamped : config.Store().ClampedOnLastLoad()) {
+        lwf::Log::Warning(std::string("config value clamped: ") + clamped);
+    }
+    if (config.Store().CorruptOnLastLoad()) {
+        lwf::Log::Error("config was corrupt; defaults loaded");
+    }
+
+    LinuxNotifier notifier;
+    notifier.SetEnabled(config.Store().GetBool("daemon_toasts"));
+
+    const auto caps = lwf::linuxplatform::ProbeCapabilities();
+    lwf::Log::Info(std::string("capabilities: x11_hotkey=") + (caps.x11_hotkey ? "1" : "0") +
+                   " evdev_hotkey=" + (caps.evdev_hotkey ? "1" : "0") +
+                   " xtest_inject=" + (caps.xtest_inject ? "1" : "0") +
+                   " tui=" + (caps.tui ? "1" : "0") + " toasts=" + (caps.toasts ? "1" : "0"));
+
+    // --- audio -----------------------------------------------------------
+#ifdef LWF_BUILD_FULL
+    MiniaudioCapture audio(kSampleRate, 1);
+#else
+    NullAudioCapture audio;
+#endif
+    IAudioCapture& audio_ref = audio;
+
+    // --- STT ---------------------------------------------------------------
+    UnavailableStt unavailable_stt;
+#ifdef LWF_BUILD_FULL
+    std::unique_ptr<LocalWhisperProvider> local_stt;
+    try {
+        local_stt = std::make_unique<LocalWhisperProvider>(
+            ResolveModelPath(config.WhisperModelPath()));
+    } catch (const std::bad_alloc&) {
+        lwf::Log::Error("whisper model load ran out of memory");
+        notifier.NotifyError(ErrorCode::ModelLoadFailed,
+                             "not enough memory for the speech model");
     } catch (const std::exception& e) {
+        lwf::Log::Error(std::string("whisper model failed to load: ") + e.what());
+        notifier.NotifyError(ErrorCode::ModelMissing, "speech model is missing");
+    }
+    IInferenceProvider& local_stack =
+        local_stt ? static_cast<IInferenceProvider&>(*local_stt)
+                  : static_cast<IInferenceProvider&>(unavailable_stt);
+#else
+    lwf::Log::Warning("built with LWF_BUILD_FULL=OFF: dictation needs a full build "
+                      "(see docs/UBUNTU_DEPS.md)");
+    IInferenceProvider& local_stack = unavailable_stt;
+#endif
+
+    // Cloud STT is deferred on Linux (plan non-goal): the router runs the
+    // local chain only, and a cloud choice degrades with a clear reason.
+    const std::string stt_provider_name = config.SttProvider();
+    if (stt_provider_name != "local") {
+        lwf::Log::Warning("stt_provider=" + stt_provider_name +
+                          " is not available in the Linux daemon yet; using local");
+    }
+    SttRoutingConfig stt_routing;
+    stt_routing.provider = "local";
+    PassthroughLlm passthrough_llm;
+    auto local_chain = std::make_unique<LocalProviderStack>(local_stack, passthrough_llm);
+    SttRouter stt_router(std::move(local_chain), nullptr, stt_routing);
+
+    // --- cleanup pipeline ---------------------------------------------------
+    ILlmProvider* llm = &passthrough_llm;
+    bool cleanup_llm_available = false;
+#ifdef LWF_BUILD_FULL
+    std::optional<LocalLlamaProvider> llama_provider;
+    const std::string llm_model_path = ResolveModelPath(config.LlmModelPath());
+    if (!llm_model_path.empty()) {
+        try {
+            llama_provider.emplace(llm_model_path);
+            llm = &*llama_provider;
+            cleanup_llm_available = true;
+            lwf::Log::Info("llm model loaded: " + llm_model_path);
+        } catch (const std::exception& e) {
+            lwf::Log::Warning(std::string("llm disabled: ") + e.what());
+        }
+    }
+#endif
+    PersonalDictionary dictionary;
+    dictionary.Load(data_dir + "/dictionary.json");
+    SnippetStore snippets;
+    if (!snippets.Load(data_dir + "/snippets.json")) {
+        snippets.SetEntries({});
+    }
+    snippets.SetMode(config.Store().GetString("snippet_mode"));
+    SpokenCommandProcessor spoken;
+    spoken.SetAggressive(config.Store().GetBool("spoken_commands_aggressive"));
+
+    DictationCleanup cleanup(llm);
+    if (!cleanup_llm_available) {
+        cleanup.SetEnabled(false);
+    } else {
+        cleanup.SetEnabled(config.Store().GetBool("cleanup_enabled"));
+    }
+    cleanup.SetMinWords(config.Store().GetInt("cleanup_min_words"));
+    cleanup.SetTimeoutMs(config.Store().GetInt("cleanup_timeout_ms"));
+    TextPipeline pipeline(cleanup);
+    pipeline.SetSpokenCommands(&spoken);
+    pipeline.SetDictionary(&dictionary);
+    pipeline.SetSnippets(&snippets);
+
+    // --- injector -----------------------------------------------------------
+    auto injector = lwf::linuxplatform::CreateTextInjector();
+    injector->SetNotifier(&notifier);
+    injector->SetInjectDelayMs(config.Store().GetInt("inject_delay_ms"));
+
+    // --- engine -------------------------------------------------------------
+    HistoryStore history(data_dir + "/history.jsonl",
+                         config.Store().GetBool("history_enabled"),
+                         config.Store().GetBool("keep_raw_in_history"),
+                         config.Store().GetInt("history_max_entries"),
+                         config.Store().GetInt("history_max_age_days"));
+    DaemonBridge bridge(notifier, history, config.Store());
+
+    const std::string unseen_crash = lwf::CrashReporter::FindUnseenCrash(logs_dir);
+    if (!unseen_crash.empty()) {
+        bridge.OnError(ErrorCode::Unknown, "The daemon stopped unexpectedly - see logs");
+        lwf::CrashReporter::MarkSeen(unseen_crash);
+    }
+
+    EngineSettings settings;
+    settings.min_hold_ms = config.Store().GetInt("min_hold_ms");
+    settings.max_recording_ms = config.Store().GetInt("max_recording_ms");
+    settings.hands_free_silence_ms = config.Store().GetInt("hands_free_silence_ms");
+    settings.sound_enabled = config.Store().GetBool("sound_enabled");
+    settings.sound_volume = config.Store().GetDouble("sound_volume");
+    settings.streaming_stt = config.Store().GetBool("streaming_stt");
+    settings.streaming_min_segment_ms = config.Store().GetInt("streaming_min_segment_ms");
+    settings.streaming_pause_ms = config.Store().GetInt("streaming_pause_ms");
+
+    DictationFSM fsm;
+    fsm.SetTransitionListener([](State, Trigger, State current) {
+        g_fsm_diag.store(static_cast<int>(current), std::memory_order_relaxed);
+    });
+    RealClock clock;
+#ifdef LWF_HAVE_VAD
+    std::unique_ptr<SileroVadProvider> vad_provider;
+    try {
+        vad_provider = std::make_unique<SileroVadProvider>(
+            data_dir + "/models/silero_vad.onnx", static_cast<float>(config.VadThreshold()));
+    } catch (const std::exception& e) {
+        lwf::Log::Warning(std::string("vad model failed to load; running without silence "
+                                     "gating: ") +
+                          e.what());
+    }
+    DictationEngine engine(audio_ref, vad_provider.get(), stt_router, pipeline, *injector, fsm,
+                           clock, bridge, settings);
+#else
+    DictationEngine engine(audio_ref, /*vad=*/nullptr, stt_router, pipeline, *injector, fsm,
+                           clock, bridge, settings);
+#endif
+
+    std::unique_ptr<IHotkeyListener> hotkey =
+        lwf::linuxplatform::CreateHotkeyListener(config.Store());
+    engine.Start();
+
+    notifier.Notify("Dictation daemon", "ready - press the hotkey and speak", 3000,
+                    LinuxNotifier::Urgency::Low);
+    lwf::Log::Info("daemon ready: hold the hotkey and speak");
+
+    State previous_state = State::IDLE;
+    while (!g_quit_requested) {
+        if (g_reload_requested) {
+            g_reload_requested = 0;
+            config.Reload();
+            notifier.SetEnabled(config.Store().GetBool("daemon_toasts"));
+            injector->SetInjectDelayMs(config.Store().GetInt("inject_delay_ms"));
+            spoken.SetAggressive(config.Store().GetBool("spoken_commands_aggressive"));
+            snippets.SetMode(config.Store().GetString("snippet_mode"));
+            cleanup.SetEnabled(cleanup_llm_available &&
+                               config.Store().GetBool("cleanup_enabled"));
+            lwf::Log::Info("config reloaded");
+        }
+
+        EngineEvent event;
+        if (hotkey != nullptr) {
+            while (hotkey->PollEvent(event)) {
+                if (config.Store().GetBool("dictation_enabled")) {
+                    engine.PostEvent(event.type);
+                }
+            }
+        }
+
+        const State state = fsm.GetCurrentState();
+        if (hotkey != nullptr) {
+            hotkey->SetCancelArmed(state == State::CAPTURING || state == State::TRANSCRIBING);
+        }
+        if (state == State::CAPTURING && previous_state != State::CAPTURING) {
+            notifier.Notify("Listening...", "release the hotkey to transcribe", 2000,
+                            LinuxNotifier::Urgency::Low);
+        }
+        if (state == State::IDLE && previous_state == State::EMITTING) {
+            notifier.Notify("Done", "text was pasted", 2000, LinuxNotifier::Urgency::Low);
+        }
+        previous_state = state;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    engine.Stop();
+    if (hotkey != nullptr) {
+        hotkey->Stop();
+    }
+    lwf::Log::Info("shutdown complete");
+    return 0;
+}
+
+int RunInteractive() {
+    const std::string data_dir = GetDataDir();
+    lwf::Log::Init(data_dir + "/logs");
+    ConfigManager config(ConfigPath(data_dir));
+
+#ifdef LWF_HAVE_CURSES
+    if (::isatty(STDIN_FILENO)) {
+        TuiApp app(config, data_dir + "/logs/lwf.log");
+        return app.Run();
+    }
+    PrintBanner(config);
+    std::cout << "(no terminal: run with --daemon for the background service)" << std::endl;
+    return 0;
+#else
+    PrintBanner(config);
+    std::cout << "(built without ncurses: edit " << ConfigPath(data_dir)
+              << " directly; install libncurses-dev and rebuild for the TUI)"
+              << std::endl;
+    return 0;
+#endif
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    try {
+        bool daemon = false;
+        bool smoke = false;
+        for (int i = 1; i < argc; ++i) {
+            const std::string flag = argv[i];
+            if (flag == "--daemon") {
+                daemon = true;
+            } else if (flag == "--smoke") {
+                smoke = true;
+            } else if (flag == "--help" || flag == "-h") {
+                std::cout
+                    << "Local Wisper Flow (Linux)\n"
+                    << "  (no flags)   interactive settings TUI (ncurses)\n"
+                    << "  --daemon     background service: hotkey -> dictate -> inject\n"
+                    << "  --smoke      print the build banner and exit 0\n"
+                    << "  --version    print the version\n";
+                return 0;
+            } else if (flag == "--version") {
+                std::cout << lwf::AppVersion() << std::endl;
+                return 0;
+            } else {
+                std::cerr << "unknown flag: " << flag << " (try --help)" << std::endl;
+                return 2;
+            }
+        }
+        if (daemon) {
+            return RunDaemon();
+        }
+        if (smoke) {
+            ConfigManager config(ConfigPath(GetDataDir()));
+            PrintBanner(config);
+            return 0;
+        }
+        return RunInteractive();
+    } catch (const std::exception& e) {
+        lwf::Log::Error(std::string("fatal: ") + e.what());
         std::cerr << "Fatal: " << e.what() << std::endl;
         return 1;
     }

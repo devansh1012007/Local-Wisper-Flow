@@ -3,7 +3,6 @@
 #include "core/EngineTypes.h"
 #include "core/HotkeyBinding.h"
 #include "core/HotkeyTracker.h"
-#include "core/IHotkeyListener.h"
 
 #include <atomic>
 #include <cstdint>
@@ -28,16 +27,11 @@ public:
 
     void UpdateBindings(std::vector<Binding> bindings);
     void SetTrackerOptions(const HotkeyTracker::Options& options);
-    void BeginLearnMode(const std::string& target_key = "hotkey_ptt");
+    void BeginLearnMode();
     bool TryTakeLearnedBinding(std::string& out);
-    bool TryTakeLearnedBinding(std::string& out_chord, std::string& out_target);
-    std::string PendingLearnTarget() const;
     bool HookInstalled() const;
 
-public:
-    struct Impl;
-    static Impl* instance();
-
 private:
+    struct Impl;
     std::unique_ptr<Impl> impl_;
 };

@@ -29,12 +29,11 @@ public:
     void Clear();
     bool Export(const std::string& path) const;
     std::size_t Size() const;
-    const std::string& Path() const;
-    static std::int64_t NowSeconds();
 
 private:
     void LoadAllLocked();
     void CompactLocked(std::int64_t now_seconds);
+    std::int64_t NowSeconds() const;
 
     mutable std::mutex mutex_;
     std::string path_;

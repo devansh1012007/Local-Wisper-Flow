@@ -17,7 +17,7 @@ if [ -n "$network_hits" ]; then
     fail "network APIs outside the allowlist (GrpcInferenceProvider, WindowsDownloader, WindowsHttpClient)" "$network_hits"
 fi
 
-endpoint_hits=$(grep -rnE 'api\.(vachana\.ai|elevenlabs\.io|meta\.ai)|openrouter\.ai' src --include='*.cpp' --include='*.h' 2>/dev/null | grep -vE '^(src/stt/cloud/|src/llm/OpenRouter)' || true)
+endpoint_hits=$(grep -rnE 'api\.(vachana\.ai|elevenlabs\.io|meta\.ai)' src --include='*.cpp' --include='*.h' 2>/dev/null | grep -v '^src/stt/cloud/' || true)
 if [ -n "$endpoint_hits" ]; then
     fail "cloud endpoints outside src/stt/cloud/" "$endpoint_hits"
 fi
@@ -27,7 +27,7 @@ if [ -n "$write_hits" ]; then
     fail "file-write APIs in audio/vad/llm (audio must never touch disk)" "$write_hits"
 fi
 
-core_write_hits=$(grep -rnE 'ofstream|fopen|freopen|CreateFile\(' src/core src/stt --include='*.cpp' --include='*.h' 2>/dev/null | grep -vE '^(src/core/((AtomicFile\.(cpp|h))|(ApiKeyStore|CrashReporter|DictionaryStore|HistoryStore|Log|SettingsStore|SnippetStore|StatsStore|TransformStore)\.cpp):)' || true)
+core_write_hits=$(grep -rnE 'ofstream|fopen|freopen|CreateFile\(' src/core src/stt --include='*.cpp' --include='*.h' 2>/dev/null | grep -vE '^(src/core/(CrashReporter|HistoryStore|Log|SettingsStore)\.cpp:)' || true)
 if [ -n "$core_write_hits" ]; then
     fail "file-write APIs outside the text stores and log" "$core_write_hits"
 fi

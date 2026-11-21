@@ -6,16 +6,10 @@
 
 #include <functional>
 #include <string>
-#include <vector>
 
 #include <GLFW/glfw3.h>
 
-struct ImFont;
 struct ImGuiContext;
-
-namespace lwf::ui {
-struct Palette;
-}
 
 // The Mini badge: a quarter-size, highly transparent resident dot with a
 // tiny status label. It starts anchored bottom-center above the taskbar and
@@ -27,7 +21,7 @@ struct Palette;
 //
 // Visual spec: docs/design/mockup.html section 2 (states, motion, hover),
 // resized per the 2026-11 mini-window feedback: dot 22 px (a quarter of the
-// old area), tiny text, semi-transparent. The badge is click-through
+// old area), tiny text, strong transparency. The badge is click-through
 // except while the cursor is over it, when it can be hovered or dragged
 // (Ready rises from idle transparency, Attention shows its message, Paused
 // can be clicked to re-enable dictation).
@@ -47,11 +41,6 @@ public:
     void SetState(OverlayModel::PillState state, const std::string& message);
     void PushLevel(float level);
     void SetReduceMotion(bool reduce);
-    // Live theme swap (T2b, fed from main.cpp startup + the ApplySettings
-    // drain). Does NOT call ApplyImGuiStyle directly (the drain may run
-    // while another window's context is current); mirrors SetReduceMotion
-    // by setting dirty_ so the idle early-out cannot skip the re-style.
-    void SetTheme(const lwf::ui::Palette& palette);
     void SetWorkArea(const OverlayModel::Rect& area, double dpi_scale);
 
     // Restores a previously persisted top-left position (call before Init).
@@ -69,12 +58,6 @@ public:
 
 private:
     void ApplyWindowGeometry();
-    // Followups D6: design-px window extent for the current state. Normal
-    // states hug the icons (dot + status strip, ring_pad clearance);
-    // Attention expands to the message reserve. All geometry sites (Init,
-    // ApplyWindowGeometry, UpdateDrag clamp) share this so the sizes can
-    // never drift apart again.
-    void ComputeWindowExtent(int* width, int* height) const;
     void DrawBadge();
     void DrawMic(ImDrawList& draw, const ImVec2& center, float scale, ImU32 color,
                  bool filled) const;
@@ -86,43 +69,12 @@ private:
 
     GLFWwindow* window_ = nullptr;
     ImGuiContext* imgui_context_ = nullptr;
-    // DECISION: idle early-out. RenderFrame skips the full GL/ImGui pass for
-    // non-animated states (Ready/Paused) while dirty_ is clear, draining only
-    // the dwell/fade bookkeeping and a cheap OS hover poll. Any SetState/
-    // PushLevel/OnContentScale/UpdateDrag input sets dirty_ again.
-    bool dirty_ = true;
-    // INVARIANT: poll_near_dot_ is the last hover-poll verdict for the
-    // inflated pass-through zone; poll_hover_dot_ is the last verdict for the
-    // exact dot rect; poll_button_down_ is the last physical left-button
-    // state. A change in ANY of them means the badge must repaint: the
-    // inflated zone alone cannot see intra-zone dot entry/exit (hover alpha
-    // 0.55 <-> 1.0) or a click while the cursor is parked over the dot
-    // (R-W2-002).
-    bool poll_near_dot_ = false;
-    bool poll_hover_dot_ = false;
-    bool poll_button_down_ = false;
-    // INVARIANT: levels_scratch_ is reused across Listening frames so the
-    // per-frame render performs zero heap allocations.
-    std::vector<float> levels_scratch_;
-    // INVARIANT: 1-entry cache for the status-word CalcTextSize, keyed by
-    // word content. Cleared whenever the DPI scale re-applies the style.
-    std::string cached_status_word_;
-    ImVec2 cached_status_size_{0.0f, 0.0f};
-    bool cached_status_valid_ = false;
-    // Second 13px bitmap font for the attention message; nullptr until Init.
-    ImFont* message_font_ = nullptr;
     OverlayModel::PillState state_ = OverlayModel::PillState::Ready;
     std::string message_;
     OverlayModel::WaveformRing waveform_{64};
     OverlayModel::Rect work_area_;
     double dpi_scale_ = 1.0;
     float pending_dpi_scale_ = 0.0f;  // deferred content-scale callback value
-    // T2b theme selection. INVARIANT: current_palette_ is the last-applied
-    // palette; SetTheme before Init is promoted by Init, a live SetTheme
-    // is promoted by RenderFrame where this window's context is current.
-    const lwf::ui::Palette* current_palette_ = nullptr;
-    const lwf::ui::Palette* pending_theme_palette_ = nullptr;
-    bool theme_pending_ = false;
     bool reduce_motion_ = false;
     float dwell_remaining_ms_ = 0.0f;
     float fade_alpha_ = 0.0f;

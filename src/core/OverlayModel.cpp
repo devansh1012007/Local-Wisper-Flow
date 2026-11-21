@@ -1,7 +1,6 @@
 #include "core/OverlayModel.h"
 
 #include <algorithm>
-#include <stdexcept>
 
 namespace OverlayModel {
 
@@ -41,26 +40,13 @@ void WaveformRing::Push(float level) {
     }
 }
 
-void WaveformRing::SnapshotInto(std::vector<float>& out) const {
-    out.clear();
-    out.reserve(filled_);
-    const std::size_t start = filled_ < buffer_.size() ? 0 : head_;
-    for (std::size_t i = 0; i < filled_; ++i) {
-        out.push_back(buffer_[(start + i) % buffer_.size()]);
-    }
-}
-
-float WaveformRing::At(std::size_t index) const {
-    if (index >= filled_) {
-        throw std::out_of_range("WaveformRing::At past newest sample");
-    }
-    const std::size_t start = filled_ < buffer_.size() ? 0 : head_;
-    return buffer_[(start + index) % buffer_.size()];
-}
-
 std::vector<float> WaveformRing::Snapshot() const {
     std::vector<float> snapshot;
-    SnapshotInto(snapshot);
+    snapshot.reserve(filled_);
+    const std::size_t start = filled_ < buffer_.size() ? 0 : head_;
+    for (std::size_t i = 0; i < filled_; ++i) {
+        snapshot.push_back(buffer_[(start + i) % buffer_.size()]);
+    }
     return snapshot;
 }
 

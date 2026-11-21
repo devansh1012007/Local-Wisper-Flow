@@ -15,6 +15,10 @@ const std::vector<SettingsStore::SchemaEntry>& BuildSchema() {
     static const std::vector<SettingsStore::SchemaEntry> schema = {
         {"schema_version", SettingsStore::Type::Int, 1, "", 1, 1, false},
         {"hotkey_code", SettingsStore::Type::Int, 165, "", 0, 255, true},
+        // Linux-only companion to hotkey_code: an X11 keysym for a single-key
+        // push-to-talk hotkey (0 = unmapped; the hotkey_ptt chord is primary).
+        // hotkey_code keeps Windows VK semantics and is not honored on Linux.
+        {"hotkey_keysym", SettingsStore::Type::Int, 0, "", 0, 2147483647, true},
         {"hotkey_ptt", SettingsStore::Type::String, 0, "", 0, 0, true},
         {"hotkey_handsfree", SettingsStore::Type::String, 0, "", 0, 0, true},
         {"hotkey_cancel", SettingsStore::Type::String, 0, "Escape", 0, 0, true},
@@ -53,8 +57,6 @@ const std::vector<SettingsStore::SchemaEntry>& BuildSchema() {
         {"sound_enabled", SettingsStore::Type::Bool, 1, "", 0, 0, true},
         {"sound_volume", SettingsStore::Type::Double, 0.3, "", 0.0, 1.0, true},
         {"reduce_motion", SettingsStore::Type::Bool, 0, "", 0, 0, true},
-        {"update_check_enabled", SettingsStore::Type::Bool, 0, "", 0, 0, true},
-        {"update_last_check_s", SettingsStore::Type::Double, 0.0, "", 0.0, 0.0, true},
         {"mini_x", SettingsStore::Type::Int, -1, "", -1000000, 1000000, false},
         {"mini_y", SettingsStore::Type::Int, -1, "", -1000000, 1000000, false},
         {"history_enabled", SettingsStore::Type::Bool, 1, "", 0, 0, true},
@@ -64,12 +66,11 @@ const std::vector<SettingsStore::SchemaEntry>& BuildSchema() {
         {"debug_log_transcripts", SettingsStore::Type::Bool, 0, "", 0, 0, true},
         {"dictation_enabled", SettingsStore::Type::Bool, 1, "", 0, 0, true},
         {"first_run", SettingsStore::Type::Bool, 1, "", 0, 0, true},
-        {"keep_usage_stats", SettingsStore::Type::Bool, 1, "", 0, 0, true},
-        {"last_page", SettingsStore::Type::String, 0, "Home", 0, 0, true},
-        {"quiet_speech_boost", SettingsStore::Type::Bool, 0, "", 0, 0, true},
-        {"llm_provider", SettingsStore::Type::String, 0, "local", 0, 0, false},
-        {"openrouter_model", SettingsStore::Type::String, 0, "", 0, 0, false},
-        {"theme", SettingsStore::Type::String, 0, "graphite", 0, 0, true},
+        // Linux daemon flags (plan 2026-11-21, change C09): evdev hotkey is an
+        // explicit opt-in because reading /dev/input needs the input group;
+        // toasts can be silenced for silent-background operation.
+        {"hotkey_evdev_enabled", SettingsStore::Type::Bool, 0, "", 0, 0, true},
+        {"daemon_toasts", SettingsStore::Type::Bool, 1, "", 0, 0, true},
     };
     return schema;
 }
@@ -101,25 +102,6 @@ void SettingsStore::Load() {
 }
 
 void SettingsStore::LoadLocked() {
-
-    // INVARIANT: a directory at path_ is treated as a missing config
-    // (defaults, loaded_existing=false, corrupt_=false) and is never renamed.
-    std::error_code rc_ec;
-    if (!std::filesystem::is_regular_file(path_, rc_ec) || rc_ec) {
-        loaded_existing_ = false;
-        raw_unknown_.clear();
-        for (const SchemaEntry& entry : BuildSchema()) {
-            if (entry.type != Type::String) {
-                numbers_[entry.key] = entry.default_value;
-            } else {
-                strings_[entry.key] = entry.default_string;
-            }
-            if (entry.type == Type::Bool) {
-                bools_[entry.key] = entry.default_value != 0.0;
-            }
-        }
-        return;
-    }
 
     std::ifstream file(path_);
     if (!file.is_open()) {

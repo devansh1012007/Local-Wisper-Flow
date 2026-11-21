@@ -1,8 +1,5 @@
 #include "core/ConsentGate.h"
 
-#include "core/ApiKeyStore.h"
-
-#include <cstdlib>
 #include <cstddef>
 #include <utility>
 
@@ -45,19 +42,6 @@ std::vector<std::string> KnownCloudProviders() {
 const char* ApiKeyEnvFor(const std::string& name) {
     const CloudProviderInfo* info = FindProvider(name);
     return info != nullptr ? info->api_key_env : nullptr;
-}
-
-std::string ResolveApiKey(const std::string& provider, const ApiKeyStore& store) {
-    const std::string stored = store.Get(provider);
-    if (!stored.empty()) {
-        return stored;
-    }
-    const char* env_name = ApiKeyEnvFor(provider);
-    if (env_name == nullptr) {
-        return {};
-    }
-    const char* key = std::getenv(env_name);
-    return key != nullptr ? std::string(key) : std::string();
 }
 
 SttConsentVerdict EvaluateCloudConsent(const SttConsentInputs& inputs) {
